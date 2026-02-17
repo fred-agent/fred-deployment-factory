@@ -44,3 +44,37 @@ make wipe
 `make core-up` regenerates `docker-compose/.env` from `docker-compose/.env.template`.
 
 If you need custom values, edit `docker-compose/.env.template` before running `make core-up`.
+
+## k3d + Helm stack
+This repository also includes a Kubernetes deployment path using:
+- a vanilla `k3d` cluster
+- a standard Helm chart at `helm/fred-stack`
+
+### Bring it up
+```bash
+make k3d-up
+```
+
+This creates a local `k3d` cluster named `fred`, installs the Helm release (`fred-stack`) into namespace `fred`, and exposes these host ports:
+- PostgreSQL: `localhost:5432`
+- Keycloak: `http://localhost:8080`
+- MinIO API: `http://localhost:9000`
+- MinIO Console: `http://localhost:9001`
+- OpenSearch: `https://localhost:9200`
+- OpenSearch Dashboards: `http://localhost:5601`
+- OpenFGA HTTP: `http://localhost:9080`
+- OpenFGA gRPC: `localhost:9081`
+- Temporal Frontend gRPC: `localhost:7233`
+- Temporal UI: `http://localhost:8233`
+
+If some ports are already used (for example by the Docker Compose stack), override them at launch time:
+
+```bash
+make k3d-up K3D_HOST_PORT_POSTGRES=15432 K3D_HOST_PORT_KEYCLOAK=18080 K3D_HOST_PORT_MINIO_API=19000
+```
+
+### Tear down
+```bash
+make k3d-down     # uninstall Helm release only
+make k3d-delete   # delete cluster
+```

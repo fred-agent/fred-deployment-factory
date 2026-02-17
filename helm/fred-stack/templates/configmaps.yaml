@@ -1,0 +1,87 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fred-keycloak-config
+  labels:
+    {{- include "fred-stack.labels" . | nindent 4 }}
+data:
+  app-realm.json.template: |
+{{ .Files.Get "files/keycloak/app-realm.json.template" | indent 4 }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fred-minio-config
+  labels:
+    {{- include "fred-stack.labels" . | nindent 4 }}
+data:
+  ro-policy.json: |
+{{ .Files.Get "files/minio/ro-policy.json" | indent 4 }}
+  rw-policy.json: |
+{{ .Files.Get "files/minio/rw-policy.json" | indent 4 }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fred-openfga-config
+  labels:
+    {{- include "fred-stack.labels" . | nindent 4 }}
+data:
+  openfga-model.json: |
+{{ .Files.Get "files/openfga/openfga-model.json" | indent 4 }}
+  openfga-seed.json: |
+{{ .Files.Get "files/openfga/openfga-seed.json" | indent 4 }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fred-opensearch-config
+  labels:
+    {{- include "fred-stack.labels" . | nindent 4 }}
+data:
+  config.yml: |
+{{ .Files.Get "files/opensearch/config.yml" | indent 4 }}
+  internal_users.yml: |
+{{ .Files.Get "files/opensearch/internal_users.yml" | indent 4 }}
+  roles.yml: |
+{{ .Files.Get "files/opensearch/roles.yml" | indent 4 }}
+  roles_mapping.yml: |
+{{ .Files.Get "files/opensearch/roles_mapping.yml" | indent 4 }}
+  opensearch.yml: |
+{{ .Files.Get "files/opensearch/opensearch.yml" | indent 4 }}
+  mapping.json: |
+{{ .Files.Get "files/opensearch/mapping.json" | indent 4 }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fred-opensearch-dashboards-config
+  labels:
+    {{- include "fred-stack.labels" . | nindent 4 }}
+data:
+  opensearch_dashboards.yml: |
+{{ .Files.Get "files/opensearch-dashboards/opensearch_dashboards.yml" | indent 4 }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fred-scripts
+  labels:
+    {{- include "fred-stack.labels" . | nindent 4 }}
+data:
+  create_env.sh: |
+{{ .Files.Get "files/scripts/create_env.sh" | indent 4 }}
+  create_self_certs.sh: |
+{{ .Files.Get "files/scripts/create_self_certs.sh" | indent 4 }}
+  prepare_opensearch_config.sh: |
+{{ .Files.Get "files/scripts/prepare_opensearch_config.sh" | indent 4 }}
+  apply_securityadmin.sh: |
+{{ .Files.Get "files/scripts/apply_securityadmin.sh" | indent 4 }}
+  wait_for_os_init.sh: |
+{{ .Files.Get "files/scripts/wait_for_os_init.sh" | indent 4 }}
+  create_indice.sh: |
+{{ .Files.Get "files/scripts/create_indice.sh" | indent 4 }}
+  openfga-post-install.sh: |
+{{ .Files.Get "files/scripts/openfga-post-install.sh" | indent 4 }}
+  keycloak-post-install-k8s.sh: |
+{{ .Files.Get "files/scripts/keycloak-post-install-k8s.sh" | indent 4 }}

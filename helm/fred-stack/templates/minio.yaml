@@ -1,0 +1,106 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: minio
+  labels:
+    {{- include "fred-stack.labels" . | nindent 4 }}
+spec:
+  type: {{ include "fred-stack.serviceType" . }}
+  ports:
+    - name: api
+      port: 9000
+      targetPort: 9000
+      {{- if eq (include "fred-stack.serviceType" .) "NodePort" }}
+      nodePort: {{ .Values.service.nodePorts.minioApi }}
+      {{- end }}
+    - name: console
+      port: 9001
+      targetPort: 9001
+      {{- if eq (include "fred-stack.serviceType" .) "NodePort" }}
+      nodePort: {{ .Values.service.nodePorts.minioConsole }}
+      {{- end }}
+  selector:
+    app.kubernetes.io/component: minio
+    {{- include "fred-stack.selectorLabels" . | nindent 4 }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: minio
+  labels:
+    {{- include "fred-stack.labels" . | nindent 4 }}
+    app.kubernetes.io/component: minio
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: minio
+      {{- include "fred-stack.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: minio
+        {{- include "fred-stack.selectorLabels" . | nindent 8 }}
+    spec:
+      enableServiceLinks: false
+      containers:
+        - name: minio
+          image: {{ .Values.images.minio }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          args:
+            - server
+            - /data
+            - --console-address=:9001
+          env:
+            - name: NO_PROXY
+              value: "*"
+            - name: MINIO_ROOT_USER
+              valueFrom:
+                secretKeyRef:
+                  name: fred-secrets
+                  key: MINIO_ROOT_USER
+            - name: MINIO_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: fred-secrets
+                  key: MINIO_ROOT_PASSWORD
+            - name: MINIO_IDENTITY_OPENID_CONFIG_URL
+              value: http://keycloak:8080/realms/app/.well-known/openid-configuration
+            - name: MINIO_IDENTITY_OPENID_CLIENT_ID
+              value: minio-console
+            - name: MINIO_IDENTITY_OPENID_CLIENT_SECRET
+              value: {{ .Values.auth.keycloakAgenticClientSecret | quote }}
+            - name: MINIO_IDENTITY_OPENID_CLAIM_NAME
+              value: policy
+            - name: MINIO_IDENTITY_OPENID_SCOPES
+              value: openid
+            - name: MINIO_IDENTITY_OPENID_REDIRECT_URI
+              value: http://{{ .Values.host.fqdn }}:9001/oauth_callback
+          ports:
+            - name: api
+              containerPort: 9000
+            - name: console
+              containerPort: 9001
+          readinessProbe:
+            httpGet:
+              path: /minio/health/live
+              port: 9000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 12
+          livenessProbe:
+            httpGet:
+              path: /minio/health/live
+              port: 9000
+            initialDelaySeconds: 20
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 6
+          volumeMounts:
+            - name: minio-data
+              mountPath: /data
+      volumes:
+        - name: minio-data
+          persistentVolumeClaim:
+            claimName: minio-data

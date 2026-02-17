@@ -1,0 +1,238 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: temporal
+  labels:
+    {{- include "fred-stack.labels" . | nindent 4 }}
+spec:
+  type: {{ include "fred-stack.serviceType" . }}
+  ports:
+    - name: grpc
+      port: 7233
+      targetPort: 7233
+      {{- if eq (include "fred-stack.serviceType" .) "NodePort" }}
+      nodePort: {{ .Values.service.nodePorts.temporalFrontend }}
+      {{- end }}
+  selector:
+    app.kubernetes.io/component: temporal
+    {{- include "fred-stack.selectorLabels" . | nindent 4 }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: temporal
+  labels:
+    {{- include "fred-stack.labels" . | nindent 4 }}
+    app.kubernetes.io/component: temporal
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: temporal
+      {{- include "fred-stack.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: temporal
+        {{- include "fred-stack.selectorLabels" . | nindent 8 }}
+    spec:
+      enableServiceLinks: false
+      initContainers:
+        - name: wait-postgres
+          image: {{ .Values.images.postgresClient }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          env:
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: fred-secrets
+                  key: POSTGRES_TEMPORAL_PASSWORD
+          command:
+            - /bin/sh
+            - -ec
+            - |
+              until pg_isready -h postgres -U "$POSTGRES_TEMPORAL_USER" -d postgres; do sleep 2; done
+          envFrom:
+            - secretRef:
+                name: fred-secrets
+        - name: setup-schema
+          image: {{ .Values.images.temporalAdminTools }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          envFrom:
+            - secretRef:
+                name: fred-secrets
+          command:
+            - /bin/sh
+            - -ec
+            - |
+              temporal-sql-tool --plugin postgres12 --endpoint postgres --port 5432 --database "$POSTGRES_TEMPORAL_DBNAME" --user "$POSTGRES_TEMPORAL_USER" --password "$POSTGRES_TEMPORAL_PASSWORD" setup-schema -v 0.0 || true
+              temporal-sql-tool --plugin postgres12 --endpoint postgres --port 5432 --database "$POSTGRES_TEMPORAL_DBNAME" --user "$POSTGRES_TEMPORAL_USER" --password "$POSTGRES_TEMPORAL_PASSWORD" update-schema -d schema/postgresql/v12/temporal/versioned/
+              temporal-sql-tool --plugin postgres12 --endpoint postgres --port 5432 --database "$POSTGRES_TEMPORAL_VISIBILITY_DBNAME" --user "$POSTGRES_TEMPORAL_USER" --password "$POSTGRES_TEMPORAL_PASSWORD" setup-schema -v 0.0 || true
+              temporal-sql-tool --plugin postgres12 --endpoint postgres --port 5432 --database "$POSTGRES_TEMPORAL_VISIBILITY_DBNAME" --user "$POSTGRES_TEMPORAL_USER" --password "$POSTGRES_TEMPORAL_PASSWORD" update-schema -d schema/postgresql/v12/visibility/versioned/
+      containers:
+        - name: temporal
+          image: {{ .Values.images.temporalServer }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          envFrom:
+            - secretRef:
+                name: fred-secrets
+          env:
+            - name: NO_PROXY
+              value: "*"
+            - name: DB
+              value: postgres12
+            - name: DBNAME
+              valueFrom:
+                secretKeyRef:
+                  name: fred-secrets
+                  key: POSTGRES_TEMPORAL_DBNAME
+            - name: DB_PORT
+              value: "5432"
+            - name: POSTGRES_SEEDS
+              value: postgres
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: fred-secrets
+                  key: POSTGRES_TEMPORAL_USER
+            - name: POSTGRES_PWD
+              valueFrom:
+                secretKeyRef:
+                  name: fred-secrets
+                  key: POSTGRES_TEMPORAL_PASSWORD
+            - name: VISIBILITY_DBNAME
+              valueFrom:
+                secretKeyRef:
+                  name: fred-secrets
+                  key: POSTGRES_TEMPORAL_VISIBILITY_DBNAME
+            - name: VISIBILITY_DB_PORT
+              value: "5432"
+            - name: VISIBILITY_POSTGRES_SEEDS
+              value: postgres
+            - name: VISIBILITY_POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: fred-secrets
+                  key: POSTGRES_TEMPORAL_USER
+            - name: VISIBILITY_POSTGRES_PWD
+              valueFrom:
+                secretKeyRef:
+                  name: fred-secrets
+                  key: POSTGRES_TEMPORAL_PASSWORD
+            - name: TEMPORAL_ADDRESS
+              value: temporal:7233
+            - name: TEMPORAL_CLI_ADDRESS
+              value: temporal:7233
+          ports:
+            - name: grpc
+              containerPort: 7233
+          readinessProbe:
+            tcpSocket:
+              port: 7233
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 12
+          livenessProbe:
+            tcpSocket:
+              port: 7233
+            initialDelaySeconds: 40
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 6
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: temporal-ui
+  labels:
+    {{- include "fred-stack.labels" . | nindent 4 }}
+spec:
+  type: {{ include "fred-stack.serviceType" . }}
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+      {{- if eq (include "fred-stack.serviceType" .) "NodePort" }}
+      nodePort: {{ .Values.service.nodePorts.temporalUi }}
+      {{- end }}
+  selector:
+    app.kubernetes.io/component: temporal-ui
+    {{- include "fred-stack.selectorLabels" . | nindent 4 }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: temporal-ui
+  labels:
+    {{- include "fred-stack.labels" . | nindent 4 }}
+    app.kubernetes.io/component: temporal-ui
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: temporal-ui
+      {{- include "fred-stack.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: temporal-ui
+        {{- include "fred-stack.selectorLabels" . | nindent 8 }}
+    spec:
+      enableServiceLinks: false
+      initContainers:
+        - name: wait-dependencies
+          image: {{ .Values.images.alpine }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          command:
+            - /bin/sh
+            - -ec
+            - |
+              apk add --no-cache curl
+              until curl -sS http://keycloak:8080/realms/app/.well-known/openid-configuration >/dev/null; do sleep 2; done
+              until nc -z temporal 7233; do sleep 2; done
+      containers:
+        - name: temporal-ui
+          image: {{ .Values.images.temporalUi }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          env:
+            - name: NO_PROXY
+              value: "*"
+            - name: TEMPORAL_ADDRESS
+              value: temporal:7233
+            - name: TEMPORAL_AUTH_ENABLED
+              value: "true"
+            - name: TEMPORAL_AUTH_TYPE
+              value: oidc
+            - name: TEMPORAL_AUTH_PROVIDER_URL
+              value: http://keycloak:8080/realms/app
+            - name: TEMPORAL_AUTH_ISSUER_URL
+              value: http://keycloak:8080/realms/app
+            - name: TEMPORAL_AUTH_CLIENT_ID
+              value: temporal-web
+            - name: TEMPORAL_AUTH_CALLBACK_URL
+              value: http://{{ .Values.host.fqdn }}:{{ .Values.temporal.uiPort }}/auth/sso/callback
+            - name: TEMPORAL_AUTH_SCOPES
+              value: openid,profile,email
+            - name: TEMPORAL_AUTH_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: fred-secrets
+                  key: KEYCLOAK_KNOWLEDGE_FLOW_CLIENT_SECRET
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            tcpSocket:
+              port: 8080
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 12
+          livenessProbe:
+            tcpSocket:
+              port: 8080
+            initialDelaySeconds: 40
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 6

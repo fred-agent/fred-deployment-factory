@@ -10,6 +10,23 @@ CORE_COMPOSE_FILES := \
 	docker-compose/docker-compose-minio.yml \
 	docker-compose/docker-compose-keycloak.yml
 
+K3D_CLUSTER ?= fred
+K3D_NAMESPACE ?= fred
+HELM_RELEASE ?= fred-stack
+HELM_CHART_DIR ?= ./helm/fred-stack
+HELM_TIMEOUT ?= 20m
+
+K3D_HOST_PORT_KEYCLOAK ?= 8080
+K3D_HOST_PORT_POSTGRES ?= 5432
+K3D_HOST_PORT_MINIO_API ?= 9000
+K3D_HOST_PORT_MINIO_CONSOLE ?= 9001
+K3D_HOST_PORT_OPENSEARCH ?= 9200
+K3D_HOST_PORT_OPENSEARCH_DASHBOARDS ?= 5601
+K3D_HOST_PORT_OPENFGA_HTTP ?= 9080
+K3D_HOST_PORT_OPENFGA_GRPC ?= 9081
+K3D_HOST_PORT_TEMPORAL_FRONTEND ?= 7233
+K3D_HOST_PORT_TEMPORAL_UI ?= 8233
+
 help: ## Show this help message
 	@awk 'BEGIN {FS = ":.*##"; printf "\nAvailable targets:\n"} /^[a-zA-Z0-9_-]+:.*?##/ { printf "  %-12s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
 
@@ -77,4 +94,47 @@ wipe: all-down ## Stop core services, delete volumes, remove network, and prune
 	docker system prune -f
 	@echo -e "\n--- WIPE COMPLETE ---"
 
-.PHONY: help network-create env-setup keycloak-post-install keycloak-up minio-up opensearch-up openfga-post-install openfga-up temporal-up preflight-check core-up all-down wipe
+k3d-create: ## Create a local k3d cluster configured for FRED NodePorts
+	@if ! command -v k3d >/dev/null 2>&1; then echo "k3d is required"; exit 1; fi
+	@echo "Creating k3d cluster '$(K3D_CLUSTER)' (if missing)..."
+	@k3d cluster get "$(K3D_CLUSTER)" >/dev/null 2>&1 || \
+	k3d cluster create "$(K3D_CLUSTER)" \
+	  --servers 1 \
+	  --agents 1 \
+	  --wait \
+	  -p "$(K3D_HOST_PORT_POSTGRES):30432@server:0" \
+	  -p "$(K3D_HOST_PORT_KEYCLOAK):30080@server:0" \
+	  -p "$(K3D_HOST_PORT_MINIO_API):30900@server:0" \
+	  -p "$(K3D_HOST_PORT_MINIO_CONSOLE):30901@server:0" \
+	  -p "$(K3D_HOST_PORT_OPENSEARCH):30920@server:0" \
+	  -p "$(K3D_HOST_PORT_OPENSEARCH_DASHBOARDS):30561@server:0" \
+	  -p "$(K3D_HOST_PORT_OPENFGA_HTTP):30908@server:0" \
+	  -p "$(K3D_HOST_PORT_OPENFGA_GRPC):30981@server:0" \
+	  -p "$(K3D_HOST_PORT_TEMPORAL_FRONTEND):30723@server:0" \
+	  -p "$(K3D_HOST_PORT_TEMPORAL_UI):30233@server:0"
+
+k3d-up: k3d-create ## Deploy the full stack into k3d with Helm
+	@if ! command -v helm >/dev/null 2>&1; then echo "helm is required"; exit 1; fi
+	@kubectl config use-context "k3d-$(K3D_CLUSTER)" >/dev/null
+	@echo "Deploying Helm release '$(HELM_RELEASE)' into namespace '$(K3D_NAMESPACE)'..."
+	helm upgrade --install "$(HELM_RELEASE)" "$(HELM_CHART_DIR)" \
+	  --namespace "$(K3D_NAMESPACE)" \
+	  --create-namespace \
+	  --wait \
+	  --wait-for-jobs \
+	  --timeout "$(HELM_TIMEOUT)"
+
+k3d-down: ## Uninstall the Helm release from k3d namespace
+	@echo "Removing Helm release '$(HELM_RELEASE)' from namespace '$(K3D_NAMESPACE)'..."
+	-helm uninstall "$(HELM_RELEASE)" -n "$(K3D_NAMESPACE)"
+
+k3d-delete: ## Delete the k3d cluster
+	@echo "Deleting k3d cluster '$(K3D_CLUSTER)'..."
+	-k3d cluster delete "$(K3D_CLUSTER)"
+
+k3d-status: ## Show pods and services in the k3d namespace
+	@kubectl config use-context "k3d-$(K3D_CLUSTER)" >/dev/null
+	@echo "Namespace: $(K3D_NAMESPACE)"
+	kubectl get pods,svc -n "$(K3D_NAMESPACE)"
+
+.PHONY: help network-create env-setup keycloak-post-install keycloak-up minio-up opensearch-up openfga-post-install openfga-up temporal-up preflight-check core-up all-down wipe k3d-create k3d-up k3d-down k3d-delete k3d-status
