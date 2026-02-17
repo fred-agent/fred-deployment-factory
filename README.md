@@ -7,6 +7,15 @@ Local Docker Compose stack for the core FRED services:
 - OpenFGA
 - Temporal
 
+## Related links
+- FRED website: https://fredk8.dev
+- FRED repository: https://github.com/ThalesGroup/fred.git
+
+## Why this repository
+FRED can be started as-is and run with only ChromaDB, SQLite, and the local filesystem.
+
+The goal of this `fred-deployment-factory` repository is to provide a fuller local experience with supporting services such as MinIO, Keycloak, OpenSearch, and PostgreSQL (along with OpenFGA and Temporal in this stack).
+
 ## Prerequisites
 - Docker
 - Docker Compose (`docker compose`)
