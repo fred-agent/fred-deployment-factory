@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Copyright Thales 2025
+# Copyright 2025
 #
 # Deletes all application-related OpenSearch indices for a clean reset.
 # WARNING: This is destructive — use with care.
