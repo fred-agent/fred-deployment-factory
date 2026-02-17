@@ -1,0 +1,26 @@
+# Local Docker Compose configuration
+/docker-compose/.env
+
+# Python/dev tooling
+/.venv/
+/bin/.venv/
+**/__pycache__/
+*.pyc
+**/*.egg-info/
+
+# Terraform local state
+**/.terraform/
+*.tfstate
+*.tfstate.*
+
+# Local secrets/helpers (unencrypted)
+key.txt
+key-int.txt
+key-prod.txt
+*.nosec.yaml
+
+# Editor and OS artifacts
+.DS_Store
+.vscode/
+.idea/
+*.swp

@@ -1,0 +1,32 @@
+services: 
+  k8s-mcp:
+    image: node:22-bookworm-slim
+    container_name: k8s-mcpserver
+    volumes:
+      - vol-kubeconfig:/kube
+    environment:
+      ALLOW_ONLY_NON_DESTRUCTIVE_TOOLS: true
+      ENABLE_UNSAFE_STREAMABLE_HTTP_TRANSPORT: 1
+      HOST: 0.0.0.0
+      PORT: 8081
+      MASK_SECRETS: true
+      KUBECONFIG: /kube/config
+    ports:
+      - 8081:8081
+    command: >
+      /bin/sh -c "apt update &&
+      apt install -y curl &&
+      curl -LO https://dl.k8s.io/release/$(curl -sL https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl &&
+      install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl &&
+      npx mcp-server-kubernetes@2.9.0"
+    networks:
+      - app-network
+
+volumes:
+  vol-kubeconfig:
+    external: true
+
+networks:
+  app-network:
+    external: true
+    name: fred-shared-network

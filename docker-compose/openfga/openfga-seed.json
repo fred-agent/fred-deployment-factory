@@ -1,0 +1,37 @@
+{
+  "teams": [
+    "bidgpt",
+    "kast",
+    "poletchng",
+    "prism",
+    "thanos"
+  ],
+  "users": [
+    {
+      "username": "alice",
+      "teams": [
+        "bidgpt",
+        "kast",
+        "poletchng",
+        "prism",
+        "thanos"
+      ]
+    },
+    {
+      "username": "bob",
+      "teams": [
+        "bidgpt",
+        "kast",
+        "prism"
+      ]
+    },
+    {
+      "username": "phil",
+      "teams": [
+        "bidgpt",
+        "prism",
+        "thanos"
+      ]
+    }
+  ]
+}

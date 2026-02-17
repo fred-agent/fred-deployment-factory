@@ -1,0 +1,19 @@
+{
+    "Version" : "2012-10-17",
+    "Statement" : [
+       {
+          "Effect" : "Allow",
+          "Action" : [
+             "s3:*"
+           ],
+          "Resource" : [
+             "arn:aws:s3:::app-content",
+             "arn:aws:s3:::app-content/*",
+             "arn:aws:s3:::app-feedback",
+             "arn:aws:s3:::app-feedback/*",
+             "arn:aws:s3:::app-chat-profile",
+             "arn:aws:s3:::app-chat-profile/*"
+           ]
+       }
+    ]
+}

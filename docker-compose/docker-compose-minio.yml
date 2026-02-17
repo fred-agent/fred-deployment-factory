@@ -1,0 +1,72 @@
+services:
+
+  minio:
+    container_name: app-minio
+    image: mirror.gcr.io/minio/minio:RELEASE.2025-02-07T23-21-09Z
+    environment:
+      NO_PROXY: "*"
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-admin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-Azerty123_}
+      MINIO_IDENTITY_OPENID_CONFIG_URL: http://${DOCKER_COMPOSE_HOST_FQDN:-app-keycloak}:8080/realms/app/.well-known/openid-configuration
+      MINIO_IDENTITY_OPENID_CLIENT_ID: minio-console
+      MINIO_IDENTITY_OPENID_CLIENT_SECRET: Azerty123_
+      MINIO_IDENTITY_OPENID_CLAIM_NAME: policy
+      MINIO_IDENTITY_OPENID_SCOPES: openid
+      MINIO_IDENTITY_OPENID_REDIRECT_URI: "http://${DOCKER_COMPOSE_HOST_FQDN:-localhost}:9001/oauth_callback"
+    command:
+      - server
+      - /data
+      - --console-address=:9001
+    networks:
+      - app-network
+    ports:
+      - 0.0.0.0:9000:9000/tcp
+      - 0.0.0.0:9001:9001/tcp
+    healthcheck:
+      test: curl --fail http://localhost:9000/minio/health/live
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+      start_interval: 1s
+
+  minio-post-install-job:
+    container_name: app-minio-post-install-job
+    image: mirror.gcr.io/minio/minio:RELEASE.2025-02-07T23-21-09Z
+    environment:
+      NO_PROXY: "*"
+      MINIO_ROOT_USER: admin
+      MINIO_ROOT_PASSWORD: Azerty123_
+    entrypoint:
+      - /bin/bash
+      - -c
+    command:
+      - |
+        mc alias set app-minio http://app-minio:9000 $$MINIO_ROOT_USER $$MINIO_ROOT_PASSWORD
+        
+        # Create bucket
+        mc mb app-minio/app-content
+        mc mb app-minio/app-feedback
+        mc mb app-minio/app-chat-profile
+
+        # Create Read Only user
+        mc admin user add app-minio app_ro Azerty123_
+        mc admin policy create app-minio app-minio-ro-policy /opt/minio/ro-policy.json
+        mc admin policy attach app-minio app-minio-ro-policy --user app_ro
+
+        # Create Read Write user
+        mc admin user add app-minio app_rw Azerty123_
+        mc admin policy create app-minio app-minio-rw-policy /opt/minio/rw-policy.json
+        mc admin policy attach app-minio app-minio-rw-policy --user app_rw
+    volumes:
+      - ./minio-post-install-job/:/opt/minio/
+    networks:
+      - app-network
+    depends_on:
+      minio:
+        condition: service_healthy
+
+networks:
+  app-network:
+    external: true
+    name: fred-shared-network

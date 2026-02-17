@@ -1,0 +1,115 @@
+services:
+
+  opensearch-pre-install-job:
+    container_name: app-opensearch-pre-install-job
+    image: mirror.gcr.io/alpine:3.21.3
+    environment:
+      no_proxy: "*"
+      KEYCLOAK_HOST: ${DOCKER_COMPOSE_HOST_FQDN:-app-keycloak}
+      OPENSEARCH_ADMIN: ${OPENSEARCH_ADMIN:-admin}
+      OPENSEARCH_ADMIN_PASSWORD: ${OPENSEARCH_ADMIN_PASSWORD:-Azerty123_}
+      DOCKER_COMPOSE_HOST_FQDN: ${DOCKER_COMPOSE_HOST_FQDN:-localhost}
+    entrypoint:
+      - /bin/sh
+      - -c
+    command:
+      - |
+        apk update
+        apk add --no-cache bash openssl apache2-utils
+        create_self_certs.sh /usr/share/opensearch/config/certs
+        prepare_opensearch_config.sh
+    volumes:
+      - vol-opensearch-certs:/usr/share/opensearch/config/certs/
+      - vol-opensearch-security:/usr/local/etc/opensearch-security/
+      - vol-opensearch-dashboards:/usr/local/etc/opensearch-dashboards/
+      - ./opensearch-pre-install-job/:/usr/local/bin/
+      - ./opensearch/:/tmp/opensearch-config/
+      - ./opensearch-dashboards:/tmp/opensearch-dashboards-config/
+    networks:
+      - app-network
+
+  opensearch:
+    container_name: app-opensearch
+    image: mirror.gcr.io/opensearchproject/opensearch:2.19.3
+    command:
+      - -Ediscovery.type=single-node
+    environment:
+      no_proxy: "*"
+      OPENSEARCH_JAVA_OPTS: "-Xms512m -Xmx512m"
+    volumes:
+      - vol-opensearch-certs:/usr/share/opensearch/config/certs/
+      - vol-opensearch-security:/usr/share/opensearch/config/opensearch-security/
+      - ./opensearch/opensearch.yml:/usr/share/opensearch/config/opensearch.yml
+    networks:
+      - app-network
+    ports:
+      -  0.0.0.0:9200:9200/tcp
+    depends_on:
+      opensearch-pre-install-job:
+        condition: service_completed_successfully
+    healthcheck:
+      test: curl --insecure https://localhost:9200/_cluster/health
+      interval: 60s
+      timeout: 10s
+      retries: 20
+      start_period: 60s
+      start_interval: 10s
+
+  opensearch-post-install-job:
+    container_name: app-opensearch-post-install-job
+    image: mirror.gcr.io/opensearchproject/opensearch:2.19.3
+    environment:
+      no_proxy: "*"
+      OPENSEARCH_ADMIN: ${OPENSEARCH_ADMIN:-admin}
+      OPENSEARCH_ADMIN_PASSWORD: ${OPENSEARCH_ADMIN_PASSWORD:-Azerty123_}
+    entrypoint:
+      - /bin/bash
+      - -c
+    command:
+      - >
+        apply_securityadmin.sh && 
+        wait_for_os_init.sh &&
+        create_indice.sh metadata-index vector-index active-sessions-index chat-interactions-index feedback-index
+    volumes:
+      - vol-opensearch-certs:/usr/share/opensearch/config/certs/
+      - vol-opensearch-security:/usr/share/opensearch/config/opensearch-security/
+      - ./opensearch/opensearch.yml:/usr/share/opensearch/config/opensearch.yml
+      - ./opensearch-post-install-job/:/usr/local/bin/
+    networks:
+      - app-network
+    depends_on:
+      opensearch:
+        condition: service_healthy
+
+  opensearch-dashboards:
+    container_name: app-opensearch-dashboards
+    image: mirror.gcr.io/opensearchproject/opensearch-dashboards:2.19.3
+    environment:
+      no_proxy: "*"
+    volumes:
+      - vol-opensearch-certs:/usr/share/opensearch/config/certs/
+      - vol-opensearch-dashboards:/usr/share/opensearch-dashboards/config/
+    networks:
+      - app-network
+    ports:
+      - 0.0.0.0:5601:5601/TCP
+    depends_on:
+      opensearch-post-install-job:
+        condition: service_completed_successfully
+    healthcheck:
+      test: curl --fail http://localhost:5601
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+      start_interval: 1s
+
+volumes:
+  vol-opensearch-certs:
+  vol-opensearch-security:
+  vol-opensearch-dashboards:
+
+networks:
+  app-network:
+    external: true
+    name: fred-shared-network

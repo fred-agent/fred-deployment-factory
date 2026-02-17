@@ -1,0 +1,67 @@
+services:
+  openfga-create-db:
+    container_name: app-postgres-post-install-job-openfga
+    image: mirror.gcr.io/postgres:15.12-alpine3.20
+    volumes:
+      - ./postgres-post-install-job/create_env.sh:/usr/local/bin/create_env.sh
+    environment:
+      POSTGRES_ADMIN_USER: ${POSTGRES_ADMIN_USER:-admin}
+      PGPASSWORD: ${POSTGRES_ADMIN_PASSWORD:-Azerty123_}
+      POSTGRES_OPENFGA_USER: ${POSTGRES_OPENFGA_USER:-openfga}
+      POSTGRES_OPENFGA_PASSWORD: ${POSTGRES_OPENFGA_PASSWORD:-Azerty123_}
+      POSTGRES_OPENFGA_DBNAME: ${POSTGRES_OPENFGA_DBNAME:-openfga}
+    entrypoint:
+      - /bin/bash
+      - -c
+    command:
+      - |-
+        create_env.sh \
+          --admin "$$POSTGRES_ADMIN_USER" \
+          --host "postgres" \
+          --user "$$POSTGRES_OPENFGA_USER" \
+          --password "$$POSTGRES_OPENFGA_PASSWORD" \
+          --database "$$POSTGRES_OPENFGA_DBNAME"
+    networks:
+      - app-network
+
+  migrate:
+    depends_on:
+      openfga-create-db:
+        condition: service_completed_successfully
+    image: openfga/openfga:latest
+    container_name: openfga-migrate
+    command: migrate
+    environment:
+      OPENFGA_DATASTORE_ENGINE: postgres
+      OPENFGA_DATASTORE_URI: postgres://${POSTGRES_OPENFGA_USER:-openfga}:${POSTGRES_OPENFGA_PASSWORD:-Azerty123_}@postgres:5432/${POSTGRES_OPENFGA_DBNAME:-openfga}?sslmode=disable
+    networks:
+      - app-network
+
+  openfga:
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    image: openfga/openfga:latest
+    container_name: openfga
+    environment:
+      OPENFGA_DATASTORE_ENGINE: postgres
+      OPENFGA_DATASTORE_URI: postgres://${POSTGRES_OPENFGA_USER:-openfga}:${POSTGRES_OPENFGA_PASSWORD:-Azerty123_}@postgres:5432/${POSTGRES_OPENFGA_DBNAME:-openfga}?sslmode=disable
+      OPENFGA_LOG_FORMAT: json
+      OPENFGA_HTTP_ADDR: 0.0.0.0:9080 # (changing from :8080 default to avoid conflict with Keycloak)
+      OPENFGA_GRPC_ADDR: 0.0.0.0:9081
+      OPENFGA_API_TOKEN: ${OPENFGA_API_TOKEN:-Azerty123_}
+    command: run
+    networks:
+      - app-network
+    ports:
+      # Needed for the http server
+      - "9080:9080"
+      # Needed for the grpc server (if used)
+      - "9081:9081"
+      # Needed for the playground (Do not enable in prod!)
+      - "3000:3000"
+
+networks:
+  app-network:
+    external: true
+    name: fred-shared-network

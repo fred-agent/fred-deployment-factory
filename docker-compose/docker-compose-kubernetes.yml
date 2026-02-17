@@ -1,0 +1,57 @@
+services:
+
+  kube:
+    image: mirror.gcr.io/rancher/k3s:v1.30.3-k3s1
+    container_name: app-kube
+    privileged: true
+    environment:
+      NO_PROXY: "app-kube"
+      K3S_KUBECONFIG_OUTPUT: /usr/local/etc/.kube/config
+      K3S_KUBECONFIG_MODE: 644
+      K3S_BIND_ADDRESS: 0.0.0.0
+      K3S_TOKEN: Azerty123_
+    volumes:
+      - vol-kubeconfig:/usr/local/etc/.kube
+    command:
+      - "server"
+      - "--tls-san"
+      - "app-kube"
+    networks:
+      - app-network
+    ports:
+    - 0.0.0.0:6443:6443/tcp  # Kubernetes API
+    - 0.0.0.0:8443:8443/tcp  # Kubernetes dashboard
+    healthcheck:
+      test: "kubectl get nodes"
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  kube-post-install-job:
+    image: mirror.gcr.io/alpine:3.21.3
+    container_name: app-kube-post-install-job
+    volumes:
+      - vol-kubeconfig:/root/.kube
+      - ./kube-post-install-job/:/usr/local/bin/
+    environment:
+      NO_PROXY: "app-kube"
+      KUBECONFIG: /root/.kube/config
+    entrypoint: 
+      - /bin/sh
+      - -c
+    command:
+      - kube-post-install.sh
+    networks:
+      - app-network
+    depends_on:
+      kube:
+        condition: service_healthy
+
+volumes:
+  vol-kubeconfig:
+    name: vol-kubeconfig
+
+networks:
+  app-network:
+    external: true
+    name: fred-shared-network

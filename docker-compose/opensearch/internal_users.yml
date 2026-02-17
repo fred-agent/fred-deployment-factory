@@ -1,0 +1,18 @@
+_meta:
+  type: "internalusers"
+  config_version: 2
+
+__OPENSEARCH_ADMIN__:
+  hash: __OPENSEARCH_ADMIN_PASSWORD_HASH__
+  backend_roles:
+    - "admin"
+
+app_rw:
+  hash: $2y$12$h.SKV7oNwGH1YzXR4kuNj.h.JadXGymBLGnAbxnlcYoCZ5BLwE7em
+  backend_roles:
+    - "user"
+
+app_ro:
+  hash: $2y$12$h.SKV7oNwGH1YzXR4kuNj.h.JadXGymBLGnAbxnlcYoCZ5BLwE7em
+  backend_roles:
+    - "user"

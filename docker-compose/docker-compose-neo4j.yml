@@ -1,0 +1,32 @@
+services:
+
+  neo4j:
+    container_name: app-neo4j
+    image: mirror.gcr.io/neo4j:5.25
+    environment:
+      NO_PROXY: "*"
+      NEO4J_AUTH: ${NEO4J_AUTH:-neo4j/Azerty123_}
+    networks:
+      - app-network
+    ports:
+      - 0.0.0.0:7474:7474/tcp
+      - 0.0.0.0:7687:7687/tcp
+    volumes:
+      - vol-neo4j-data:/data
+      - vol-neo4j-logs:/logs
+    healthcheck:
+      test: wget --no-verbose --tries=1 --spider http://localhost:7474 || exit 1
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+
+volumes:
+  vol-neo4j-data:
+  vol-neo4j-logs:
+
+networks:
+  app-network:
+    external: true
+    name: fred-shared-network
+

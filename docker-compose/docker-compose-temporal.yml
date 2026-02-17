@@ -1,0 +1,168 @@
+services:
+
+  temporal-create-db:
+    container_name: app-postgres-post-install-job-temporal
+    image: mirror.gcr.io/postgres:15.12-alpine3.20
+    volumes:
+      - ./postgres-post-install-job/create_env.sh:/usr/local/bin/create_env.sh
+    environment:
+      POSTGRES_ADMIN_USER: ${POSTGRES_ADMIN_USER:-admin}
+      PGPASSWORD: ${POSTGRES_ADMIN_PASSWORD:-Azerty123_}
+      POSTGRES_TEMPORAL_USER: ${POSTGRES_TEMPORAL_USER:-temporal}
+      POSTGRES_TEMPORAL_PASSWORD: ${POSTGRES_TEMPORAL_PASSWORD:-Azerty123_}
+      POSTGRES_TEMPORAL_DBNAME: ${POSTGRES_TEMPORAL_DBNAME:-temporal}
+      POSTGRES_TEMPORAL_VISIBILITY_DBNAME: ${POSTGRES_TEMPORAL_VISIBILITY_DBNAME:-temporal_visibility} 
+    entrypoint:
+      - /bin/bash
+      - -c
+    command:
+      - |-
+        create_env.sh \
+          --admin "$$POSTGRES_ADMIN_USER" \
+          --host "app-postgres" \
+          --user "$$POSTGRES_TEMPORAL_USER" \
+          --password "$$POSTGRES_TEMPORAL_PASSWORD" \
+          --database "$$POSTGRES_TEMPORAL_DBNAME"
+        create_env.sh \
+          --admin "$$POSTGRES_ADMIN_USER" \
+          --host "app-postgres" \
+          --user "$$POSTGRES_TEMPORAL_USER" \
+          --password "$$POSTGRES_TEMPORAL_PASSWORD" \
+          --database "$$POSTGRES_TEMPORAL_VISIBILITY_DBNAME"
+    networks:
+      - app-network
+
+  temporal-update-schema:
+    container_name: app-temporal-admin-tools
+    image: mirror.gcr.io/temporalio/admin-tools:1.28
+    environment:
+      POSTGRES_TEMPORAL_USER: ${POSTGRES_TEMPORAL_USER:-temporal}
+      POSTGRES_TEMPORAL_PASSWORD: ${POSTGRES_TEMPORAL_PASSWORD:-Azerty123_}
+      POSTGRES_TEMPORAL_DBNAME: ${POSTGRES_TEMPORAL_DBNAME:-temporal}
+      POSTGRES_TEMPORAL_VISIBILITY_DBNAME: ${POSTGRES_TEMPORAL_VISIBILITY_DBNAME:-temporal_visibility}
+    entrypoint:
+      - /bin/sh
+      - -c
+    command:
+      - |-
+        temporal-sql-tool \
+          --plugin postgres12 \
+          --endpoint app-postgres \
+          --port 5432 \
+          --database $$POSTGRES_TEMPORAL_DBNAME \
+          --user $$POSTGRES_TEMPORAL_USER \
+          --password $$POSTGRES_TEMPORAL_PASSWORD \
+          setup-schema -v 0.0 && \
+        temporal-sql-tool \
+          --plugin postgres12 \
+          --endpoint app-postgres \
+          --port 5432 \
+          --database $$POSTGRES_TEMPORAL_DBNAME \
+          --user $$POSTGRES_TEMPORAL_USER \
+          --password $$POSTGRES_TEMPORAL_PASSWORD \
+          update-schema -d schema/postgresql/v12/temporal/versioned/
+        temporal-sql-tool \
+          --plugin postgres12 \
+          --endpoint app-postgres \
+          --port 5432 \
+          --database $$POSTGRES_TEMPORAL_VISIBILITY_DBNAME \
+          --user $$POSTGRES_TEMPORAL_USER \
+          --password $$POSTGRES_TEMPORAL_PASSWORD \
+          setup-schema -v 0.0 && \
+        temporal-sql-tool \
+          --plugin postgres12 \
+          --endpoint app-postgres \
+          --port 5432 \
+          --database $$POSTGRES_TEMPORAL_VISIBILITY_DBNAME \
+          --user $$POSTGRES_TEMPORAL_USER \
+          --password $$POSTGRES_TEMPORAL_PASSWORD \
+          update-schema -d schema/postgresql/v12/visibility/versioned/
+    networks:
+      - app-network
+    depends_on:
+      temporal-create-db:
+        condition: service_completed_successfully
+
+  temporal:
+    container_name: app-temporal
+    image: mirror.gcr.io/temporalio/server:1.28.0
+    environment:
+      NO_PROXY: "*"
+      DB: postgres12
+      DBNAME: ${POSTGRES_TEMPORAL_DBNAME:-temporal}
+      DB_PORT: 5432
+      POSTGRES_SEEDS: app-postgres
+      POSTGRES_USER: ${POSTGRES_TEMPORAL_USER:-temporal}
+      POSTGRES_PWD: ${POSTGRES_TEMPORAL_PASSWORD:-Azerty123_}
+      VISIBILITY_DBNAME: ${POSTGRES_TEMPORAL_VISIBILITY_DBNAME:-temporal_visibility}
+      VISIBILITY_DB_PORT: 5432
+      VISIBILITY_POSTGRES_SEEDS: app-postgres
+      VISIBILITY_POSTGRES_USER: ${POSTGRES_TEMPORAL_USER:-temporal}
+      VISIBILITY_POSTGRES_PWD: ${POSTGRES_TEMPORAL_PASSWORD:-Azerty123_}
+      TEMPORAL_ADDRESS: app-temporal:7233
+      TEMPORAL_CLI_ADDRESS: app-temporal:7233
+    networks:
+      - app-network
+    ports:
+      - 7233:7233
+    depends_on:
+      temporal-update-schema:
+        condition: service_completed_successfully
+    healthcheck:
+      test: tctl cluster health
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  temporal-post-install-job:
+    container_name: app-temporal-post-install-job
+    image: mirror.gcr.io/temporalio/admin-tools:1.28
+    environment:
+      TEMPORAL_CLI_ADDRESS: app-temporal:7233
+    entrypoint:
+      - /bin/sh
+      - -c
+    command:
+      - |-
+        until tctl --address "$$TEMPORAL_CLI_ADDRESS" cluster health; do
+          sleep 2
+        done
+        tctl --address "$$TEMPORAL_CLI_ADDRESS" --ns default namespace describe >/dev/null 2>&1 || \
+          tctl --address "$$TEMPORAL_CLI_ADDRESS" --ns default namespace register
+    networks:
+      - app-network
+    depends_on:
+      temporal:
+        condition: service_healthy
+
+  temporal-ui:
+    container_name: app-temporal-web
+    image: mirror.gcr.io/temporalio/ui:2.39.0
+    environment:
+      NO_PROXY: "*"
+      TEMPORAL_ADDRESS: app-temporal:7233
+      TEMPORAL_AUTH_ENABLED: true
+      TEMPORAL_AUTH_TYPE: oidc
+      TEMPORAL_AUTH_PROVIDER_URL: http://app-keycloak:8080/realms/app
+      TEMPORAL_AUTH_ISSUER_URL: http://app-keycloak:8080/realms/app
+      TEMPORAL_AUTH_CLIENT_ID: temporal-web
+      TEMPORAL_AUTH_CALLBACK_URL: http://${DOCKER_COMPOSE_HOST_FQDN:-localhost}:${TEMPORAL_UI_PORT:-8233}/auth/sso/callback
+      TEMPORAL_AUTH_SCOPES: openid,profile,email
+      TEMPORAL_AUTH_CLIENT_SECRET: Azerty123_
+    networks:
+      - app-network
+    ports:
+      - ${TEMPORAL_UI_PORT:-8233}:8080
+    depends_on:
+      temporal-post-install-job:
+        condition: service_completed_successfully
+    healthcheck:
+      test: curl -f http://localhost:8080
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+networks:
+  app-network:
+    external: true
+    name: fred-shared-network
