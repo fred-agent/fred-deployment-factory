@@ -76,14 +76,17 @@ persistence:
   opensearchSize: 10Gi
 
 images:
-  postgres: pgvector/pgvector:pg15
+  postgres: pgvector/pgvector:pg17
   postgresClient: mirror.gcr.io/postgres:15.12-alpine3.20
   keycloak: mirror.gcr.io/keycloak/keycloak:26.3.0
-  minio: mirror.gcr.io/minio/minio:RELEASE.2025-02-07T23-21-09Z
+  minio: minio/minio:RELEASE.2025-02-07T23-21-09Z
+  minioClient: minio/mc:RELEASE.2025-02-07T23-21-09Z
   alpine: mirror.gcr.io/alpine:3.21.3
   opensearch: mirror.gcr.io/opensearchproject/opensearch:2.19.3
   opensearchDashboards: mirror.gcr.io/opensearchproject/opensearch-dashboards:2.19.3
-  openfga: openfga/openfga:latest
+  openfga: openfga/openfga:v1.11.0
   temporalServer: mirror.gcr.io/temporalio/server:1.28.0
   temporalAdminTools: mirror.gcr.io/temporalio/admin-tools:1.28
-  temporalUi: mirror.gcr.io/temporalio/ui:2.39.0
+  temporalUi: mirror.gcr.io/temporalio/ui:2.38.3
+
+

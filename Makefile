@@ -15,6 +15,7 @@ K3D_NAMESPACE ?= fred
 HELM_RELEASE ?= fred-stack
 HELM_CHART_DIR ?= ./helm/fred-stack
 HELM_TIMEOUT ?= 20m
+CILIUM_VERSION ?= 1.16.5
 
 K3D_HOST_PORT_KEYCLOAK ?= 8080
 K3D_HOST_PORT_POSTGRES ?= 5432
@@ -26,6 +27,7 @@ K3D_HOST_PORT_OPENFGA_HTTP ?= 9080
 K3D_HOST_PORT_OPENFGA_GRPC ?= 9081
 K3D_HOST_PORT_TEMPORAL_FRONTEND ?= 7233
 K3D_HOST_PORT_TEMPORAL_UI ?= 8233
+K3D_HOST_PORT_FRONTEND ?= 8088
 
 help: ## Show this help message
 	@awk 'BEGIN {FS = ":.*##"; printf "\nAvailable targets:\n"} /^[a-zA-Z0-9_-]+:.*?##/ { printf "  %-12s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
@@ -94,14 +96,17 @@ wipe: all-down ## Stop core services, delete volumes, remove network, and prune
 	docker system prune -f
 	@echo -e "\n--- WIPE COMPLETE ---"
 
-k3d-create: ## Create a local k3d cluster configured for FRED NodePorts
+k3d-create: ## Create a local k3d cluster with Cilium CNI (for NetworkPolicy/air-gap support)
 	@if ! command -v k3d >/dev/null 2>&1; then echo "k3d is required"; exit 1; fi
+	@if ! command -v cilium >/dev/null 2>&1; then echo "cilium CLI is required (brew install cilium-cli)"; exit 1; fi
 	@echo "Creating k3d cluster '$(K3D_CLUSTER)' (if missing)..."
-	@k3d cluster get "$(K3D_CLUSTER)" >/dev/null 2>&1 || \
+	@k3d cluster get "$(K3D_CLUSTER)" >/dev/null 2>&1 || ( \
 	k3d cluster create "$(K3D_CLUSTER)" \
 	  --servers 1 \
 	  --agents 1 \
 	  --wait \
+	  --k3s-arg '--flannel-backend=none@server:*' \
+	  --k3s-arg '--disable-network-policy@server:*' \
 	  -p "$(K3D_HOST_PORT_POSTGRES):30432@server:0" \
 	  -p "$(K3D_HOST_PORT_KEYCLOAK):30080@server:0" \
 	  -p "$(K3D_HOST_PORT_MINIO_API):30900@server:0" \
@@ -111,7 +116,13 @@ k3d-create: ## Create a local k3d cluster configured for FRED NodePorts
 	  -p "$(K3D_HOST_PORT_OPENFGA_HTTP):30908@server:0" \
 	  -p "$(K3D_HOST_PORT_OPENFGA_GRPC):30981@server:0" \
 	  -p "$(K3D_HOST_PORT_TEMPORAL_FRONTEND):30723@server:0" \
-	  -p "$(K3D_HOST_PORT_TEMPORAL_UI):30233@server:0"
+	  -p "$(K3D_HOST_PORT_TEMPORAL_UI):30233@server:0" \
+	  -p "$(K3D_HOST_PORT_FRONTEND):80@server:0" && \
+	echo "Installing Cilium $(CILIUM_VERSION)..." && \
+	cilium install --version $(CILIUM_VERSION) && \
+	echo "Waiting for Cilium to be ready..." && \
+	cilium status --wait --wait-duration 5m \
+	)
 
 k3d-up: k3d-create ## Deploy the full stack into k3d with Helm
 	@if ! command -v helm >/dev/null 2>&1; then echo "helm is required"; exit 1; fi
@@ -137,4 +148,18 @@ k3d-status: ## Show pods and services in the k3d namespace
 	@echo "Namespace: $(K3D_NAMESPACE)"
 	kubectl get pods,svc -n "$(K3D_NAMESPACE)"
 
-.PHONY: help network-create env-setup keycloak-post-install keycloak-up minio-up opensearch-up openfga-post-install openfga-up temporal-up preflight-check core-up all-down wipe k3d-create k3d-up k3d-down k3d-delete k3d-status
+k3d-airgap-on: ## Enable air-gap mode (block internet except OpenAI API)
+	@echo "🔒 Enabling air-gap mode in namespace '$(K3D_NAMESPACE)'..."
+	kubectl apply -f helm/fred-stack/templates/cilium-airgap-policy.yaml
+	@echo "Air-gap enabled. Only cluster-internal traffic and api.openai.com:443 are allowed."
+
+k3d-airgap-off: ## Disable air-gap mode (restore full internet access)
+	@echo "🔓 Disabling air-gap mode in namespace '$(K3D_NAMESPACE)'..."
+	-kubectl delete -f helm/fred-stack/templates/cilium-airgap-policy.yaml
+	@echo "Air-gap disabled. Full internet access restored."
+
+k3d-airgap-status: ## Show active Cilium network policies
+	@echo "📊 CiliumNetworkPolicies in namespace '$(K3D_NAMESPACE)':"
+	kubectl get ciliumnetworkpolicies -n "$(K3D_NAMESPACE)"
+
+.PHONY: help network-create env-setup keycloak-post-install keycloak-up minio-up opensearch-up openfga-post-install openfga-up temporal-up preflight-check core-up all-down wipe k3d-create k3d-up k3d-down k3d-delete k3d-status k3d-airgap-on k3d-airgap-off k3d-airgap-status
