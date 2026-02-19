@@ -182,13 +182,12 @@ spec:
       enableServiceLinks: false
       initContainers:
         - name: wait-dependencies
-          image: {{ .Values.images.alpine }}
+          image: {{ .Values.images.toolbox }}
           imagePullPolicy: {{ .Values.imagePullPolicy }}
           command:
             - /bin/sh
             - -ec
             - |
-              apk add --no-cache curl
               until curl -sS http://keycloak:8080/realms/app/.well-known/openid-configuration >/dev/null; do sleep 2; done
               until nc -z temporal 7233; do sleep 2; done
       containers:

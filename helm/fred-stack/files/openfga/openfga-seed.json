@@ -3,7 +3,6 @@
     "bidgpt",
     "kast",
     "poletchng",
-    "prism",
     "thanos"
   ],
   "users": [
@@ -13,7 +12,6 @@
         "bidgpt",
         "kast",
         "poletchng",
-        "prism",
         "thanos"
       ]
     },
@@ -21,15 +19,13 @@
       "username": "bob",
       "teams": [
         "bidgpt",
-        "kast",
-        "prism"
+        "kast"
       ]
     },
     {
       "username": "phil",
       "teams": [
         "bidgpt",
-        "prism",
         "thanos"
       ]
     }

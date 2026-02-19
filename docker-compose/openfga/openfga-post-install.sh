@@ -3,7 +3,10 @@ set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 COMPOSE_DIR="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
+REPO_ROOT="$(cd -- "${SCRIPT_DIR}/../.." && pwd)"
 ENV_FILE="${COMPOSE_DIR}/.env"
+DEFAULT_SHARED_OPENFGA_SEED_FILE="${REPO_ROOT}/helm/fred-stack/files/openfga/openfga-seed.json"
+DEFAULT_LEGACY_OPENFGA_SEED_FILE="${SCRIPT_DIR}/openfga-seed.json"
 
 log() {
   printf '[openfga-post-install] %s\n' "$*"
@@ -274,7 +277,13 @@ OPENFGA_API_TOKEN="${OPENFGA_API_TOKEN:-Azerty123_}"
 OPENFGA_STORE_NAME="${OPENFGA_STORE_NAME:-$(read_env_file_var OPENFGA_STORE_NAME)}"
 OPENFGA_STORE_NAME="${OPENFGA_STORE_NAME:-fred}"
 OPENFGA_MODEL_FILE="${OPENFGA_MODEL_FILE:-${SCRIPT_DIR}/openfga-model.json}"
-OPENFGA_SEED_FILE="${OPENFGA_SEED_FILE:-${SCRIPT_DIR}/openfga-seed.json}"
+if [[ -z "${OPENFGA_SEED_FILE:-}" ]]; then
+  if [[ -f "$DEFAULT_SHARED_OPENFGA_SEED_FILE" ]]; then
+    OPENFGA_SEED_FILE="$DEFAULT_SHARED_OPENFGA_SEED_FILE"
+  else
+    OPENFGA_SEED_FILE="$DEFAULT_LEGACY_OPENFGA_SEED_FILE"
+  fi
+fi
 OPENFGA_SEED_INCLUDE_USERNAME_USERS="${OPENFGA_SEED_INCLUDE_USERNAME_USERS:-$(read_env_file_var OPENFGA_SEED_INCLUDE_USERNAME_USERS)}"
 OPENFGA_SEED_INCLUDE_USERNAME_USERS="${OPENFGA_SEED_INCLUDE_USERNAME_USERS:-true}"
 
@@ -297,6 +306,8 @@ KC_BOOTSTRAP_ADMIN_PASSWORD="${KC_BOOTSTRAP_ADMIN_PASSWORD:-Azerty123_}"
 
 jq -e '.teams | type == "array"' "$OPENFGA_SEED_FILE" >/dev/null || die "invalid seed file format: .teams must be an array"
 jq -e '.users | type == "array"' "$OPENFGA_SEED_FILE" >/dev/null || die "invalid seed file format: .users must be an array"
+
+log "using OpenFGA seed file '${OPENFGA_SEED_FILE}'"
 
 CHANGED=0
 ADDED_TUPLES=0

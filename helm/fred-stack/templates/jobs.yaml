@@ -70,7 +70,7 @@ spec:
       restartPolicy: OnFailure
       containers:
         - name: opensearch-post-install
-          image: {{ .Values.images.alpine }}
+          image: {{ .Values.images.toolbox }}
           imagePullPolicy: {{ .Values.imagePullPolicy }}
           env:
             - name: OPENSEARCH_ADMIN
@@ -87,7 +87,6 @@ spec:
             - /bin/sh
             - -ec
             - |
-              apk add --no-cache curl
               until curl -k -s -u "$OPENSEARCH_ADMIN:$OPENSEARCH_ADMIN_PASSWORD" https://opensearch:9200/_cluster/health >/dev/null; do sleep 5; done
               for idx in metadata-index vector-index active-sessions-index chat-interactions-index feedback-index; do
                 if curl -k -s -u "$OPENSEARCH_ADMIN:$OPENSEARCH_ADMIN_PASSWORD" -f "https://opensearch:9200/$idx" >/dev/null; then
@@ -126,7 +125,7 @@ spec:
       restartPolicy: OnFailure
       containers:
         - name: openfga-post-install
-          image: {{ .Values.images.alpine }}
+          image: {{ .Values.images.toolbox }}
           imagePullPolicy: {{ .Values.imagePullPolicy }}
           envFrom:
             - secretRef:
@@ -144,7 +143,6 @@ spec:
             - /bin/sh
             - -ec
             - |
-              apk add --no-cache bash curl jq
               /scripts/openfga-post-install.sh
           volumeMounts:
             - name: scripts

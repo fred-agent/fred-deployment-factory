@@ -6,8 +6,8 @@
 #   - Cluster-internal traffic (pod-to-pod, services)
 #   - OpenAI API (api.openai.com:443)
 #
-# Apply:  kubectl apply -f helm/cilium-airgap-policy.yaml
-# Remove: kubectl delete -f helm/cilium-airgap-policy.yaml
+# Apply:  kubectl apply -f helm/fred-stack/policies/cilium-airgap-policy.yaml
+# Remove: kubectl delete -f helm/fred-stack/policies/cilium-airgap-policy.yaml
 # =============================================================================
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy

@@ -101,9 +101,14 @@ bash docker-compose/openfga/openfga-post-install.sh
 The OpenFGA post-install script is idempotent and enforces:
 - store `OPENFGA_STORE_NAME` (default: `fred`)
 - authorization model from `docker-compose/openfga/openfga-model.json`
-- seeded team memberships from `docker-compose/openfga/openfga-seed.json`
+- seeded team memberships from `helm/fred-stack/files/openfga/openfga-seed.json` (shared with the Helm/k3d variant)
 - user tuples based on Keycloak users (`alice`, `bob`, `phil`) using their realm user IDs
 - optional additional tuples with username subjects when `OPENFGA_SEED_INCLUDE_USERNAME_USERS=true`
+
+To change users or teams, edit:
+- `helm/fred-stack/files/openfga/openfga-seed.json`
+
+The docker post-install script also supports `OPENFGA_SEED_FILE=/custom/path.json` if you need a temporary override.
 
 <!-- TODO: Need to check how we can specify hard dependency between Keycloak and depending services (MinIO & Opensearch) -->
 
