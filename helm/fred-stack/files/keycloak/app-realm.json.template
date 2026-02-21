@@ -441,15 +441,6 @@
     "realmRoles" : [ ],
     "clientRoles" : { }
   }, {
-    "id" : "e8da483b-3aa6-47a2-b2ff-caa5591fc96c",
-    "name" : "prism",
-    "description" : "",
-    "path" : "/prism",
-    "subGroups" : [ ],
-    "attributes" : { },
-    "realmRoles" : [ ],
-    "clientRoles" : { }
-  }, {
     "id" : "c455c966-e049-4dbc-958d-f13acf34a9e8",
     "name" : "thanos",
     "description" : "",
@@ -525,7 +516,7 @@
       "opensearch-dashboards" : [ "admin" ]
     },
     "notBefore" : 0,
-    "groups" : [ "/bidgpt", "/kast", "/poletchng", "/prism", "/thanos" ]
+    "groups" : [ "/bidgpt", "/kast", "/poletchng", "/thanos" ]
   }, {
     "id" : "8d343657-8f63-4a7b-9d7f-83a2e3459f94",
     "username" : "bob",
@@ -553,7 +544,7 @@
       "opensearch-dashboards" : [ "user" ]
     },
     "notBefore" : 0,
-    "groups" : [ "/bidgpt", "/kast", "/prism" ]
+    "groups" : [ "/bidgpt", "/kast" ]
   }, {
     "id" : "7d271479-cdad-4140-bf5c-6106db5387cf",
     "username" : "phil",
@@ -581,7 +572,7 @@
       "opensearch-dashboards" : [ "user" ]
     },
     "notBefore" : 0,
-    "groups" : [ "/bidgpt", "/prism", "/thanos" ]
+    "groups" : [ "/bidgpt", "/thanos" ]
   }, {
     "id" : "230201d0-2032-4bc8-a6b7-2b39a34032ac",
     "username" : "service-account-agentic",
