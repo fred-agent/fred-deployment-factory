@@ -1,0 +1,6 @@
+apiVersion: v2
+name: fred-stack
+description: Full local FRED dependency stack for k3d (Keycloak, MinIO, OpenSearch, OpenFGA, Temporal, PostgreSQL)
+type: application
+version: 0.1.0
+appVersion: "1.0.0"

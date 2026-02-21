@@ -1,0 +1,193 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: minio-post-install
+  labels:
+    {{- include "fred-stack.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-weight: "10"
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        {{- include "fred-stack.selectorLabels" . | nindent 8 }}
+    spec:
+      enableServiceLinks: false
+      restartPolicy: OnFailure
+      containers:
+        - name: minio-post-install
+          image: {{ .Values.images.minio }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          envFrom:
+            - secretRef:
+                name: fred-secrets
+          command:
+            - /bin/bash
+            - -ec
+            - |
+              until mc alias set minio http://minio:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD"; do sleep 2; done
+
+              mc mb --ignore-existing minio/app-content
+              mc mb --ignore-existing minio/app-feedback
+              mc mb --ignore-existing minio/app-chat-profile
+
+              mc admin policy create minio app-minio-ro-policy /opt/minio/ro-policy.json || true
+              mc admin user add minio "$MINIO_READONLY_USER" "$MINIO_READONLY_PASSWORD" || true
+              mc admin policy attach minio app-minio-ro-policy --user "$MINIO_READONLY_USER" || true
+
+              mc admin policy create minio app-minio-rw-policy /opt/minio/rw-policy.json || true
+              mc admin user add minio "$MINIO_READWRITE_USER" "$MINIO_READWRITE_PASSWORD" || true
+              mc admin policy attach minio app-minio-rw-policy --user "$MINIO_READWRITE_USER" || true
+          volumeMounts:
+            - name: minio-config
+              mountPath: /opt/minio
+      volumes:
+        - name: minio-config
+          configMap:
+            name: fred-minio-config
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: opensearch-post-install
+  labels:
+    {{- include "fred-stack.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-weight: "20"
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        {{- include "fred-stack.selectorLabels" . | nindent 8 }}
+    spec:
+      enableServiceLinks: false
+      restartPolicy: OnFailure
+      containers:
+        - name: opensearch-post-install
+          image: {{ .Values.images.toolbox }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          env:
+            - name: OPENSEARCH_ADMIN
+              valueFrom:
+                secretKeyRef:
+                  name: fred-secrets
+                  key: OPENSEARCH_ADMIN
+            - name: OPENSEARCH_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: fred-secrets
+                  key: OPENSEARCH_ADMIN_PASSWORD
+          command:
+            - /bin/sh
+            - -ec
+            - |
+              until curl -k -s -u "$OPENSEARCH_ADMIN:$OPENSEARCH_ADMIN_PASSWORD" https://opensearch:9200/_cluster/health >/dev/null; do sleep 5; done
+              for idx in metadata-index vector-index active-sessions-index chat-interactions-index feedback-index; do
+                if curl -k -s -u "$OPENSEARCH_ADMIN:$OPENSEARCH_ADMIN_PASSWORD" -f "https://opensearch:9200/$idx" >/dev/null; then
+                  echo "index '$idx' already exists"
+                else
+                  curl -k -s -u "$OPENSEARCH_ADMIN:$OPENSEARCH_ADMIN_PASSWORD" -X PUT "https://opensearch:9200/$idx" -H "Content-Type: application/json" -d @/opt/opensearch/mapping.json >/dev/null
+                  echo "index '$idx' created"
+                fi
+              done
+          volumeMounts:
+            - name: opensearch-config
+              mountPath: /opt/opensearch
+      volumes:
+        - name: opensearch-config
+          configMap:
+            name: fred-opensearch-config
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: openfga-post-install
+  labels:
+    {{- include "fred-stack.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-weight: "30"
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        {{- include "fred-stack.selectorLabels" . | nindent 8 }}
+    spec:
+      enableServiceLinks: false
+      restartPolicy: OnFailure
+      containers:
+        - name: openfga-post-install
+          image: {{ .Values.images.toolbox }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          envFrom:
+            - secretRef:
+                name: fred-secrets
+          env:
+            - name: OPENFGA_URL
+              value: http://openfga:9080
+            - name: KEYCLOAK_SERVER_URL
+              value: http://keycloak:8080
+            - name: OPENFGA_MODEL_FILE
+              value: /opt/openfga/openfga-model.json
+            - name: OPENFGA_SEED_FILE
+              value: /opt/openfga/openfga-seed.json
+          command:
+            - /bin/sh
+            - -ec
+            - |
+              /scripts/openfga-post-install.sh
+          volumeMounts:
+            - name: scripts
+              mountPath: /scripts
+            - name: openfga-config
+              mountPath: /opt/openfga
+      volumes:
+        - name: scripts
+          configMap:
+            name: fred-scripts
+            defaultMode: 0755
+        - name: openfga-config
+          configMap:
+            name: fred-openfga-config
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: temporal-post-install
+  labels:
+    {{- include "fred-stack.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-weight: "40"
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        {{- include "fred-stack.selectorLabels" . | nindent 8 }}
+    spec:
+      enableServiceLinks: false
+      restartPolicy: OnFailure
+      containers:
+        - name: temporal-post-install
+          image: {{ .Values.images.temporalAdminTools }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          env:
+            - name: TEMPORAL_CLI_ADDRESS
+              value: temporal:7233
+          command:
+            - /bin/sh
+            - -ec
+            - |
+              until tctl --address "$TEMPORAL_CLI_ADDRESS" cluster health; do sleep 2; done
+              tctl --address "$TEMPORAL_CLI_ADDRESS" --ns default namespace describe >/dev/null 2>&1 || \
+                tctl --address "$TEMPORAL_CLI_ADDRESS" --ns default namespace register

@@ -1,0 +1,172 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: opensearch
+  labels:
+    {{- include "fred-stack.labels" . | nindent 4 }}
+spec:
+  type: {{ include "fred-stack.serviceType" . }}
+  ports:
+    - name: https
+      port: 9200
+      targetPort: 9200
+      {{- if eq (include "fred-stack.serviceType" .) "NodePort" }}
+      nodePort: {{ .Values.service.nodePorts.opensearch }}
+      {{- end }}
+  selector:
+    app.kubernetes.io/component: opensearch
+    {{- include "fred-stack.selectorLabels" . | nindent 4 }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: opensearch
+  labels:
+    {{- include "fred-stack.labels" . | nindent 4 }}
+    app.kubernetes.io/component: opensearch
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: opensearch
+      {{- include "fred-stack.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: opensearch
+        {{- include "fred-stack.selectorLabels" . | nindent 8 }}
+    spec:
+      enableServiceLinks: false
+      initContainers:
+        - name: sysctl
+          image: {{ .Values.images.alpine }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          command: ["/bin/sh", "-ec", "sysctl -w vm.max_map_count=262144 || true"]
+          securityContext:
+            privileged: true
+      containers:
+        - name: opensearch
+          image: {{ .Values.images.opensearch }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          args:
+            - -Ediscovery.type=single-node
+          env:
+            - name: OPENSEARCH_JAVA_OPTS
+              value: -Xms512m -Xmx512m
+            - name: DISABLE_INSTALL_DEMO_CONFIG
+              value: "false"
+            - name: DISABLE_SECURITY_PLUGIN
+              value: "false"
+            - name: OPENSEARCH_INITIAL_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: fred-secrets
+                  key: OPENSEARCH_ADMIN_PASSWORD
+          ports:
+            - name: https
+              containerPort: 9200
+          readinessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -ec
+                - curl --insecure -s https://localhost:9200/_cluster/health >/dev/null
+            initialDelaySeconds: 30
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 20
+          livenessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -ec
+                - curl --insecure -s https://localhost:9200/_cluster/health >/dev/null
+            initialDelaySeconds: 60
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 10
+          volumeMounts:
+            - name: opensearch-data
+              mountPath: /usr/share/opensearch/data
+      volumes:
+        - name: opensearch-data
+          persistentVolumeClaim:
+            claimName: opensearch-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: opensearch-dashboards
+  labels:
+    {{- include "fred-stack.labels" . | nindent 4 }}
+spec:
+  type: {{ include "fred-stack.serviceType" . }}
+  ports:
+    - name: http
+      port: 5601
+      targetPort: 5601
+      {{- if eq (include "fred-stack.serviceType" .) "NodePort" }}
+      nodePort: {{ .Values.service.nodePorts.opensearchDashboards }}
+      {{- end }}
+  selector:
+    app.kubernetes.io/component: opensearch-dashboards
+    {{- include "fred-stack.selectorLabels" . | nindent 4 }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: opensearch-dashboards
+  labels:
+    {{- include "fred-stack.labels" . | nindent 4 }}
+    app.kubernetes.io/component: opensearch-dashboards
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: opensearch-dashboards
+      {{- include "fred-stack.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: opensearch-dashboards
+        {{- include "fred-stack.selectorLabels" . | nindent 8 }}
+    spec:
+      enableServiceLinks: false
+      containers:
+        - name: opensearch-dashboards
+          image: {{ .Values.images.opensearchDashboards }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          env:
+            - name: OPENSEARCH_HOSTS
+              value: '["https://opensearch:9200"]'
+            - name: OPENSEARCH_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: fred-secrets
+                  key: OPENSEARCH_ADMIN
+            - name: OPENSEARCH_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: fred-secrets
+                  key: OPENSEARCH_ADMIN_PASSWORD
+            - name: OPENSEARCH_SSL_VERIFICATIONMODE
+              value: none
+          ports:
+            - name: http
+              containerPort: 5601
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 5601
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 12
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 5601
+            initialDelaySeconds: 40
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 6

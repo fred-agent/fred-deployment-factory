@@ -3,10 +3,7 @@ set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 COMPOSE_DIR="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
-REPO_ROOT="$(cd -- "${SCRIPT_DIR}/../.." && pwd)"
 ENV_FILE="${COMPOSE_DIR}/.env"
-DEFAULT_SHARED_OPENFGA_SEED_FILE="${REPO_ROOT}/helm/fred-stack/files/openfga/openfga-seed.json"
-DEFAULT_LEGACY_OPENFGA_SEED_FILE="${SCRIPT_DIR}/openfga-seed.json"
 
 log() {
   printf '[openfga-post-install] %s\n' "$*"
@@ -56,6 +53,24 @@ wait_for_openfga() {
     status="$(curl -sS -o /dev/null -w '%{http_code}' \
       -H "Authorization: Bearer ${OPENFGA_API_TOKEN}" \
       "${OPENFGA_URL}/stores" || true)"
+    if [[ "$status" == "200" ]]; then
+      return 0
+    fi
+    sleep 2
+    ((i++))
+  done
+
+  return 1
+}
+
+wait_for_keycloak() {
+  local attempts="${1:-90}"
+  local i=1
+  local status
+
+  while (( i <= attempts )); do
+    status="$(curl -sS -o /dev/null -w '%{http_code}' \
+      "${KEYCLOAK_SERVER_URL}/realms/master/.well-known/openid-configuration" || true)"
     if [[ "$status" == "200" ]]; then
       return 0
     fi
@@ -277,13 +292,7 @@ OPENFGA_API_TOKEN="${OPENFGA_API_TOKEN:-Azerty123_}"
 OPENFGA_STORE_NAME="${OPENFGA_STORE_NAME:-$(read_env_file_var OPENFGA_STORE_NAME)}"
 OPENFGA_STORE_NAME="${OPENFGA_STORE_NAME:-fred}"
 OPENFGA_MODEL_FILE="${OPENFGA_MODEL_FILE:-${SCRIPT_DIR}/openfga-model.json}"
-if [[ -z "${OPENFGA_SEED_FILE:-}" ]]; then
-  if [[ -f "$DEFAULT_SHARED_OPENFGA_SEED_FILE" ]]; then
-    OPENFGA_SEED_FILE="$DEFAULT_SHARED_OPENFGA_SEED_FILE"
-  else
-    OPENFGA_SEED_FILE="$DEFAULT_LEGACY_OPENFGA_SEED_FILE"
-  fi
-fi
+OPENFGA_SEED_FILE="${OPENFGA_SEED_FILE:-${SCRIPT_DIR}/openfga-seed.json}"
 OPENFGA_SEED_INCLUDE_USERNAME_USERS="${OPENFGA_SEED_INCLUDE_USERNAME_USERS:-$(read_env_file_var OPENFGA_SEED_INCLUDE_USERNAME_USERS)}"
 OPENFGA_SEED_INCLUDE_USERNAME_USERS="${OPENFGA_SEED_INCLUDE_USERNAME_USERS:-true}"
 
@@ -307,8 +316,6 @@ KC_BOOTSTRAP_ADMIN_PASSWORD="${KC_BOOTSTRAP_ADMIN_PASSWORD:-Azerty123_}"
 jq -e '.teams | type == "array"' "$OPENFGA_SEED_FILE" >/dev/null || die "invalid seed file format: .teams must be an array"
 jq -e '.users | type == "array"' "$OPENFGA_SEED_FILE" >/dev/null || die "invalid seed file format: .users must be an array"
 
-log "using OpenFGA seed file '${OPENFGA_SEED_FILE}'"
-
 CHANGED=0
 ADDED_TUPLES=0
 SKIPPED_TUPLES=0
@@ -318,6 +325,9 @@ declare -A KEYCLOAK_USER_IDS=()
 
 log "waiting for OpenFGA API at '${OPENFGA_URL}'"
 wait_for_openfga || die "OpenFGA API is not reachable at ${OPENFGA_URL}"
+
+log "waiting for Keycloak API at '${KEYCLOAK_SERVER_URL}'"
+wait_for_keycloak || die "Keycloak API is not reachable at ${KEYCLOAK_SERVER_URL}"
 
 STORE_ID="$(resolve_store_id)"
 log "using OpenFGA store '${OPENFGA_STORE_NAME}' (${STORE_ID})"

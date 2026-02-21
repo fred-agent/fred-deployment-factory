@@ -1,0 +1,107 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: openfga
+  labels:
+    {{- include "fred-stack.labels" . | nindent 4 }}
+spec:
+  type: {{ include "fred-stack.serviceType" . }}
+  ports:
+    - name: http
+      port: 9080
+      targetPort: 9080
+      {{- if eq (include "fred-stack.serviceType" .) "NodePort" }}
+      nodePort: {{ .Values.service.nodePorts.openfgaHttp }}
+      {{- end }}
+    - name: grpc
+      port: 9081
+      targetPort: 9081
+      {{- if eq (include "fred-stack.serviceType" .) "NodePort" }}
+      nodePort: {{ .Values.service.nodePorts.openfgaGrpc }}
+      {{- end }}
+    - name: playground
+      port: 3000
+      targetPort: 3000
+      {{- if eq (include "fred-stack.serviceType" .) "NodePort" }}
+      nodePort: {{ .Values.service.nodePorts.openfgaPlayground }}
+      {{- end }}
+  selector:
+    app.kubernetes.io/component: openfga
+    {{- include "fred-stack.selectorLabels" . | nindent 4 }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: openfga
+  labels:
+    {{- include "fred-stack.labels" . | nindent 4 }}
+    app.kubernetes.io/component: openfga
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: openfga
+      {{- include "fred-stack.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: openfga
+        {{- include "fred-stack.selectorLabels" . | nindent 8 }}
+    spec:
+      enableServiceLinks: false
+      initContainers:
+        - name: migrate
+          image: {{ .Values.images.openfga }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          args: ["migrate"]
+          env:
+            - name: OPENFGA_DATASTORE_ENGINE
+              value: postgres
+            - name: OPENFGA_DATASTORE_URI
+              value: postgres://{{ .Values.auth.postgresOpenfgaUser }}:{{ .Values.auth.postgresOpenfgaPassword }}@postgres:5432/{{ .Values.auth.postgresOpenfgaDb }}?sslmode=disable
+      containers:
+        - name: openfga
+          image: {{ .Values.images.openfga }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          args: ["run"]
+          env:
+            - name: OPENFGA_DATASTORE_ENGINE
+              value: postgres
+            - name: OPENFGA_DATASTORE_URI
+              value: postgres://{{ .Values.auth.postgresOpenfgaUser }}:{{ .Values.auth.postgresOpenfgaPassword }}@postgres:5432/{{ .Values.auth.postgresOpenfgaDb }}?sslmode=disable
+            - name: OPENFGA_LOG_FORMAT
+              value: json
+            - name: OPENFGA_HTTP_ADDR
+              value: 0.0.0.0:9080
+            - name: OPENFGA_GRPC_ADDR
+              value: 0.0.0.0:9081
+            - name: OPENFGA_PLAYGROUND_ENABLED
+              value: "true"
+            - name: OPENFGA_PLAYGROUND_PORT
+              value: "3000"
+            - name: OPENFGA_API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: fred-secrets
+                  key: OPENFGA_API_TOKEN
+          ports:
+            - name: http
+              containerPort: 9080
+            - name: grpc
+              containerPort: 9081
+            - name: playground
+              containerPort: 3000
+          readinessProbe:
+            tcpSocket:
+              port: 9080
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 12
+          livenessProbe:
+            tcpSocket:
+              port: 9080
+            initialDelaySeconds: 20
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 6

@@ -1,0 +1,45 @@
+# =============================================================================
+# CiliumNetworkPolicy — Air-gap simulation
+# =============================================================================
+# Blocks all egress from the fred namespace to the internet EXCEPT:
+#   - DNS (kube-dns)
+#   - Cluster-internal traffic (pod-to-pod, services)
+#   - OpenAI API (api.openai.com:443)
+#
+# Apply:  kubectl apply -f helm/fred-stack/policies/cilium-airgap-policy.yaml
+# Remove: kubectl delete -f helm/fred-stack/policies/cilium-airgap-policy.yaml
+# =============================================================================
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: airgap-egress
+  namespace: fred
+spec:
+  endpointSelector: {}
+  egress:
+    # ✅ Allow DNS resolution via Cilium DNS proxy (required for toFQDNs)
+    - toEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+          rules:
+            dns:
+              - matchPattern: "*"
+
+    # ✅ Allow all cluster-internal traffic
+    - toEntities:
+        - cluster
+
+    # ✅ Allow OpenAI API only
+    - toFQDNs:
+        - matchName: "api.openai.com"
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP

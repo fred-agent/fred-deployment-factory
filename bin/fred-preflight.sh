@@ -37,16 +37,16 @@ OPENFGA_EXPECT_USERNAME_SUBJECTS="${OPENFGA_EXPECT_USERNAME_SUBJECTS:-${OPENFGA_
 
 REQUIRED_CLIENTS=(app agentic knowledge-flow)
 REQUIRED_USERS=(alice bob phil)
-REQUIRED_GROUPS=(/bidgpt /kast /poletchng /prism /thanos)
+REQUIRED_GROUPS=(/bidgpt /kast /poletchng /thanos)
 REQUIRED_APP_CLIENT_ROLES=(admin editor viewer)
 EXPECTED_SERVICE_APP_ROLE="service_agent"
 EXPECTED_GROUPS_SCOPE_NAME="groups-scope"
 EXPECTED_GROUPS_MAPPER_NAME="groups"
 
 declare -A EXPECTED_TEAMS=(
-  [alice]="bidgpt kast poletchng prism thanos"
-  [bob]="bidgpt kast prism"
-  [phil]="bidgpt prism thanos"
+  [alice]="bidgpt kast poletchng thanos"
+  [bob]="bidgpt kast"
+  [phil]="bidgpt thanos"
 )
 
 EXPECTED_AGENTIC_RM_ROLES="query-groups query-users view-users"

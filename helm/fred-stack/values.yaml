@@ -1,0 +1,91 @@
+nameOverride: ""
+fullnameOverride: ""
+
+imagePullPolicy: IfNotPresent
+
+host:
+  fqdn: localhost
+
+auth:
+  postgresAdminUser: admin
+  postgresAdminPassword: Azerty123_
+
+  postgresKeycloakUser: keycloak_db_user
+  postgresKeycloakPassword: Azerty123_
+  postgresKeycloakDb: keycloak
+
+  postgresFredUser: fred
+  postgresFredPassword: Azerty123_
+  postgresFredDb: fred
+
+  postgresTabularUser: tabular
+  postgresTabularPassword: Azerty123_
+  postgresTabularDb: data
+
+  postgresOpenfgaUser: openfga
+  postgresOpenfgaPassword: Azerty123_
+  postgresOpenfgaDb: openfga
+
+  postgresTemporalUser: temporal
+  postgresTemporalPassword: Azerty123_
+  postgresTemporalDb: temporal
+  postgresTemporalVisibilityDb: temporal_visibility
+
+  keycloakAdminUser: admin
+  keycloakAdminPassword: Azerty123_
+  keycloakAgenticClientSecret: Azerty123_
+  keycloakKnowledgeFlowClientSecret: Azerty123_
+  keycloakKfEnableManageUsers: "true"
+  keycloakForceRelogin: auto
+
+  minioRootUser: admin
+  minioRootPassword: Azerty123_
+  minioReadonlyUser: app_ro
+  minioReadonlyPassword: Azerty123_
+  minioReadwriteUser: app_rw
+  minioReadwritePassword: Azerty123_
+
+  opensearchAdminUser: admin
+  opensearchAdminPassword: Azerty123_
+
+  openfgaApiToken: Azerty123_
+  openfgaStoreName: fred
+  openfgaSeedIncludeUsernameUsers: "true"
+
+temporal:
+  uiPort: 8233
+
+service:
+  type: NodePort
+  nodePorts:
+    postgres: 30432
+    keycloak: 30080
+    minioApi: 30900
+    minioConsole: 30901
+    opensearch: 30920
+    opensearchDashboards: 30561
+    openfgaHttp: 30908
+    openfgaGrpc: 30981
+    openfgaPlayground: 30000
+    temporalFrontend: 30723
+    temporalUi: 30233
+
+persistence:
+  postgresSize: 10Gi
+  minioSize: 10Gi
+  opensearchSize: 10Gi
+
+images:
+  postgres: pgvector/pgvector:pg17
+  postgresClient: mirror.gcr.io/postgres:15.12-alpine3.20
+  keycloak: mirror.gcr.io/keycloak/keycloak:26.3.0
+  toolbox: nicolaka/netshoot:v0.13
+  minio: minio/minio:RELEASE.2025-02-07T23-21-09Z
+  minioClient: minio/mc:RELEASE.2025-02-07T23-21-09Z
+  alpine: mirror.gcr.io/alpine:3.21.3
+  opensearch: mirror.gcr.io/opensearchproject/opensearch:2.19.3
+  opensearchDashboards: mirror.gcr.io/opensearchproject/opensearch-dashboards:2.19.3
+  openfga: openfga/openfga:v1.11.0
+  temporalServer: mirror.gcr.io/temporalio/server:1.28.0
+  temporalAdminTools: mirror.gcr.io/temporalio/admin-tools:1.28
+  temporalUi: mirror.gcr.io/temporalio/ui:2.38.3
