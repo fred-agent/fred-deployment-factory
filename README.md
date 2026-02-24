@@ -22,19 +22,23 @@ The goal of this `fred-deployment-factory` repository is to provide a fuller loc
 - `bash`
 
 ## Quick start
-1. Start everything:
+1. Optional: customize demo users / roles / teams for Docker demos in:
+
+- `config/configuration.yaml`
+
+2. Start everything:
 
 ```bash
 make docker-up
 ```
 
-2. Optional (for browser SSO callbacks to Keycloak on local machine):
+3. Optional (for browser SSO callbacks to Keycloak on local machine):
 
 ```bash
 grep -q '127.0.0.1.*app-keycloak' /etc/hosts || echo "127.0.0.1 app-keycloak" | sudo tee -a /etc/hosts
 ```
 
-3. Full cleanup (containers, volumes, network, docker prune):
+4. Full cleanup (containers, volumes, network, docker prune):
 
 ```bash
 make docker-wipe
@@ -45,16 +49,29 @@ make docker-wipe
 
 If you need custom values, edit `docker-compose/.env.template` before running `make docker-up`.
 
-### OpenFGA users/teams (single source of truth)
-Users and teams seeded into OpenFGA are defined once in:
+### Docker demos: single config file (users, roles, teams)
+For the Docker Compose workflow (`make docker-up`), the single source of truth for demo identities is:
 
-- `helm/fred-stack/files/openfga/openfga-seed.json`
+- `config/configuration.yaml`
 
-Both variants use this same file:
-- `make k3d-up`: Helm mounts it directly from the chart.
-- `make docker-up`: `docker-compose/openfga/openfga-post-install.sh` reads that same file by default.
+This file drives:
+- Keycloak demo users
+- Keycloak groups (teams)
+- Keycloak app client roles assigned to users
+- Keycloak group memberships
+- OpenFGA team membership tuples
+- preflight expectations (`make preflight-check`)
 
-So if you want to add/remove users or teams, edit only `helm/fred-stack/files/openfga/openfga-seed.json`, then rerun `make docker-up` or `make k3d-up`.
+If you want to prepare a demo/test scenario, edit only `config/configuration.yaml`, then run:
+
+```bash
+make docker-wipe
+make docker-up
+```
+
+Notes:
+- For the Docker workflow, you do not need to edit `helm/fred-stack/files/openfga/openfga-seed.json`.
+- The k3d/Helm workflow (`make k3d-up`) is not yet migrated to `config/configuration.yaml` and still uses the Helm chart files.
 
 ## k3d + Helm stack
 This repository also includes a Kubernetes deployment path using:

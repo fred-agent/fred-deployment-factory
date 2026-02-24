@@ -8,15 +8,19 @@ set -euo pipefail
 # It checks:
 # 1) Keycloak realm/clients/users/groups
 # 2) App roles, groups scope mapper, service-account rights
-# 3) OpenFGA store presence + team memberships for alice/bob/phil
+# 3) OpenFGA store presence + team memberships from demo identity config
 # 4) Postgres agent IDs + owner coverage for Alice (read-only)
 # -----------------------------------------------------------------------------
+
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 
 # Configuration (override with env vars if needed)
 KC="${KC:-http://localhost:8080}"
 FGA="${FGA:-http://localhost:9080}"
 REALM="${REALM:-app}"
 OPENFGA_STORE_NAME="${OPENFGA_STORE_NAME:-fred}"
+DEMO_IDENTITY_CONFIG_FILE="${DEMO_IDENTITY_CONFIG_FILE:-${REPO_ROOT}/config/configuration.yaml}"
 
 KC_ADMIN_USER="${KC_ADMIN_USER:-admin}"
 KC_ADMIN_PASS="${KC_ADMIN_PASS:-Azerty123_}"
@@ -36,18 +40,18 @@ TEMPORAL_UI_URL="${TEMPORAL_UI_URL:-http://${TEMPORAL_UI_HOST}:${TEMPORAL_UI_POR
 OPENFGA_EXPECT_USERNAME_SUBJECTS="${OPENFGA_EXPECT_USERNAME_SUBJECTS:-${OPENFGA_SEED_INCLUDE_USERNAME_USERS:-true}}"
 
 REQUIRED_CLIENTS=(app agentic knowledge-flow)
-REQUIRED_USERS=(alice bob phil)
-REQUIRED_GROUPS=(/bidgpt /kast /poletchng /thanos)
 REQUIRED_APP_CLIENT_ROLES=(admin editor viewer)
 EXPECTED_SERVICE_APP_ROLE="service_agent"
 EXPECTED_GROUPS_SCOPE_NAME="groups-scope"
 EXPECTED_GROUPS_MAPPER_NAME="groups"
 
-declare -A EXPECTED_TEAMS=(
-  [alice]="bidgpt kast poletchng thanos"
-  [bob]="bidgpt kast"
-  [phil]="bidgpt thanos"
-)
+REQUIRED_USERS=()
+REQUIRED_GROUPS=()
+
+declare -A EXPECTED_TEAMS=()
+declare -A EXPECTED_MANAGER_TEAMS=()
+declare -A EXPECTED_OWNER_TEAMS=()
+declare -A EXPECTED_APP_ROLES=()
 
 EXPECTED_AGENTIC_RM_ROLES="query-groups query-users view-users"
 EXPECTED_AGENTIC_ACCOUNT_ROLES="view-groups"
@@ -179,6 +183,110 @@ contains_line() {
   grep -Fxq "$needle" <<<"$haystack"
 }
 
+fga_team_relation_lines() {
+  local subject="$1"
+  local relation="$2"
+  jq -r --arg subj "$subject" --arg rel "$relation" \
+    '.tuples[].key | select(.user==$subj and .relation==$rel and (.object|startswith("team:"))) | .object | sub("^team:";"")' <<<"$ALL_TUPLES" \
+    | sort -u
+}
+
+load_demo_identity_expectations() {
+  local duplicate_teams
+  local duplicate_users
+  local invalid_refs
+
+  [[ -f "$DEMO_IDENTITY_CONFIG_FILE" ]] || die "Demo identity config file not found: ${DEMO_IDENTITY_CONFIG_FILE}"
+
+  jq -e '
+    (.teams | type == "array") and
+    (.users | type == "array") and
+    all(.teams[]?; type == "string" and length > 0) and
+    all(.users[]?;
+      (.username | type == "string" and length > 0) and
+      ((.teams // []) | type == "array") and
+      all((.teams // [])[]?; type == "string" and length > 0) and
+      ((.team_roles // {}) | type == "object") and
+      ((.team_roles.member // []) | type == "array") and
+      ((.team_roles.manager // []) | type == "array") and
+      ((.team_roles.owner // []) | type == "array") and
+      all((.team_roles.member // [])[]?; type == "string" and length > 0) and
+      all((.team_roles.manager // [])[]?; type == "string" and length > 0) and
+      all((.team_roles.owner // [])[]?; type == "string" and length > 0) and
+      ((.app_roles // []) | type == "array") and
+      all((.app_roles // [])[]?; type == "string" and length > 0)
+    )
+  ' "$DEMO_IDENTITY_CONFIG_FILE" >/dev/null \
+    || die "Invalid demo identity config format in ${DEMO_IDENTITY_CONFIG_FILE}"
+
+  duplicate_teams="$(jq -r '[.teams[]?] | group_by(.)[] | select(length > 1) | .[0]' "$DEMO_IDENTITY_CONFIG_FILE")"
+  [[ -z "$duplicate_teams" ]] || die "Duplicate teams in demo identity config: $(sorted_lines_to_csv "$duplicate_teams")"
+
+  duplicate_users="$(jq -r '[.users[]?.username] | group_by(.)[] | select(length > 1) | .[0]' "$DEMO_IDENTITY_CONFIG_FILE")"
+  [[ -z "$duplicate_users" ]] || die "Duplicate usernames in demo identity config: $(sorted_lines_to_csv "$duplicate_users")"
+
+  invalid_refs="$(
+    jq -r '
+      (.teams // []) as $teams
+      | .users[]?
+      | .username as $u
+      | (
+          (.teams // [])[],
+          (.team_roles.member // [])[],
+          (.team_roles.manager // [])[],
+          (.team_roles.owner // [])[]
+        )
+      | select(($teams | index(.)) == null)
+      | [$u, .] | @tsv
+    ' "$DEMO_IDENTITY_CONFIG_FILE"
+  )"
+  if [[ -n "$invalid_refs" ]]; then
+    while IFS=$'\t' read -r u team; do
+      [[ -n "$u" && -n "$team" ]] || continue
+      die "Demo identity config references unknown team '${team}' for user '${u}'"
+    done <<<"$invalid_refs"
+  fi
+
+  mapfile -t REQUIRED_USERS < <(jq -r '.users[]?.username // empty' "$DEMO_IDENTITY_CONFIG_FILE")
+  mapfile -t REQUIRED_GROUPS < <(jq -r '.teams[]? // empty' "$DEMO_IDENTITY_CONFIG_FILE" | sed 's#^#/#')
+
+  ((${#REQUIRED_USERS[@]} > 0)) || die "Demo identity config must define at least one user"
+
+  EXPECTED_TEAMS=()
+  EXPECTED_MANAGER_TEAMS=()
+  EXPECTED_OWNER_TEAMS=()
+  EXPECTED_APP_ROLES=()
+  while IFS= read -r user_json; do
+    [[ -n "$user_json" ]] || continue
+    local username team_words manager_words owner_words role_words
+    username="$(jq -r '.username' <<<"$user_json")"
+    team_words="$(
+      jq -r '
+        [
+          (.teams // [])[],
+          (.team_roles.member // [])[],
+          (.team_roles.manager // [])[],
+          (.team_roles.owner // [])[]
+        ] | unique | join(" ")
+      ' <<<"$user_json"
+    )"
+    manager_words="$(
+      jq -r '
+        [
+          (.team_roles.manager // [])[],
+          (.team_roles.owner // [])[]
+        ] | unique | join(" ")
+      ' <<<"$user_json"
+    )"
+    owner_words="$(jq -r '(.team_roles.owner // []) | unique | join(" ")' <<<"$user_json")"
+    role_words="$(jq -r '(.app_roles // []) | join(" ")' <<<"$user_json")"
+    EXPECTED_TEAMS["$username"]="$team_words"
+    EXPECTED_MANAGER_TEAMS["$username"]="$manager_words"
+    EXPECTED_OWNER_TEAMS["$username"]="$owner_words"
+    EXPECTED_APP_ROLES["$username"]="$role_words"
+  done < <(jq -c '.users[]?' "$DEMO_IDENTITY_CONFIG_FILE")
+}
+
 keycloak_client_uuid() {
   local client_id="$1"
   curl -fsS -H "Authorization: Bearer ${ADM}" \
@@ -220,10 +328,13 @@ require_cmd curl
 require_cmd jq
 require_cmd psql
 ok "curl/jq/psql available"
+load_demo_identity_expectations
+ok "demo identity config loaded"
 
 printf "\n%s\n" "${BOLD}Context:${RESET}"
 info "Keycloak: ${KC} (realm=${REALM})"
 info "OpenFGA: ${FGA} (store=${OPENFGA_STORE_NAME})"
+info "Demo identity config: ${DEMO_IDENTITY_CONFIG_FILE}"
 info "Postgres: host=${PGHOST} db=${PGDATABASE} user=${PGUSER}"
 info "Temporal UI: ${TEMPORAL_UI_URL}"
 info "Mode: READ-ONLY (no write calls are executed)"
@@ -385,10 +496,32 @@ if [[ -n "${ADM}" ]]; then
 
       user_app_roles_direct="$(keycloak_user_client_roles "$uid" "$APP_CLIENT_UUID" 2>/dev/null || true)"
       user_app_roles_effective="$(keycloak_user_client_roles_composite "$uid" "$APP_CLIENT_UUID" 2>/dev/null || true)"
+      expected_user_roles_lines="$(words_to_sorted_lines "${EXPECTED_APP_ROLES[$u]:-}")"
       granted_required_roles="$(intersect_lines "$required_user_permissions_lines" "$user_app_roles_effective")"
 
       info "User '${u}' app roles (direct): $(sorted_lines_to_csv "$user_app_roles_direct")"
       info "User '${u}' app roles (effective): $(sorted_lines_to_csv "$user_app_roles_effective")"
+
+      if [[ -z "$expected_user_roles_lines" ]]; then
+        ((APP_USER_PERMISSION_GAPS+=1))
+        mark_critical "User '${u}' has no expected app roles in demo identity config"
+      else
+        missing_user_direct_roles="$(missing_lines "$expected_user_roles_lines" "$user_app_roles_direct")"
+        extra_user_direct_roles="$(extra_lines "$expected_user_roles_lines" "$user_app_roles_direct")"
+        missing_user_effective_roles="$(missing_lines "$expected_user_roles_lines" "$user_app_roles_effective")"
+
+        if [[ -n "$missing_user_direct_roles" ]]; then
+          ((APP_USER_PERMISSION_GAPS+=1))
+          mark_critical "User '${u}' missing direct app roles from demo identity config: $(sorted_lines_to_csv "$missing_user_direct_roles")"
+        fi
+        if [[ -n "$missing_user_effective_roles" ]]; then
+          ((APP_USER_PERMISSION_GAPS+=1))
+          mark_critical "User '${u}' missing effective app roles from demo identity config: $(sorted_lines_to_csv "$missing_user_effective_roles")"
+        fi
+        if [[ -n "$extra_user_direct_roles" ]]; then
+          mark_warning "User '${u}' has additional direct app roles not in demo identity config: $(sorted_lines_to_csv "$extra_user_direct_roles")"
+        fi
+      fi
 
       if [[ -z "$granted_required_roles" ]]; then
         ((APP_USER_PERMISSION_GAPS+=1))
@@ -602,6 +735,10 @@ fi
 KC_MEMBERSHIP_MISSING=0
 FGA_UUID_MEMBERSHIP_MISSING=0
 FGA_USERNAME_MEMBERSHIP_MISSING=0
+FGA_UUID_MANAGER_MISSING=0
+FGA_USERNAME_MANAGER_MISSING=0
+FGA_UUID_OWNER_MISSING=0
+FGA_USERNAME_OWNER_MISSING=0
 
 step "Starting situation: team membership matrix"
 for u in "${REQUIRED_USERS[@]}"; do
@@ -613,9 +750,13 @@ for u in "${REQUIRED_USERS[@]}"; do
   fi
 
   expected_teams="$(words_to_sorted_lines "${EXPECTED_TEAMS[$u]:-}")"
+  expected_manager_teams="$(words_to_sorted_lines "${EXPECTED_MANAGER_TEAMS[$u]:-}")"
+  expected_owner_teams="$(words_to_sorted_lines "${EXPECTED_OWNER_TEAMS[$u]:-}")"
   expected_groups="$(to_keycloak_group_lines "$expected_teams")"
   info "Keycloak UID: ${uid}"
   info "Expected teams: $(sorted_lines_to_csv "$expected_teams")"
+  info "Expected manager teams: $(sorted_lines_to_csv "$expected_manager_teams")"
+  info "Expected owner teams: $(sorted_lines_to_csv "$expected_owner_teams")"
 
   kc_groups="$(
     curl -fsS -H "Authorization: Bearer ${ADM}" \
@@ -634,19 +775,19 @@ for u in "${REQUIRED_USERS[@]}"; do
   fi
 
   if [[ -n "${ALL_TUPLES}" ]]; then
-    fga_username_teams="$(
-      jq -r --arg subj "user:${u}" \
-        '.tuples[].key | select(.user==$subj and .relation=="member" and (.object|startswith("team:"))) | .object | sub("^team:";"")' <<<"$ALL_TUPLES" \
-        | sort -u
-    )"
-    fga_uuid_teams="$(
-      jq -r --arg subj "user:${uid}" \
-        '.tuples[].key | select(.user==$subj and .relation=="member" and (.object|startswith("team:"))) | .object | sub("^team:";"")' <<<"$ALL_TUPLES" \
-        | sort -u
-    )"
+    fga_username_teams="$(fga_team_relation_lines "user:${u}" member)"
+    fga_uuid_teams="$(fga_team_relation_lines "user:${uid}" member)"
+    fga_username_manager_teams="$(fga_team_relation_lines "user:${u}" manager)"
+    fga_uuid_manager_teams="$(fga_team_relation_lines "user:${uid}" manager)"
+    fga_username_owner_teams="$(fga_team_relation_lines "user:${u}" owner)"
+    fga_uuid_owner_teams="$(fga_team_relation_lines "user:${uid}" owner)"
 
     info "OpenFGA member teams (user:${u}): $(sorted_lines_to_csv "$fga_username_teams")"
     info "OpenFGA member teams (user:${uid}): $(sorted_lines_to_csv "$fga_uuid_teams")"
+    info "OpenFGA manager teams (user:${u}): $(sorted_lines_to_csv "$fga_username_manager_teams")"
+    info "OpenFGA manager teams (user:${uid}): $(sorted_lines_to_csv "$fga_uuid_manager_teams")"
+    info "OpenFGA owner teams (user:${u}): $(sorted_lines_to_csv "$fga_username_owner_teams")"
+    info "OpenFGA owner teams (user:${uid}): $(sorted_lines_to_csv "$fga_uuid_owner_teams")"
 
     missing_fga_uuid="$(missing_lines "$expected_teams" "$fga_uuid_teams")"
     if [[ -n "$missing_fga_uuid" ]]; then
@@ -654,11 +795,35 @@ for u in "${REQUIRED_USERS[@]}"; do
       mark_critical "OpenFGA UUID-subject tuples missing for '${u}': $(sorted_lines_to_csv "$missing_fga_uuid")"
     fi
 
+    missing_fga_uuid_manager="$(missing_lines "$expected_manager_teams" "$fga_uuid_manager_teams")"
+    if [[ -n "$missing_fga_uuid_manager" ]]; then
+      ((FGA_UUID_MANAGER_MISSING+=1))
+      mark_critical "OpenFGA UUID-subject manager tuples missing for '${u}': $(sorted_lines_to_csv "$missing_fga_uuid_manager")"
+    fi
+
+    missing_fga_uuid_owner="$(missing_lines "$expected_owner_teams" "$fga_uuid_owner_teams")"
+    if [[ -n "$missing_fga_uuid_owner" ]]; then
+      ((FGA_UUID_OWNER_MISSING+=1))
+      mark_critical "OpenFGA UUID-subject owner tuples missing for '${u}': $(sorted_lines_to_csv "$missing_fga_uuid_owner")"
+    fi
+
     if [[ "${OPENFGA_EXPECT_USERNAME_SUBJECTS,,}" == "true" ]]; then
       missing_fga_user="$(missing_lines "$expected_teams" "$fga_username_teams")"
       if [[ -n "$missing_fga_user" ]]; then
         ((FGA_USERNAME_MEMBERSHIP_MISSING+=1))
         mark_warning "OpenFGA username-subject tuples missing for '${u}': $(sorted_lines_to_csv "$missing_fga_user")"
+      fi
+
+      missing_fga_user_manager="$(missing_lines "$expected_manager_teams" "$fga_username_manager_teams")"
+      if [[ -n "$missing_fga_user_manager" ]]; then
+        ((FGA_USERNAME_MANAGER_MISSING+=1))
+        mark_warning "OpenFGA username-subject manager tuples missing for '${u}': $(sorted_lines_to_csv "$missing_fga_user_manager")"
+      fi
+
+      missing_fga_user_owner="$(missing_lines "$expected_owner_teams" "$fga_username_owner_teams")"
+      if [[ -n "$missing_fga_user_owner" ]]; then
+        ((FGA_USERNAME_OWNER_MISSING+=1))
+        mark_warning "OpenFGA username-subject owner tuples missing for '${u}': $(sorted_lines_to_csv "$missing_fga_user_owner")"
       fi
     fi
   fi
@@ -753,21 +918,35 @@ fi
 info "Team membership gaps (Keycloak): ${KC_MEMBERSHIP_MISSING}"
 if [[ -n "${ALL_TUPLES}" ]]; then
   info "Team membership gaps (OpenFGA UUID-subject): ${FGA_UUID_MEMBERSHIP_MISSING}"
+  info "Team manager-role gaps (OpenFGA UUID-subject): ${FGA_UUID_MANAGER_MISSING}"
+  info "Team owner-role gaps (OpenFGA UUID-subject): ${FGA_UUID_OWNER_MISSING}"
 elif [[ "${OPENFGA_STATUS}" == "present" ]]; then
   info "Team membership gaps (OpenFGA UUID-subject): not evaluated (tuple read failed)"
+  info "Team manager-role gaps (OpenFGA UUID-subject): not evaluated (tuple read failed)"
+  info "Team owner-role gaps (OpenFGA UUID-subject): not evaluated (tuple read failed)"
 else
   info "Team membership gaps (OpenFGA UUID-subject): not evaluated (OpenFGA unavailable)"
+  info "Team manager-role gaps (OpenFGA UUID-subject): not evaluated (OpenFGA unavailable)"
+  info "Team owner-role gaps (OpenFGA UUID-subject): not evaluated (OpenFGA unavailable)"
 fi
 if [[ "${OPENFGA_EXPECT_USERNAME_SUBJECTS,,}" == "true" ]]; then
   if [[ -n "${ALL_TUPLES}" ]]; then
     info "Team membership gaps (OpenFGA username-subject): ${FGA_USERNAME_MEMBERSHIP_MISSING}"
+    info "Team manager-role gaps (OpenFGA username-subject): ${FGA_USERNAME_MANAGER_MISSING}"
+    info "Team owner-role gaps (OpenFGA username-subject): ${FGA_USERNAME_OWNER_MISSING}"
   elif [[ "${OPENFGA_STATUS}" == "present" ]]; then
     info "Team membership gaps (OpenFGA username-subject): not evaluated (tuple read failed)"
+    info "Team manager-role gaps (OpenFGA username-subject): not evaluated (tuple read failed)"
+    info "Team owner-role gaps (OpenFGA username-subject): not evaluated (tuple read failed)"
   else
     info "Team membership gaps (OpenFGA username-subject): not evaluated (OpenFGA unavailable)"
+    info "Team manager-role gaps (OpenFGA username-subject): not evaluated (OpenFGA unavailable)"
+    info "Team owner-role gaps (OpenFGA username-subject): not evaluated (OpenFGA unavailable)"
   fi
 else
   info "Team membership gaps (OpenFGA username-subject): skipped by config"
+  info "Team manager-role gaps (OpenFGA username-subject): skipped by config"
+  info "Team owner-role gaps (OpenFGA username-subject): skipped by config"
 fi
 info "Temporal UI endpoint: ${TEMPORAL_UI_URL} (HTTP ${TEMPORAL_UI_HTTP_CODE})"
 info "Postgres agents: ${#AGENT_IDS[@]}"

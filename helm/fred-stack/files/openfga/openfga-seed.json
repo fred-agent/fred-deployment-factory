@@ -2,6 +2,7 @@
   "teams": [
     "bidgpt",
     "kast",
+    "la-poste",
     "poletchng",
     "thanos"
   ],
@@ -11,6 +12,7 @@
       "teams": [
         "bidgpt",
         "kast",
+        "la-poste",
         "poletchng",
         "thanos"
       ]
