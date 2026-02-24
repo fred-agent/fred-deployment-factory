@@ -449,6 +449,15 @@
     "attributes" : { },
     "realmRoles" : [ ],
     "clientRoles" : { }
+  }, {
+    "id" : "f3b29a53-bc5d-41f6-9f14-43f434c4fc1a",
+    "name" : "la-poste",
+    "description" : "",
+    "path" : "/la-poste",
+    "subGroups" : [ ],
+    "attributes" : { },
+    "realmRoles" : [ ],
+    "clientRoles" : { }
   } ],
   "defaultRole" : {
     "id" : "06113b48-1d9d-4c9f-8f8f-411f121ae71b",
@@ -516,7 +525,7 @@
       "opensearch-dashboards" : [ "admin" ]
     },
     "notBefore" : 0,
-    "groups" : [ "/bidgpt", "/kast", "/poletchng", "/thanos" ]
+    "groups" : [ "/bidgpt", "/kast", "/la-poste", "/poletchng", "/thanos" ]
   }, {
     "id" : "8d343657-8f63-4a7b-9d7f-83a2e3459f94",
     "username" : "bob",

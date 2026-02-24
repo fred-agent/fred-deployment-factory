@@ -1,0 +1,62 @@
+{
+  "teams": [
+    "la-poste",
+    "thales",
+    "r&d"
+  ],
+  "users": [
+    {
+      "username": "alice",
+      "first_name": "Alice",
+      "last_name": "Watson",
+      "email": "alice@app.com",
+      "password": "Azerty123_",
+      "enabled": true,
+      "app_roles": [
+        "admin"
+      ],
+      "team_roles": {
+        "member": [
+          "r&d"
+        ],
+        "manager": [
+          "thales"
+        ],
+        "owner": [
+          "la-poste"
+        ]
+      }
+    },
+    {
+      "username": "bob",
+      "first_name": "Bob",
+      "last_name": "Rigg",
+      "email": "bob@app.com",
+      "password": "Azerty123_",
+      "enabled": true,
+      "app_roles": [
+        "editor",
+        "viewer"
+      ],
+      "teams": [
+        "la-poste",
+        "thales"
+      ]
+    },
+    {
+      "username": "phil",
+      "first_name": "Phil",
+      "last_name": "Woods",
+      "email": "phil@app.com",
+      "password": "Azerty123_",
+      "enabled": true,
+      "app_roles": [
+        "viewer"
+      ],
+      "teams": [
+        "la-poste",
+        "thales"
+      ]
+    }
+  ]
+}

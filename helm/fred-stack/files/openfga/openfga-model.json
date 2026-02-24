@@ -12,6 +12,9 @@
         },
         "manager": {
           "this": {}
+        },
+        "owner": {
+          "this": {}
         }
       },
       "metadata": {
@@ -24,6 +27,13 @@
             ]
           },
           "manager": {
+            "directly_related_user_types": [
+              {
+                "type": "user"
+              }
+            ]
+          },
+          "owner": {
             "directly_related_user_types": [
               {
                 "type": "user"

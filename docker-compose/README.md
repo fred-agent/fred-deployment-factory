@@ -87,7 +87,8 @@ The Keycloak post-install script is idempotent and enforces:
 - clients `app`, `agentic`, `knowledge-flow`
 - `agentic` and `knowledge-flow` as confidential clients with service accounts enabled
 - service account roles for `agentic` and `knowledge-flow` (`realm-management` + `account:view-groups`, including `manage-users` for Knowledge Flow when `KEYCLOAK_KF_ENABLE_MANAGE_USERS=true`)
-- client roles `app:admin/editor/viewer`
+- client roles `app:admin/editor/viewer/service_agent` (plus any extra roles declared in `config/configuration.yaml`)
+- demo groups, demo users, app-role assignments, and group memberships from `config/configuration.yaml` (reconciled by post-install)
 - client scope `groups-scope` with `oidc-group-membership-mapper` (claim `groups`, full path, access/id/userinfo token claims, multivalued)
 - `groups-scope` attached to default scopes of the `app` client
 - forced user re-login after a Keycloak wipe (`KEYCLOAK_FORCE_RELOGIN=auto` or `true`)
@@ -101,14 +102,14 @@ bash docker-compose/openfga/openfga-post-install.sh
 The OpenFGA post-install script is idempotent and enforces:
 - store `OPENFGA_STORE_NAME` (default: `fred`)
 - authorization model from `docker-compose/openfga/openfga-model.json`
-- seeded team memberships from `helm/fred-stack/files/openfga/openfga-seed.json` (shared with the Helm/k3d variant)
-- user tuples based on Keycloak users (`alice`, `bob`, `phil`) using their realm user IDs
+- seeded team memberships from `config/configuration.yaml`
+- user tuples based on Keycloak users declared in `config/configuration.yaml` using their realm user IDs
 - optional additional tuples with username subjects when `OPENFGA_SEED_INCLUDE_USERNAME_USERS=true`
 
-To change users or teams, edit:
-- `helm/fred-stack/files/openfga/openfga-seed.json`
+To change demo users / roles / teams, edit:
+- `config/configuration.yaml`
 
-The docker post-install script also supports `OPENFGA_SEED_FILE=/custom/path.json` if you need a temporary override.
+The docker post-install scripts also support `DEMO_IDENTITY_CONFIG_FILE=/custom/path.json` if you need a temporary override.
 
 <!-- TODO: Need to check how we can specify hard dependency between Keycloak and depending services (MinIO & Opensearch) -->
 

@@ -5,6 +5,7 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 COMPOSE_DIR="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 REPO_ROOT="$(cd -- "${SCRIPT_DIR}/../.." && pwd)"
 ENV_FILE="${COMPOSE_DIR}/.env"
+DEFAULT_DEMO_IDENTITY_CONFIG_FILE="${REPO_ROOT}/config/configuration.yaml"
 DEFAULT_SHARED_OPENFGA_SEED_FILE="${REPO_ROOT}/helm/fred-stack/files/openfga/openfga-seed.json"
 DEFAULT_LEGACY_OPENFGA_SEED_FILE="${SCRIPT_DIR}/openfga-seed.json"
 
@@ -252,19 +253,44 @@ write_tuple() {
   fga_request POST "/stores/${STORE_ID}/write" "$payload" >/dev/null
 }
 
-ensure_membership_tuple() {
+ensure_team_relation_tuple() {
   local user="$1"
-  local team="$2"
+  local relation="$2"
+  local team="$3"
   local object="team:${team}"
 
-  if tuple_exists "$user" member "$object"; then
+  if tuple_exists "$user" "$relation" "$object"; then
     ((SKIPPED_TUPLES+=1))
     return 0
   fi
 
-  write_tuple "$user" member "$object"
+  write_tuple "$user" "$relation" "$object"
   ((ADDED_TUPLES+=1))
   CHANGED=1
+}
+
+ensure_team_role_closure() {
+  local user="$1"
+  local role="$2"
+  local team="$3"
+
+  case "$role" in
+    member)
+      ensure_team_relation_tuple "$user" member "$team"
+      ;;
+    manager)
+      ensure_team_relation_tuple "$user" manager "$team"
+      ensure_team_relation_tuple "$user" member "$team"
+      ;;
+    owner)
+      ensure_team_relation_tuple "$user" owner "$team"
+      ensure_team_relation_tuple "$user" manager "$team"
+      ensure_team_relation_tuple "$user" member "$team"
+      ;;
+    *)
+      die "unsupported team role '${role}' in demo identity config (supported: member, manager, owner)"
+      ;;
+  esac
 }
 
 require_cmd curl
@@ -277,6 +303,20 @@ OPENFGA_API_TOKEN="${OPENFGA_API_TOKEN:-Azerty123_}"
 OPENFGA_STORE_NAME="${OPENFGA_STORE_NAME:-$(read_env_file_var OPENFGA_STORE_NAME)}"
 OPENFGA_STORE_NAME="${OPENFGA_STORE_NAME:-fred}"
 OPENFGA_MODEL_FILE="${OPENFGA_MODEL_FILE:-${SCRIPT_DIR}/openfga-model.json}"
+if [[ -z "${DEMO_IDENTITY_CONFIG_FILE:-}" ]]; then
+  DEMO_IDENTITY_CONFIG_FILE="$(read_env_file_var DEMO_IDENTITY_CONFIG_FILE)"
+fi
+if [[ -z "${DEMO_IDENTITY_CONFIG_FILE:-}" ]]; then
+  if [[ -f "$DEFAULT_DEMO_IDENTITY_CONFIG_FILE" ]]; then
+    DEMO_IDENTITY_CONFIG_FILE="$DEFAULT_DEMO_IDENTITY_CONFIG_FILE"
+  elif [[ -n "${OPENFGA_SEED_FILE:-}" ]]; then
+    DEMO_IDENTITY_CONFIG_FILE="$OPENFGA_SEED_FILE"
+  elif [[ -f "$DEFAULT_SHARED_OPENFGA_SEED_FILE" ]]; then
+    DEMO_IDENTITY_CONFIG_FILE="$DEFAULT_SHARED_OPENFGA_SEED_FILE"
+  else
+    DEMO_IDENTITY_CONFIG_FILE="$DEFAULT_LEGACY_OPENFGA_SEED_FILE"
+  fi
+fi
 if [[ -z "${OPENFGA_SEED_FILE:-}" ]]; then
   if [[ -f "$DEFAULT_SHARED_OPENFGA_SEED_FILE" ]]; then
     OPENFGA_SEED_FILE="$DEFAULT_SHARED_OPENFGA_SEED_FILE"
@@ -302,12 +342,30 @@ fi
 KC_BOOTSTRAP_ADMIN_PASSWORD="${KC_BOOTSTRAP_ADMIN_PASSWORD:-Azerty123_}"
 
 [[ -f "$OPENFGA_MODEL_FILE" ]] || die "OpenFGA model file not found: ${OPENFGA_MODEL_FILE}"
-[[ -f "$OPENFGA_SEED_FILE" ]] || die "OpenFGA seed file not found: ${OPENFGA_SEED_FILE}"
+[[ -f "$DEMO_IDENTITY_CONFIG_FILE" ]] || die "demo identity config file not found: ${DEMO_IDENTITY_CONFIG_FILE}"
 
-jq -e '.teams | type == "array"' "$OPENFGA_SEED_FILE" >/dev/null || die "invalid seed file format: .teams must be an array"
-jq -e '.users | type == "array"' "$OPENFGA_SEED_FILE" >/dev/null || die "invalid seed file format: .users must be an array"
+jq -e '.teams | type == "array"' "$DEMO_IDENTITY_CONFIG_FILE" >/dev/null || die "invalid demo identity config format: .teams must be an array"
+jq -e '.users | type == "array"' "$DEMO_IDENTITY_CONFIG_FILE" >/dev/null || die "invalid demo identity config format: .users must be an array"
+jq -e '
+  all(.users[]?;
+    (.username|type=="string") and
+    ((.teams // [])|type=="array") and
+    all((.teams // [])[]?; type == "string" and length > 0) and
+    (
+      (.team_roles // {}) | type == "object"
+    ) and
+    (
+      ((.team_roles.member // [])|type=="array") and
+      ((.team_roles.manager // [])|type=="array") and
+      ((.team_roles.owner // [])|type=="array")
+    ) and
+    all((.team_roles.member // [])[]?; type == "string" and length > 0) and
+    all((.team_roles.manager // [])[]?; type == "string" and length > 0) and
+    all((.team_roles.owner // [])[]?; type == "string" and length > 0)
+  )
+' "$DEMO_IDENTITY_CONFIG_FILE" >/dev/null || die "invalid demo identity config format: each user must define username, optional teams[], and optional team_roles.{member,manager,owner}[]"
 
-log "using OpenFGA seed file '${OPENFGA_SEED_FILE}'"
+log "using demo identity config file '${DEMO_IDENTITY_CONFIG_FILE}'"
 
 CHANGED=0
 ADDED_TUPLES=0
@@ -330,14 +388,15 @@ log "using authorization model '${AUTHORIZATION_MODEL_ID}'"
 while IFS= read -r team; do
   [[ -n "$team" ]] || continue
   TEAM_EXISTS["$team"]=1
-done < <(jq -r '.teams[]? // empty' "$OPENFGA_SEED_FILE")
+done < <(jq -r '.teams[]? // empty' "$DEMO_IDENTITY_CONFIG_FILE")
 
 log "authenticating with Keycloak admin API"
 KEYCLOAK_ADMIN_TOKEN="$(kc_admin_token)"
 
-while IFS=$'\t' read -r username team; do
+while IFS=$'\t' read -r username relation team; do
   local_user_id=""
   [[ -n "$username" ]] || continue
+  [[ -n "$relation" ]] || continue
   [[ -n "$team" ]] || continue
 
   if [[ -z "${TEAM_EXISTS[$team]:-}" ]]; then
@@ -346,11 +405,23 @@ while IFS=$'\t' read -r username team; do
   fi
 
   local_user_id="$(kc_user_id_by_username "$username")"
-  ensure_membership_tuple "user:${local_user_id}" "$team"
+  ensure_team_role_closure "user:${local_user_id}" "$relation" "$team"
 
   if is_truthy "$OPENFGA_SEED_INCLUDE_USERNAME_USERS"; then
-    ensure_membership_tuple "user:${username}" "$team"
+    ensure_team_role_closure "user:${username}" "$relation" "$team"
   fi
-done < <(jq -r '.users[]? | .username as $u | (.teams[]? // empty) | [$u, .] | @tsv' "$OPENFGA_SEED_FILE")
+done < <(
+  jq -r '
+    .users[]? as $u
+    | ($u.username // empty) as $name
+    | (
+        (($u.teams // [])[]? | [$name, "member", .]) ,
+        (($u.team_roles.member // [])[]? | [$name, "member", .]) ,
+        (($u.team_roles.manager // [])[]? | [$name, "manager", .]) ,
+        (($u.team_roles.owner // [])[]? | [$name, "owner", .])
+      )
+    | @tsv
+  ' "$DEMO_IDENTITY_CONFIG_FILE"
+)
 
 log "post-install completed (store=${STORE_ID}, model=${AUTHORIZATION_MODEL_ID}, tuples_added=${ADDED_TUPLES}, tuples_skipped=${SKIPPED_TUPLES}, changes=${CHANGED})"
