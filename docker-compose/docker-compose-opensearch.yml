@@ -5,7 +5,7 @@ services:
     image: mirror.gcr.io/alpine:3.21.3
     environment:
       no_proxy: "*"
-      KEYCLOAK_HOST: ${DOCKER_COMPOSE_HOST_FQDN:-app-keycloak}
+      KEYCLOAK_HOST: ${KEYCLOAK_HOST:-app-keycloak}
       OPENSEARCH_ADMIN: ${OPENSEARCH_ADMIN:-admin}
       OPENSEARCH_ADMIN_PASSWORD: ${OPENSEARCH_ADMIN_PASSWORD:-Azerty123_}
       DOCKER_COMPOSE_HOST_FQDN: ${DOCKER_COMPOSE_HOST_FQDN:-localhost}
