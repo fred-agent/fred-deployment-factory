@@ -3,6 +3,10 @@ services:
   postgres:
     container_name: app-postgres
     image: pgvector/pgvector:pg15
+    command:
+      - postgres
+      - -c
+      - max_connections=${POSTGRES_MAX_CONNECTIONS:-250}
     environment:
       POSTGRES_USER: ${POSTGRES_ADMIN_USER:-admin}
       POSTGRES_PASSWORD: ${POSTGRES_ADMIN_PASSWORD:-Azerty123_}
@@ -10,7 +14,7 @@ services:
     networks:
       - app-network
     ports:
-      - 127.0.0.1:5432:5432/tcp
+      - 0.0.0.0:5432:5432/tcp
     healthcheck:
       test: "pg_isready -U ${POSTGRES_ADMIN_USER:-admin} -d postgres"
       interval: 10s
@@ -25,9 +29,25 @@ services:
     environment:
       POSTGRES_ADMIN_USER: ${POSTGRES_ADMIN_USER:-admin}
       PGPASSWORD: ${POSTGRES_ADMIN_PASSWORD:-Azerty123_}
+      POSTGRES_KEYCLOAK_USER: ${POSTGRES_KEYCLOAK_USER:-keycloak_db_user}
+      POSTGRES_KEYCLOAK_PASSWORD: ${POSTGRES_KEYCLOAK_PASSWORD:-Azerty123_}
+      POSTGRES_KEYCLOAK_DB: ${POSTGRES_KEYCLOAK_DB:-keycloak}
       POSTGRES_FRED_USER: ${POSTGRES_FRED_USER:-fred}
       POSTGRES_FRED_PASSWORD: ${POSTGRES_FRED_PASSWORD:-Azerty123_}
       POSTGRES_FRED_DB: ${POSTGRES_FRED_DB:-fred}
+      POSTGRES_TABULAR_DATA_USER: ${POSTGRES_TABULAR_DATA_USER:-tabular}
+      POSTGRES_TABULAR_DATA_PASSWORD: ${POSTGRES_TABULAR_DATA_PASSWORD:-Azerty123_}
+      POSTGRES_TABULAR_DATA_DB: ${POSTGRES_TABULAR_DATA_DB:-data}
+      POSTGRES_LANGFUSE_USER: ${POSTGRES_LANGFUSE_USER:-langfuse}
+      POSTGRES_LANGFUSE_PASSWORD: ${POSTGRES_LANGFUSE_PASSWORD:-Azerty123_}
+      POSTGRES_LANGFUSE_DB: ${POSTGRES_LANGFUSE_DB:-langfuse}
+      POSTGRES_OPENFGA_USER: ${POSTGRES_OPENFGA_USER:-openfga}
+      POSTGRES_OPENFGA_PASSWORD: ${POSTGRES_OPENFGA_PASSWORD:-Azerty123_}
+      POSTGRES_OPENFGA_DBNAME: ${POSTGRES_OPENFGA_DBNAME:-openfga}
+      POSTGRES_TEMPORAL_USER: ${POSTGRES_TEMPORAL_USER:-temporal}
+      POSTGRES_TEMPORAL_PASSWORD: ${POSTGRES_TEMPORAL_PASSWORD:-Azerty123_}
+      POSTGRES_TEMPORAL_DBNAME: ${POSTGRES_TEMPORAL_DBNAME:-temporal}
+      POSTGRES_TEMPORAL_VISIBILITY_DBNAME: ${POSTGRES_TEMPORAL_VISIBILITY_DBNAME:-temporal_visibility}
     entrypoint:
       - /bin/bash
       - -c
@@ -36,10 +56,48 @@ services:
         create_env.sh \
           --admin "$$POSTGRES_ADMIN_USER" \
           --host "app-postgres" \
+          --user "$$POSTGRES_KEYCLOAK_USER" \
+          --password "$$POSTGRES_KEYCLOAK_PASSWORD" \
+          --database "$$POSTGRES_KEYCLOAK_DB" \
+          --enable-vector
+        create_env.sh \
+          --admin "$$POSTGRES_ADMIN_USER" \
+          --host "app-postgres" \
           --user "$$POSTGRES_FRED_USER" \
           --password "$$POSTGRES_FRED_PASSWORD" \
           --database "$$POSTGRES_FRED_DB" \
           --enable-vector
+        create_env.sh \
+          --admin "$$POSTGRES_ADMIN_USER" \
+          --host "app-postgres" \
+          --user "$$POSTGRES_TABULAR_DATA_USER" \
+          --password "$$POSTGRES_TABULAR_DATA_PASSWORD" \
+          --database "$$POSTGRES_TABULAR_DATA_DB" \
+          --enable-vector
+        create_env.sh \
+          --admin "$$POSTGRES_ADMIN_USER" \
+          --host "app-postgres" \
+          --user "$$POSTGRES_LANGFUSE_USER" \
+          --password "$$POSTGRES_LANGFUSE_PASSWORD" \
+          --database "$$POSTGRES_LANGFUSE_DB"
+        create_env.sh \
+          --admin "$$POSTGRES_ADMIN_USER" \
+          --host "app-postgres" \
+          --user "$$POSTGRES_OPENFGA_USER" \
+          --password "$$POSTGRES_OPENFGA_PASSWORD" \
+          --database "$$POSTGRES_OPENFGA_DBNAME"
+        create_env.sh \
+          --admin "$$POSTGRES_ADMIN_USER" \
+          --host "app-postgres" \
+          --user "$$POSTGRES_TEMPORAL_USER" \
+          --password "$$POSTGRES_TEMPORAL_PASSWORD" \
+          --database "$$POSTGRES_TEMPORAL_DBNAME"
+        create_env.sh \
+          --admin "$$POSTGRES_ADMIN_USER" \
+          --host "app-postgres" \
+          --user "$$POSTGRES_TEMPORAL_USER" \
+          --password "$$POSTGRES_TEMPORAL_PASSWORD" \
+          --database "$$POSTGRES_TEMPORAL_VISIBILITY_DBNAME"
     networks:
       - app-network
     depends_on:

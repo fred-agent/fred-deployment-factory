@@ -4,8 +4,11 @@ SHELL := /bin/bash
 DOCKER_COMPOSE_BASE := docker compose -f docker-compose/docker-compose-
 
 CORE_COMPOSE_FILES := \
+	docker-compose/docker-compose-postgres.yml \
 	docker-compose/docker-compose-temporal.yml \
 	docker-compose/docker-compose-opensearch.yml \
+	docker-compose/docker-compose-clickhouse.yml \
+	docker-compose/docker-compose-langfuse.yml \
 	docker-compose/docker-compose-openfga.yml \
 	docker-compose/docker-compose-minio.yml \
 	docker-compose/docker-compose-keycloak.yml
@@ -71,8 +74,20 @@ keycloak-post-install:
 	@echo "Running Keycloak post-install..."
 	bash docker-compose/keycloak/keycloak-post-install.sh
 
-keycloak-up: network-create env-setup
-	@echo "Launching Keycloak and PostgreSQL..."
+postgres-up: network-create env-setup
+	@echo "Launching PostgreSQL..."
+	$(DOCKER_COMPOSE_BASE)postgres.yml -p postgres up -d
+	@echo "Waiting for PostgreSQL post-install job..."
+	@set -euo pipefail; \
+		rc="$$(docker wait app-postgres-post-install-job)"; \
+		if [ "$$rc" != "0" ]; then \
+			echo "PostgreSQL post-install job failed (exit $$rc). Showing logs:"; \
+			docker logs app-postgres-post-install-job || true; \
+			exit 1; \
+		fi
+
+keycloak-up: postgres-up
+	@echo "Launching Keycloak..."
 	$(DOCKER_COMPOSE_BASE)keycloak.yml -p keycloak up -d
 	$(MAKE) keycloak-post-install
 
@@ -83,6 +98,22 @@ minio-up: keycloak-up
 opensearch-up: keycloak-up
 	@echo "Launching OpenSearch..."
 	$(DOCKER_COMPOSE_BASE)opensearch.yml -p opensearch up -d
+
+clickhouse-up: network-create env-setup
+	@echo "Launching ClickHouse..."
+	$(DOCKER_COMPOSE_BASE)clickhouse.yml -p clickhouse up -d
+	@echo "Waiting for ClickHouse post-install job..."
+	@set -euo pipefail; \
+		rc="$$(docker wait app-clickhouse-post-install-job)"; \
+		if [ "$$rc" != "0" ]; then \
+			echo "ClickHouse post-install job failed (exit $$rc). Showing logs:"; \
+			docker logs app-clickhouse-post-install-job || true; \
+			exit 1; \
+		fi
+
+langfuse-up: postgres-up clickhouse-up
+	@echo "Launching Langfuse..."
+	$(DOCKER_COMPOSE_BASE)langfuse.yml -p langfuse up -d
 
 openfga-post-install:
 	@echo "Running OpenFGA post-install..."
@@ -101,17 +132,20 @@ preflight-check:
 	@echo "Running FRED preflight..."
 	bash bin/fred-preflight.sh
 
-docker-up: keycloak-up minio-up opensearch-up openfga-up temporal-up ## Launch the Docker stack (Keycloak, MinIO, OpenSearch, OpenFGA, Temporal)
+docker-up: postgres-up keycloak-up minio-up opensearch-up openfga-up temporal-up clickhouse-up langfuse-up ## Launch the Docker stack (PostgreSQL, Keycloak, MinIO, OpenSearch, OpenFGA, Temporal, ClickHouse, Langfuse)
 	$(MAKE) preflight-check
 	@echo "All Docker stack services are running and preflight passed."
 
 all-down:
 	@echo "Stopping Docker stack services..."
+	$(DOCKER_COMPOSE_BASE)langfuse.yml -p langfuse down
 	$(DOCKER_COMPOSE_BASE)temporal.yml -p temporal down
+	$(DOCKER_COMPOSE_BASE)clickhouse.yml -p clickhouse down
 	$(DOCKER_COMPOSE_BASE)opensearch.yml -p opensearch down
 	$(DOCKER_COMPOSE_BASE)openfga.yml -p openfga down
 	$(DOCKER_COMPOSE_BASE)minio.yml -p minio down
 	$(DOCKER_COMPOSE_BASE)keycloak.yml -p keycloak down
+	$(DOCKER_COMPOSE_BASE)postgres.yml -p postgres down
 
 docker-wipe: all-down ## Stop Docker stack, delete volumes, remove network, and prune
 	@echo -e "\n--- WIPE IN PROGRESS ---"
@@ -327,4 +361,4 @@ k3d-airgap-status: ## Show active Cilium network policies
 	@echo "📊 CiliumNetworkPolicies in namespace '$(K3D_NAMESPACE)':"
 	kubectl get ciliumnetworkpolicies -n "$(K3D_NAMESPACE)"
 
-.PHONY: help network-create env-setup keycloak-post-install keycloak-up minio-up opensearch-up openfga-post-install openfga-up temporal-up preflight-check docker-up all-down docker-wipe k3d-create k3d-up k3d-down k3d-delete k3d-wipe k3d-status k3d-airgap-on k3d-airgap-off k3d-airgap-status
+.PHONY: help network-create env-setup keycloak-post-install postgres-up keycloak-up minio-up opensearch-up clickhouse-up langfuse-up openfga-post-install openfga-up temporal-up preflight-check docker-up all-down docker-wipe k3d-create k3d-up k3d-down k3d-delete k3d-wipe k3d-status k3d-airgap-on k3d-airgap-off k3d-airgap-status

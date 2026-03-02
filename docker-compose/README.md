@@ -46,6 +46,7 @@ cp docker-compose/.env.template docker-compose/.env
 Here are **examples** of custom deployment params you can modify:
 - ``DOCKER_COMPOSE_HOST_FQDN``
 - ``POSTGRES_ADMIN_PASSWORD``
+- ``POSTGRES_MAX_CONNECTIONS``
 - ``KEYCLOAK_AGENTIC_CLIENT_SECRET``
 - ``KEYCLOAK_KNOWLEDGE_FLOW_CLIENT_SECRET``
 - ``KEYCLOAK_FORCE_RELOGIN``
@@ -169,6 +170,30 @@ Hereunder, these are the information to connect to each service with their _loca
   - http://$(DOCKER_COMPOSE_HOST_FQDN):3000/playground (Playground UI)
   - http://$(DOCKER_COMPOSE_HOST_FQDN):9080 (HTTP API)
   - grpc://$(DOCKER_COMPOSE_HOST_FQDN):9081 (gRPC API)
+
+### ClickHouse
+
+- URLs:
+  - http://$(DOCKER_COMPOSE_HOST_FQDN):8123 (HTTP API)
+  - http://$(DOCKER_COMPOSE_HOST_FQDN):8123/play (built-in SQL UI)
+  - tcp://$(DOCKER_COMPOSE_HOST_FQDN):9002 (native protocol)
+- Service accounts:
+  - `${CLICKHOUSE_USER}` (default from `.env.template`: `fred`)
+
+### Langfuse
+
+- URLs:
+  - http://$(DOCKER_COMPOSE_HOST_FQDN):$(LANGFUSE_UI_PORT) (web-ui, default: `3001`)
+- MinIO bucket (default in `.env.template`):
+  - `LANGFUSE_S3_EVENT_UPLOAD_BUCKET=langfuse`
+  - `LANGFUSE_S3_MEDIA_UPLOAD_BUCKET=langfuse`
+  - `LANGFUSE_S3_BATCH_EXPORT_BUCKET=langfuse`
+- First-time setup:
+  - Create your user account from the Langfuse UI (`Sign up`).
+  - Create an organization.
+  - Create a project in that organization.
+  - Generate API keys in `Settings` -> `Projects` -> `<Project name>` -> `API Keys`.
+  - Use the generated values as `LANGFUSE_PUBLIC_KEY` and `LANGFUSE_SECRET_KEY` in your environment variable file, typically `.env` in Fred.
 
 ### MinIO:
 

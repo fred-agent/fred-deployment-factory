@@ -10,6 +10,7 @@ set -euo pipefail
 # 2) App roles, groups scope mapper, service-account rights
 # 3) OpenFGA store presence + team memberships from demo identity config
 # 4) Postgres agent IDs + owner coverage for Alice (read-only)
+# 5) Langfuse endpoints + MinIO bucket diagnostics
 # -----------------------------------------------------------------------------
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
@@ -35,6 +36,23 @@ export PGPASSWORD
 TEMPORAL_UI_HOST="${TEMPORAL_UI_HOST:-${DOCKER_COMPOSE_HOST_FQDN:-localhost}}"
 TEMPORAL_UI_PORT="${TEMPORAL_UI_PORT:-8233}"
 TEMPORAL_UI_URL="${TEMPORAL_UI_URL:-http://${TEMPORAL_UI_HOST}:${TEMPORAL_UI_PORT}}"
+
+LANGFUSE_UI_HOST="${LANGFUSE_UI_HOST:-${DOCKER_COMPOSE_HOST_FQDN:-localhost}}"
+LANGFUSE_UI_PORT="${LANGFUSE_UI_PORT:-3001}"
+LANGFUSE_UI_URL="${LANGFUSE_UI_URL:-http://${LANGFUSE_UI_HOST}:${LANGFUSE_UI_PORT}}"
+LANGFUSE_WORKER_HOST="${LANGFUSE_WORKER_HOST:-127.0.0.1}"
+LANGFUSE_WORKER_PORT="${LANGFUSE_WORKER_PORT:-3030}"
+LANGFUSE_WORKER_URL="${LANGFUSE_WORKER_URL:-http://${LANGFUSE_WORKER_HOST}:${LANGFUSE_WORKER_PORT}}"
+LANGFUSE_MINIO_URL="${LANGFUSE_MINIO_URL:-${LANGFUSE_S3_BATCH_EXPORT_EXTERNAL_ENDPOINT:-http://${DOCKER_COMPOSE_HOST_FQDN:-localhost}:9000}}"
+LANGFUSE_EVENT_BUCKET="${LANGFUSE_EVENT_BUCKET:-${LANGFUSE_S3_EVENT_UPLOAD_BUCKET:-langfuse}}"
+LANGFUSE_MEDIA_BUCKET="${LANGFUSE_MEDIA_BUCKET:-${LANGFUSE_S3_MEDIA_UPLOAD_BUCKET:-langfuse}}"
+LANGFUSE_EXPORT_BUCKET="${LANGFUSE_EXPORT_BUCKET:-${LANGFUSE_S3_BATCH_EXPORT_BUCKET:-langfuse}}"
+MINIO_ROOT_USER="${MINIO_ROOT_USER:-admin}"
+MINIO_ROOT_PASSWORD="${MINIO_ROOT_PASSWORD:-Azerty123_}"
+PREFLIGHT_HTTP_RETRY_DELAY_SEC="${PREFLIGHT_HTTP_RETRY_DELAY_SEC:-2}"
+LANGFUSE_UI_HTTP_RETRIES="${LANGFUSE_UI_HTTP_RETRIES:-30}"
+LANGFUSE_WORKER_HTTP_RETRIES="${LANGFUSE_WORKER_HTTP_RETRIES:-10}"
+LANGFUSE_MINIO_HTTP_RETRIES="${LANGFUSE_MINIO_HTTP_RETRIES:-10}"
 
 # When true, also expect user:<username> team tuples in OpenFGA.
 OPENFGA_EXPECT_USERNAME_SUBJECTS="${OPENFGA_EXPECT_USERNAME_SUBJECTS:-${OPENFGA_SEED_INCLUDE_USERNAME_USERS:-true}}"
@@ -101,6 +119,28 @@ mark_warning() {
 
 require_cmd() {
   command -v "$1" >/dev/null 2>&1 || die "Missing required command: $1"
+}
+
+probe_http_status_with_retries() {
+  local url="$1"
+  local retries="$2"
+  local delay_sec="$3"
+  local http_code="000"
+  local attempt
+
+  for ((attempt=1; attempt<=retries; attempt+=1)); do
+    http_code="$(curl -sS -o /dev/null -w '%{http_code}' "${url}" || true)"
+    # Stop waiting once endpoint is reachable and not a server-startup error.
+    if [[ "${http_code}" != "000" && ! "${http_code}" =~ ^5[0-9][0-9]$ ]]; then
+      printf '%s' "${http_code}"
+      return 0
+    fi
+    if (( attempt < retries )); then
+      sleep "${delay_sec}"
+    fi
+  done
+
+  printf '%s' "${http_code}"
 }
 
 json_post() {
@@ -337,6 +377,10 @@ info "OpenFGA: ${FGA} (store=${OPENFGA_STORE_NAME})"
 info "Demo identity config: ${DEMO_IDENTITY_CONFIG_FILE}"
 info "Postgres: host=${PGHOST} db=${PGDATABASE} user=${PGUSER}"
 info "Temporal UI: ${TEMPORAL_UI_URL}"
+info "Langfuse UI: ${LANGFUSE_UI_URL}"
+info "Langfuse worker: ${LANGFUSE_WORKER_URL}"
+info "Langfuse MinIO endpoint (external check): ${LANGFUSE_MINIO_URL}"
+info "Langfuse buckets: event=${LANGFUSE_EVENT_BUCKET}, media=${LANGFUSE_MEDIA_BUCKET}, export=${LANGFUSE_EXPORT_BUCKET}"
 info "Mode: READ-ONLY (no write calls are executed)"
 info "Terminology: team = Keycloak group, permission = Keycloak client-role, ReBAC right = OpenFGA tuple"
 
@@ -893,6 +937,98 @@ else
   mark_critical "Temporal UI unreachable (${TEMPORAL_UI_URL}, HTTP ${TEMPORAL_UI_HTTP_CODE})"
 fi
 
+LANGFUSE_UI_HTTP_CODE="000"
+LANGFUSE_WORKER_HTTP_CODE="000"
+LANGFUSE_MINIO_HTTP_CODE="000"
+LANGFUSE_S3_CONFIG_GAPS=0
+LANGFUSE_MINIO_BUCKET_GAPS=0
+
+step "Check Langfuse endpoints and MinIO prerequisites"
+LANGFUSE_UI_HTTP_CODE="$(
+  probe_http_status_with_retries \
+    "${LANGFUSE_UI_URL}" \
+    "${LANGFUSE_UI_HTTP_RETRIES}" \
+    "${PREFLIGHT_HTTP_RETRY_DELAY_SEC}"
+)"
+if [[ "${LANGFUSE_UI_HTTP_CODE}" == "000" ]]; then
+  mark_critical "Langfuse UI unreachable (${LANGFUSE_UI_URL}, HTTP ${LANGFUSE_UI_HTTP_CODE})"
+elif [[ "${LANGFUSE_UI_HTTP_CODE}" =~ ^5[0-9][0-9]$ ]]; then
+  mark_warning "Langfuse UI reachable but returned server error (${LANGFUSE_UI_URL}, HTTP ${LANGFUSE_UI_HTTP_CODE})"
+else
+  ok "Langfuse UI reachable (${LANGFUSE_UI_URL}, HTTP ${LANGFUSE_UI_HTTP_CODE})"
+fi
+
+LANGFUSE_WORKER_HTTP_CODE="$(
+  probe_http_status_with_retries \
+    "${LANGFUSE_WORKER_URL}" \
+    "${LANGFUSE_WORKER_HTTP_RETRIES}" \
+    "${PREFLIGHT_HTTP_RETRY_DELAY_SEC}"
+)"
+if [[ "${LANGFUSE_WORKER_HTTP_CODE}" == "000" ]]; then
+  mark_warning "Langfuse worker endpoint unreachable (${LANGFUSE_WORKER_URL}, HTTP ${LANGFUSE_WORKER_HTTP_CODE})"
+elif [[ "${LANGFUSE_WORKER_HTTP_CODE}" =~ ^5[0-9][0-9]$ ]]; then
+  mark_warning "Langfuse worker endpoint reachable but returned server error (${LANGFUSE_WORKER_URL}, HTTP ${LANGFUSE_WORKER_HTTP_CODE})"
+else
+  ok "Langfuse worker endpoint reachable (${LANGFUSE_WORKER_URL}, HTTP ${LANGFUSE_WORKER_HTTP_CODE})"
+fi
+
+LANGFUSE_MINIO_HTTP_CODE="$(
+  probe_http_status_with_retries \
+    "${LANGFUSE_MINIO_URL}" \
+    "${LANGFUSE_MINIO_HTTP_RETRIES}" \
+    "${PREFLIGHT_HTTP_RETRY_DELAY_SEC}"
+)"
+if [[ "${LANGFUSE_MINIO_HTTP_CODE}" == "000" ]]; then
+  mark_warning "Langfuse MinIO endpoint unreachable from host (${LANGFUSE_MINIO_URL}, HTTP ${LANGFUSE_MINIO_HTTP_CODE})"
+elif [[ "${LANGFUSE_MINIO_HTTP_CODE}" =~ ^5[0-9][0-9]$ ]]; then
+  mark_warning "Langfuse MinIO endpoint reachable but returned server error (${LANGFUSE_MINIO_URL}, HTTP ${LANGFUSE_MINIO_HTTP_CODE})"
+else
+  ok "Langfuse MinIO endpoint reachable from host (${LANGFUSE_MINIO_URL}, HTTP ${LANGFUSE_MINIO_HTTP_CODE})"
+fi
+
+for bucket_name in "${LANGFUSE_EVENT_BUCKET}" "${LANGFUSE_MEDIA_BUCKET}" "${LANGFUSE_EXPORT_BUCKET}"; do
+  if [[ -z "${bucket_name}" ]]; then
+    ((LANGFUSE_S3_CONFIG_GAPS+=1))
+    mark_critical "Langfuse S3 bucket configuration contains an empty bucket name"
+  fi
+done
+
+if [[ "${LANGFUSE_EVENT_BUCKET}" == "${LANGFUSE_MEDIA_BUCKET}" && "${LANGFUSE_EVENT_BUCKET}" == "${LANGFUSE_EXPORT_BUCKET}" ]]; then
+  ok "Langfuse S3 bucket configuration consistent (single bucket: ${LANGFUSE_EVENT_BUCKET})"
+else
+  info "Langfuse S3 bucket configuration uses multiple buckets (event=${LANGFUSE_EVENT_BUCKET}, media=${LANGFUSE_MEDIA_BUCKET}, export=${LANGFUSE_EXPORT_BUCKET})"
+fi
+
+if command -v docker >/dev/null 2>&1; then
+  if docker ps --format '{{.Names}}' 2>/dev/null | grep -Fxq "app-minio"; then
+    minio_bucket_listing="$(
+      docker exec app-minio sh -lc \
+        "mc alias set local http://localhost:9000 \"${MINIO_ROOT_USER}\" \"${MINIO_ROOT_PASSWORD}\" >/dev/null 2>&1 && mc ls local 2>/dev/null" \
+        2>/dev/null || true
+    )"
+    if [[ -z "${minio_bucket_listing}" ]]; then
+      mark_warning "Could not list buckets from app-minio with provided MINIO_ROOT_USER/MINIO_ROOT_PASSWORD; skipping Langfuse bucket existence checks"
+    else
+      mapfile -t langfuse_unique_buckets < <(
+        printf '%s\n' "${LANGFUSE_EVENT_BUCKET}" "${LANGFUSE_MEDIA_BUCKET}" "${LANGFUSE_EXPORT_BUCKET}" \
+          | sed '/^$/d' | sort -u
+      )
+      for bucket_name in "${langfuse_unique_buckets[@]}"; do
+        if grep -Fq "${bucket_name}/" <<<"${minio_bucket_listing}"; then
+          ok "MinIO bucket present for Langfuse: ${bucket_name}"
+        else
+          ((LANGFUSE_MINIO_BUCKET_GAPS+=1))
+          mark_critical "Missing MinIO bucket for Langfuse: ${bucket_name}"
+        fi
+      done
+    fi
+  else
+    mark_warning "Container 'app-minio' not found; skipping Langfuse bucket existence checks"
+  fi
+else
+  mark_warning "docker CLI unavailable; skipping Langfuse bucket existence checks"
+fi
+
 printf "\n%s\n" "${BOLD}============================================================${RESET}"
 printf "%s\n" "${BOLD}Preflight Summary (READ-ONLY)${RESET}"
 printf "%s\n" "${BOLD}============================================================${RESET}"
@@ -949,6 +1085,11 @@ else
   info "Team owner-role gaps (OpenFGA username-subject): skipped by config"
 fi
 info "Temporal UI endpoint: ${TEMPORAL_UI_URL} (HTTP ${TEMPORAL_UI_HTTP_CODE})"
+info "Langfuse UI endpoint: ${LANGFUSE_UI_URL} (HTTP ${LANGFUSE_UI_HTTP_CODE})"
+info "Langfuse worker endpoint: ${LANGFUSE_WORKER_URL} (HTTP ${LANGFUSE_WORKER_HTTP_CODE})"
+info "Langfuse MinIO endpoint (external check): ${LANGFUSE_MINIO_URL} (HTTP ${LANGFUSE_MINIO_HTTP_CODE})"
+info "Langfuse S3 config gaps (empty bucket names): ${LANGFUSE_S3_CONFIG_GAPS}"
+info "Langfuse MinIO bucket gaps: ${LANGFUSE_MINIO_BUCKET_GAPS}"
 info "Postgres agents: ${#AGENT_IDS[@]}"
 if [[ "${TOTAL_TUPLES}" -ge 0 ]]; then
   info "OpenFGA tuples total: ${TOTAL_TUPLES}"

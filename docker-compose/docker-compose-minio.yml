@@ -44,10 +44,11 @@ services:
       - |
         mc alias set app-minio http://app-minio:9000 $$MINIO_ROOT_USER $$MINIO_ROOT_PASSWORD
         
-        # Create bucket
-        mc mb app-minio/app-content
-        mc mb app-minio/app-feedback
-        mc mb app-minio/app-chat-profile
+        # Create bucket(s)
+        mc mb --ignore-existing app-minio/app-content
+        mc mb --ignore-existing app-minio/app-feedback
+        mc mb --ignore-existing app-minio/app-chat-profile
+        mc mb --ignore-existing app-minio/langfuse
 
         # Create Read Only user
         mc admin user add app-minio app_ro Azerty123_
