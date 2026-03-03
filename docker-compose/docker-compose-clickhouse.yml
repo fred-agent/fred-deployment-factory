@@ -41,11 +41,6 @@ services:
           --user "$$CLICKHOUSE_USER" \
           --password "$$CLICKHOUSE_PASSWORD" \
           --query "CREATE DATABASE IF NOT EXISTS $$CLICKHOUSE_DB";
-        clickhouse-client \
-          --host app-clickhouse \
-          --user "$$CLICKHOUSE_USER" \
-          --password "$$CLICKHOUSE_PASSWORD" \
-          --query "CREATE TABLE IF NOT EXISTS $$CLICKHOUSE_DB.vector_store (id String, embedding Array(Float32), metadata String, created_at DateTime DEFAULT now()) ENGINE = MergeTree ORDER BY id";
     networks:
       - app-network
     depends_on:
