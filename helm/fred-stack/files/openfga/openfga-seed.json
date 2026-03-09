@@ -2,8 +2,7 @@
   "teams": [
     "bidgpt",
     "kast",
-    "la-poste",
-    "poletchng",
+    "poltechng",
     "thanos"
   ],
   "users": [
@@ -12,8 +11,7 @@
       "teams": [
         "bidgpt",
         "kast",
-        "la-poste",
-        "poletchng",
+        "poltechng",
         "thanos"
       ]
     },

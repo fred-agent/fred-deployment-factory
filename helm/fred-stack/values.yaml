@@ -35,6 +35,7 @@ auth:
   keycloakAdminPassword: Azerty123_
   keycloakAgenticClientSecret: Azerty123_
   keycloakKnowledgeFlowClientSecret: Azerty123_
+  keycloakControlPlaneClientSecret: Azerty123_
   keycloakKfEnableManageUsers: "true"
   keycloakForceRelogin: auto
 

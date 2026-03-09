@@ -83,6 +83,9 @@ KEYCLOAK_AGENTIC_CLIENT_SECRET="${KEYCLOAK_AGENTIC_CLIENT_SECRET:-Azerty123_}"
 KEYCLOAK_KNOWLEDGE_FLOW_CLIENT_SECRET="${KEYCLOAK_KNOWLEDGE_FLOW_CLIENT_SECRET:-$(read_env_file_var KEYCLOAK_KNOWLEDGE_FLOW_CLIENT_SECRET)}"
 KEYCLOAK_KNOWLEDGE_FLOW_CLIENT_SECRET="${KEYCLOAK_KNOWLEDGE_FLOW_CLIENT_SECRET:-Azerty123_}"
 
+KEYCLOAK_CONTROL_PLANE_CLIENT_SECRET="${KEYCLOAK_CONTROL_PLANE_CLIENT_SECRET:-$(read_env_file_var KEYCLOAK_CONTROL_PLANE_CLIENT_SECRET)}"
+KEYCLOAK_CONTROL_PLANE_CLIENT_SECRET="${KEYCLOAK_CONTROL_PLANE_CLIENT_SECRET:-Azerty123_}"
+
 KEYCLOAK_KF_ENABLE_MANAGE_USERS="${KEYCLOAK_KF_ENABLE_MANAGE_USERS:-$(read_env_file_var KEYCLOAK_KF_ENABLE_MANAGE_USERS)}"
 KEYCLOAK_KF_ENABLE_MANAGE_USERS="${KEYCLOAK_KF_ENABLE_MANAGE_USERS:-true}"
 
@@ -356,6 +359,7 @@ kc config credentials \
 app_client_uuid="$(ensure_app_client)"
 agentic_client_uuid="$(ensure_service_client_confidential agentic "$KEYCLOAK_AGENTIC_CLIENT_SECRET")"
 knowledge_flow_client_uuid="$(ensure_service_client_confidential knowledge-flow "$KEYCLOAK_KNOWLEDGE_FLOW_CLIENT_SECRET")"
+control_plane_client_uuid="$(ensure_service_client_confidential control-plane "$KEYCLOAK_CONTROL_PLANE_CLIENT_SECRET")"
 
 ensure_client_role app admin "application administrator role"
 ensure_client_role app editor "application editor role"
@@ -363,6 +367,7 @@ ensure_client_role app viewer "application viewer role"
 
 agentic_service_user="$(wait_for_service_account_username agentic)"
 knowledge_flow_service_user="$(wait_for_service_account_username knowledge-flow)"
+control_plane_service_user="$(wait_for_service_account_username control-plane)"
 
 ensure_user_client_role "$agentic_service_user" realm-management query-users
 ensure_user_client_role "$agentic_service_user" realm-management query-groups
@@ -377,6 +382,11 @@ if is_truthy "$KEYCLOAK_KF_ENABLE_MANAGE_USERS"; then
   ensure_user_client_role "$knowledge_flow_service_user" realm-management manage-users
 fi
 
+ensure_user_client_role "$control_plane_service_user" realm-management query-users
+ensure_user_client_role "$control_plane_service_user" realm-management query-groups
+ensure_user_client_role "$control_plane_service_user" realm-management view-users
+ensure_user_client_role "$control_plane_service_user" account view-groups
+
 groups_scope_uuid="$(ensure_groups_scope)"
 ensure_app_default_scope "$app_client_uuid" "$groups_scope_uuid"
 
@@ -389,4 +399,4 @@ if should_force_relogin; then
   fi
 fi
 
-log "post-install completed (app=${app_client_uuid}, agentic=${agentic_client_uuid}, knowledge-flow=${knowledge_flow_client_uuid}, changes=${CHANGED})"
+log "post-install completed (app=${app_client_uuid}, agentic=${agentic_client_uuid}, knowledge-flow=${knowledge_flow_client_uuid}, control-plane=${control_plane_client_uuid}, changes=${CHANGED})"

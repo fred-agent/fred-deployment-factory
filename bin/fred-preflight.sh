@@ -57,7 +57,7 @@ LANGFUSE_MINIO_HTTP_RETRIES="${LANGFUSE_MINIO_HTTP_RETRIES:-10}"
 # When true, also expect user:<username> team tuples in OpenFGA.
 OPENFGA_EXPECT_USERNAME_SUBJECTS="${OPENFGA_EXPECT_USERNAME_SUBJECTS:-${OPENFGA_SEED_INCLUDE_USERNAME_USERS:-true}}"
 
-REQUIRED_CLIENTS=(app agentic knowledge-flow)
+REQUIRED_CLIENTS=(app agentic knowledge-flow control-plane)
 REQUIRED_APP_CLIENT_ROLES=(admin editor viewer)
 EXPECTED_SERVICE_APP_ROLE="service_agent"
 EXPECTED_GROUPS_SCOPE_NAME="groups-scope"
@@ -70,6 +70,7 @@ declare -A EXPECTED_TEAMS=()
 declare -A EXPECTED_MANAGER_TEAMS=()
 declare -A EXPECTED_OWNER_TEAMS=()
 declare -A EXPECTED_APP_ROLES=()
+declare -A KEYCLOAK_GROUP_NAME_BY_ID=()
 
 EXPECTED_AGENTIC_RM_ROLES="query-groups query-users view-users"
 EXPECTED_AGENTIC_ACCOUNT_ROLES="view-groups"
@@ -77,6 +78,8 @@ EXPECTED_AGENTIC_ACCOUNT_ROLES="view-groups"
 EXPECTED_KF_RM_ROLES_BASE="query-groups query-users view-users"
 EXPECTED_KF_RM_ROLES_WITH_MANAGE="query-groups query-users view-users manage-users"
 EXPECTED_KF_ACCOUNT_ROLES="view-groups"
+EXPECTED_CP_RM_ROLES="query-groups query-users view-users manage-users"
+EXPECTED_CP_ACCOUNT_ROLES="view-groups"
 
 # Colors (disabled when not a TTY)
 if [[ -t 1 ]]; then
@@ -223,12 +226,77 @@ contains_line() {
   grep -Fxq "$needle" <<<"$haystack"
 }
 
+resolve_team_name_from_openfga_object_suffix() {
+  local team_suffix="$1"
+  local encoded_path
+  local response
+  local name
+
+  if [[ -z "$team_suffix" ]]; then
+    printf '%s' ""
+    return 0
+  fi
+
+  if [[ -n "${KEYCLOAK_GROUP_NAME_BY_ID[$team_suffix]:-}" ]]; then
+    printf '%s' "${KEYCLOAK_GROUP_NAME_BY_ID[$team_suffix]}"
+    return 0
+  fi
+
+  # Legacy seed style: team object already uses the team name.
+  if jq -e --arg team "$team_suffix" '.teams | index($team) != null' "$DEMO_IDENTITY_CONFIG_FILE" >/dev/null 2>&1; then
+    KEYCLOAK_GROUP_NAME_BY_ID["$team_suffix"]="$team_suffix"
+    printf '%s' "$team_suffix"
+    return 0
+  fi
+
+  # New seed style: team object uses Keycloak group UUID.
+  response="$(
+    curl -fsS -H "Authorization: Bearer ${ADM}" \
+      "$KC/admin/realms/${REALM}/groups/${team_suffix}" \
+      || true
+  )"
+  name="$(jq -r '.name // empty' <<<"$response" 2>/dev/null || true)"
+  if [[ -n "$name" ]]; then
+    KEYCLOAK_GROUP_NAME_BY_ID["$team_suffix"]="$name"
+    printf '%s' "$name"
+    return 0
+  fi
+
+  # Fallback for path-like values.
+  encoded_path="$(uri_encode "/${team_suffix}")"
+  response="$(
+    curl -fsS -H "Authorization: Bearer ${ADM}" \
+      "$KC/admin/realms/${REALM}/group-by-path/${encoded_path}" \
+      || true
+  )"
+  name="$(jq -r '.name // empty' <<<"$response" 2>/dev/null || true)"
+  if [[ -n "$name" ]]; then
+    KEYCLOAK_GROUP_NAME_BY_ID["$team_suffix"]="$name"
+    printf '%s' "$name"
+    return 0
+  fi
+
+  KEYCLOAK_GROUP_NAME_BY_ID["$team_suffix"]="$team_suffix"
+  printf '%s' "$team_suffix"
+}
+
 fga_team_relation_lines() {
   local subject="$1"
   local relation="$2"
-  jq -r --arg subj "$subject" --arg rel "$relation" \
-    '.tuples[].key | select(.user==$subj and .relation==$rel and (.object|startswith("team:"))) | .object | sub("^team:";"")' <<<"$ALL_TUPLES" \
-    | sort -u
+  local raw_team_suffixes
+  local team_suffix
+  local resolved_team_name
+
+  raw_team_suffixes="$(
+    jq -r --arg subj "$subject" --arg rel "$relation" \
+      '.tuples[].key | select(.user==$subj and .relation==$rel and (.object|startswith("team:"))) | .object | sub("^team:";"")' <<<"$ALL_TUPLES"
+  )"
+
+  while IFS= read -r team_suffix; do
+    [[ -n "$team_suffix" ]] || continue
+    resolved_team_name="$(resolve_team_name_from_openfga_object_suffix "$team_suffix")"
+    [[ -n "$resolved_team_name" ]] && printf '%s\n' "$resolved_team_name"
+  done <<<"$raw_team_suffixes" | sort -u
 }
 
 load_demo_identity_expectations() {
@@ -473,8 +541,10 @@ fi
 
 AGENTIC_ROLE_GAPS=0
 KNOWLEDGE_FLOW_ROLE_GAPS=0
+CONTROL_PLANE_ROLE_GAPS=0
 AGENTIC_CLIENT_CONFIG_GAPS=0
 KNOWLEDGE_FLOW_CLIENT_CONFIG_GAPS=0
+CONTROL_PLANE_CLIENT_CONFIG_GAPS=0
 APP_CLIENT_ROLE_GAPS=0
 APP_USER_PERMISSION_GAPS=0
 APP_GROUPS_SCOPE_GAPS=0
@@ -482,7 +552,7 @@ APP_GROUPS_SCOPE_GAPS=0
 declare -A CLIENT_UUIDS=()
 if [[ -n "${ADM}" ]]; then
   step "Service account permissions (Keycloak)"
-  for client_id in app agentic knowledge-flow realm-management account; do
+  for client_id in app agentic knowledge-flow control-plane realm-management account; do
     if ! client_uuid="$(keycloak_client_uuid "$client_id" 2>/dev/null)"; then
       client_uuid=""
     fi
@@ -502,6 +572,7 @@ if [[ -n "${ADM}" ]]; then
     EXPECTED_KF_RM_ROLES="$EXPECTED_KF_RM_ROLES_BASE"
     info "knowledge-flow expected realm-management.manage-users: disabled"
   fi
+  info "control-plane expected realm-management.manage-users: enabled"
 
   step "User client roles and token-claim prerequisites (Keycloak)"
   APP_CLIENT_UUID="${CLIENT_UUIDS[app]:-}"
@@ -635,7 +706,7 @@ if [[ -n "${ADM}" ]]; then
     fi
   fi
 
-  for svc in agentic knowledge-flow; do
+  for svc in agentic knowledge-flow control-plane; do
     svc_uuid="${CLIENT_UUIDS[$svc]:-}"
     if [[ -z "$svc_uuid" ]]; then
       mark_critical "Skipping '${svc}' permission checks: missing client UUID"
@@ -658,8 +729,10 @@ if [[ -n "${ADM}" ]]; then
       mark_critical "Client '${svc}' should be confidential with service account enabled (enabled=true, publicClient=false, serviceAccountsEnabled=true, authenticator=client-secret)"
       if [[ "$svc" == "agentic" ]]; then
         ((AGENTIC_CLIENT_CONFIG_GAPS+=1))
-      else
+      elif [[ "$svc" == "knowledge-flow" ]]; then
         ((KNOWLEDGE_FLOW_CLIENT_CONFIG_GAPS+=1))
+      else
+        ((CONTROL_PLANE_CLIENT_CONFIG_GAPS+=1))
       fi
     fi
 
@@ -697,9 +770,12 @@ if [[ -n "${ADM}" ]]; then
     if [[ "$svc" == "agentic" ]]; then
       expected_rm_lines="$(words_to_sorted_lines "$EXPECTED_AGENTIC_RM_ROLES")"
       expected_acc_lines="$(words_to_sorted_lines "$EXPECTED_AGENTIC_ACCOUNT_ROLES")"
-    else
+    elif [[ "$svc" == "knowledge-flow" ]]; then
       expected_rm_lines="$(words_to_sorted_lines "$EXPECTED_KF_RM_ROLES")"
       expected_acc_lines="$(words_to_sorted_lines "$EXPECTED_KF_ACCOUNT_ROLES")"
+    else
+      expected_rm_lines="$(words_to_sorted_lines "$EXPECTED_CP_RM_ROLES")"
+      expected_acc_lines="$(words_to_sorted_lines "$EXPECTED_CP_ACCOUNT_ROLES")"
     fi
     expected_app_lines="$(words_to_sorted_lines "$EXPECTED_SERVICE_APP_ROLE")"
 
@@ -714,24 +790,30 @@ if [[ -n "${ADM}" ]]; then
       mark_critical "Missing realm-management roles for '${svc}': $(sorted_lines_to_csv "$missing_rm_roles")"
       if [[ "$svc" == "agentic" ]]; then
         ((AGENTIC_ROLE_GAPS+=1))
-      else
+      elif [[ "$svc" == "knowledge-flow" ]]; then
         ((KNOWLEDGE_FLOW_ROLE_GAPS+=1))
+      else
+        ((CONTROL_PLANE_ROLE_GAPS+=1))
       fi
     fi
     if [[ -n "$missing_acc_roles" ]]; then
       mark_critical "Missing account roles for '${svc}': $(sorted_lines_to_csv "$missing_acc_roles")"
       if [[ "$svc" == "agentic" ]]; then
         ((AGENTIC_ROLE_GAPS+=1))
-      else
+      elif [[ "$svc" == "knowledge-flow" ]]; then
         ((KNOWLEDGE_FLOW_ROLE_GAPS+=1))
+      else
+        ((CONTROL_PLANE_ROLE_GAPS+=1))
       fi
     fi
     if [[ -n "$missing_app_roles" ]]; then
       mark_critical "Missing app roles for '${svc}': $(sorted_lines_to_csv "$missing_app_roles")"
       if [[ "$svc" == "agentic" ]]; then
         ((AGENTIC_ROLE_GAPS+=1))
-      else
+      elif [[ "$svc" == "knowledge-flow" ]]; then
         ((KNOWLEDGE_FLOW_ROLE_GAPS+=1))
+      else
+        ((CONTROL_PLANE_ROLE_GAPS+=1))
       fi
     fi
 
@@ -1042,8 +1124,10 @@ info "User app permission gaps (effective app roles): ${APP_USER_PERMISSION_GAPS
 info "groups-scope / groups mapper gaps: ${APP_GROUPS_SCOPE_GAPS}"
 info "Service-client config gaps (agentic): ${AGENTIC_CLIENT_CONFIG_GAPS}"
 info "Service-client config gaps (knowledge-flow): ${KNOWLEDGE_FLOW_CLIENT_CONFIG_GAPS}"
+info "Service-client config gaps (control-plane): ${CONTROL_PLANE_CLIENT_CONFIG_GAPS}"
 info "Service-account role gaps (agentic: realm-management + account + app:service_agent): ${AGENTIC_ROLE_GAPS}"
 info "Service-account role gaps (knowledge-flow: realm-management + account + app:service_agent): ${KNOWLEDGE_FLOW_ROLE_GAPS}"
+info "Service-account role gaps (control-plane: realm-management + account + app:service_agent): ${CONTROL_PLANE_ROLE_GAPS}"
 if [[ "${OPENFGA_STATUS}" == "present" ]]; then
   info "OpenFGA store '${OPENFGA_STORE_NAME}': present (${STORE_ID})"
 elif [[ "${OPENFGA_STATUS}" == "store-missing" ]]; then
