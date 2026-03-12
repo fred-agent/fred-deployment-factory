@@ -1,7 +1,7 @@
 {
   "teams": [
     "northbridge",
-    "thales",
+    "fredlab",
     "swiftpost"
   ],
   "users": [
@@ -18,13 +18,13 @@
       "team_roles": {
         "manager": [
           "northbridge",
-          "thales",
+          "fredlab",
           "swiftpost"
         ]
       },
       "teams": [
         "northbridge",
-        "thales",
+        "fredlab",
         "swiftpost"
       ]
     },
@@ -41,7 +41,7 @@
       ],
       "teams": [
         "northbridge",
-        "thales"
+        "fredlab"
       ]
     },
     {
@@ -70,7 +70,7 @@
         "viewer"
       ],
       "teams": [
-        "thales"
+        "fredlab"
       ]
     },
     {
