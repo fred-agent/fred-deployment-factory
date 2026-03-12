@@ -38,6 +38,7 @@ services:
       OPENSEARCH_JAVA_OPTS: "-Xms512m -Xmx512m"
     volumes:
       - vol-opensearch-certs:/usr/share/opensearch/config/certs/
+      - vol-opensearch-data:/usr/share/opensearch/data
       - vol-opensearch-security:/usr/share/opensearch/config/opensearch-security/
       - ./opensearch/opensearch.yml:/usr/share/opensearch/config/opensearch.yml
     networks:
@@ -106,6 +107,7 @@ services:
 
 volumes:
   vol-opensearch-certs:
+  vol-opensearch-data:
   vol-opensearch-security:
   vol-opensearch-dashboards:
 

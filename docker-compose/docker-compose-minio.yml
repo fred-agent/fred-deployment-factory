@@ -22,6 +22,8 @@ services:
     ports:
       - 0.0.0.0:9000:9000/tcp
       - 0.0.0.0:9001:9001/tcp
+    volumes:
+      - vol-minio-data:/data
     healthcheck:
       test: curl --fail http://localhost:9000/minio/health/live
       interval: 60s
@@ -66,6 +68,9 @@ services:
     depends_on:
       minio:
         condition: service_healthy
+
+volumes:
+  vol-minio-data:
 
 networks:
   app-network:
