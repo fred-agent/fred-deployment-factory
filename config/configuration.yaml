@@ -86,6 +86,63 @@
       "teams": [
         "swiftpost"
       ]
+    },
+    {
+      "username": "sophia",
+      "first_name": "Sophia",
+      "last_name": "Carter",
+      "email": "sophia@app.com",
+      "password": "Azerty123_",
+      "enabled": true,
+      "app_roles": [
+        "viewer"
+      ],
+      "team_roles": {
+        "owner": [
+          "northbridge"
+        ]
+      },
+      "teams": [
+        "northbridge"
+      ]
+    },
+    {
+      "username": "marc",
+      "first_name": "Marc",
+      "last_name": "Delorme",
+      "email": "marc@app.com",
+      "password": "Azerty123_",
+      "enabled": true,
+      "app_roles": [
+        "viewer"
+      ],
+      "team_roles": {
+        "owner": [
+          "fredlab"
+        ]
+      },
+      "teams": [
+        "fredlab"
+      ]
+    },
+    {
+      "username": "nadia",
+      "first_name": "Nadia",
+      "last_name": "Bennett",
+      "email": "nadia@app.com",
+      "password": "Azerty123_",
+      "enabled": true,
+      "app_roles": [
+        "viewer"
+      ],
+      "team_roles": {
+        "owner": [
+          "swiftpost"
+        ]
+      },
+      "teams": [
+        "swiftpost"
+      ]
     }
   ]
 }
