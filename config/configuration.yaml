@@ -1,8 +1,8 @@
 {
   "teams": [
-    "la-poste",
-    "thales",
-    "r&d"
+    "northbridge",
+    "fredlab",
+    "swiftpost"
   ],
   "users": [
     {
@@ -16,16 +16,17 @@
         "admin"
       ],
       "team_roles": {
-        "member": [
-          "r&d"
-        ],
         "manager": [
-          "thales"
-        ],
-        "owner": [
-          "la-poste"
+          "northbridge",
+          "fredlab",
+          "swiftpost"
         ]
-      }
+      },
+      "teams": [
+        "northbridge",
+        "fredlab",
+        "swiftpost"
+      ]
     },
     {
       "username": "bob",
@@ -39,8 +40,8 @@
         "viewer"
       ],
       "teams": [
-        "la-poste",
-        "thales"
+        "northbridge",
+        "fredlab"
       ]
     },
     {
@@ -54,8 +55,36 @@
         "viewer"
       ],
       "teams": [
-        "la-poste",
-        "thales"
+        "northbridge",
+        "swiftpost"
+      ]
+    },
+    {
+      "username": "zoe",
+      "first_name": "Zoe",
+      "last_name": "Martin",
+      "email": "zoe@app.com",
+      "password": "Azerty123_",
+      "enabled": true,
+      "app_roles": [
+        "viewer"
+      ],
+      "teams": [
+        "fredlab"
+      ]
+    },
+    {
+      "username": "liam",
+      "first_name": "Liam",
+      "last_name": "Dupont",
+      "email": "liam@app.com",
+      "password": "Azerty123_",
+      "enabled": true,
+      "app_roles": [
+        "viewer"
+      ],
+      "teams": [
+        "swiftpost"
       ]
     }
   ]

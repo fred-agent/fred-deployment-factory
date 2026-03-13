@@ -335,6 +335,7 @@
         "attributes" : { }
       } ],
       "agentic" : [ ],
+      "control-plane" : [ ],
       "account" : [ {
         "id" : "29c934ab-5478-491d-b002-85a72c69d396",
         "name" : "manage-consent",
@@ -433,9 +434,9 @@
     "clientRoles" : { }
   }, {
     "id" : "72c153ac-2808-4229-a363-f818eeca510b",
-    "name" : "poletchng",
+    "name" : "poltechng",
     "description" : "",
-    "path" : "/poletchng",
+    "path" : "/poltechng",
     "subGroups" : [ ],
     "attributes" : { },
     "realmRoles" : [ ],
@@ -445,15 +446,6 @@
     "name" : "thanos",
     "description" : "",
     "path" : "/thanos",
-    "subGroups" : [ ],
-    "attributes" : { },
-    "realmRoles" : [ ],
-    "clientRoles" : { }
-  }, {
-    "id" : "f3b29a53-bc5d-41f6-9f14-43f434c4fc1a",
-    "name" : "la-poste",
-    "description" : "",
-    "path" : "/la-poste",
     "subGroups" : [ ],
     "attributes" : { },
     "realmRoles" : [ ],
@@ -525,7 +517,7 @@
       "opensearch-dashboards" : [ "admin" ]
     },
     "notBefore" : 0,
-    "groups" : [ "/bidgpt", "/kast", "/la-poste", "/poletchng", "/thanos" ]
+    "groups" : [ "/bidgpt", "/kast", "/poltechng", "/thanos" ]
   }, {
     "id" : "8d343657-8f63-4a7b-9d7f-83a2e3459f94",
     "username" : "bob",
@@ -614,6 +606,25 @@
     "clientRoles" : {
       "app" : [ "service_agent" ],
       "realm-management" : [ "query-users", "query-groups", "manage-users", "view-users" ],
+      "account" : [ "view-groups" ]
+    },
+    "notBefore" : 0,
+    "groups" : [ ]
+  }, {
+    "id" : "a7a9ccfa-4b31-4fd6-9e15-c9ec048f0b06",
+    "username" : "service-account-control-plane",
+    "emailVerified" : false,
+    "enabled" : true,
+    "createdTimestamp" : 1756824500000,
+    "totp" : false,
+    "serviceAccountClientId" : "control-plane",
+    "credentials" : [ ],
+    "disableableCredentialTypes" : [ ],
+    "requiredActions" : [ ],
+    "realmRoles" : [ "default-roles-app" ],
+    "clientRoles" : {
+      "app" : [ "service_agent" ],
+      "realm-management" : [ "query-users", "query-groups", "view-users" ],
       "account" : [ "view-groups" ]
     },
     "notBefore" : 0,
@@ -798,6 +809,91 @@
       }
     }, {
       "id" : "c9cf20c5-318a-4f33-b3eb-34a5e5e963e1",
+      "name" : "Client Host",
+      "protocol" : "openid-connect",
+      "protocolMapper" : "oidc-usersessionmodel-note-mapper",
+      "consentRequired" : false,
+      "config" : {
+        "user.session.note" : "clientHost",
+        "introspection.token.claim" : "true",
+        "userinfo.token.claim" : "true",
+        "id.token.claim" : "true",
+        "access.token.claim" : "true",
+        "claim.name" : "clientHost",
+        "jsonType.label" : "String"
+      }
+    } ],
+    "defaultClientScopes" : [ "web-origins", "acr", "profile", "roles", "basic", "email" ],
+    "optionalClientScopes" : [ "address", "phone", "offline_access", "microprofile-jwt" ]
+  }, {
+    "id" : "2f77e43b-43b9-4f7f-8a89-0107bf34e4ea",
+    "clientId" : "control-plane",
+    "name" : "control-plane",
+    "description" : "control-plane",
+    "rootUrl" : "",
+    "adminUrl" : "",
+    "baseUrl" : "",
+    "surrogateAuthRequired" : false,
+    "enabled" : true,
+    "alwaysDisplayInConsole" : false,
+    "clientAuthenticatorType" : "client-secret",
+    "secret" : "Azerty123_",
+    "redirectUris" : [ "/*" ],
+    "webOrigins" : [ "/*" ],
+    "notBefore" : 0,
+    "bearerOnly" : false,
+    "consentRequired" : false,
+    "standardFlowEnabled" : false,
+    "implicitFlowEnabled" : false,
+    "directAccessGrantsEnabled" : false,
+    "serviceAccountsEnabled" : true,
+    "publicClient" : false,
+    "frontchannelLogout" : true,
+    "protocol" : "openid-connect",
+    "attributes" : {
+      "realm_client" : "false",
+      "oidc.ciba.grant.enabled" : "false",
+      "client.secret.creation.time" : "1756824500",
+      "backchannel.logout.session.required" : "true",
+      "post.logout.redirect.uris" : "+",
+      "oauth2.device.authorization.grant.enabled" : "false",
+      "backchannel.logout.revoke.offline.tokens" : "false"
+    },
+    "authenticationFlowBindingOverrides" : { },
+    "fullScopeAllowed" : true,
+    "nodeReRegistrationTimeout" : -1,
+    "protocolMappers" : [ {
+      "id" : "f8f0f700-72c1-4f0a-92e5-e9239ab8f4d1",
+      "name" : "Client IP Address",
+      "protocol" : "openid-connect",
+      "protocolMapper" : "oidc-usersessionmodel-note-mapper",
+      "consentRequired" : false,
+      "config" : {
+        "user.session.note" : "clientAddress",
+        "introspection.token.claim" : "true",
+        "userinfo.token.claim" : "true",
+        "id.token.claim" : "true",
+        "access.token.claim" : "true",
+        "claim.name" : "clientAddress",
+        "jsonType.label" : "String"
+      }
+    }, {
+      "id" : "e5f015dd-b5f0-4055-b6ff-c9f4da95f205",
+      "name" : "Client ID",
+      "protocol" : "openid-connect",
+      "protocolMapper" : "oidc-usersessionmodel-note-mapper",
+      "consentRequired" : false,
+      "config" : {
+        "user.session.note" : "client_id",
+        "introspection.token.claim" : "true",
+        "userinfo.token.claim" : "true",
+        "id.token.claim" : "true",
+        "access.token.claim" : "true",
+        "claim.name" : "client_id",
+        "jsonType.label" : "String"
+      }
+    }, {
+      "id" : "8201c9e9-1514-43b3-870d-0cd27d5e89bb",
       "name" : "Client Host",
       "protocol" : "openid-connect",
       "protocolMapper" : "oidc-usersessionmodel-note-mapper",

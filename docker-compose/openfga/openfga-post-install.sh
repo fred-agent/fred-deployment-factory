@@ -143,6 +143,54 @@ kc_user_id_by_username() {
   printf '%s' "$user_id"
 }
 
+kc_group_id_by_team_name() {
+  local team_name="$1"
+  local encoded_path
+  local encoded_name
+  local response
+  local group_id
+
+  if [[ -n "${KEYCLOAK_GROUP_IDS[$team_name]:-}" ]]; then
+    printf '%s' "${KEYCLOAK_GROUP_IDS[$team_name]}"
+    return 0
+  fi
+
+  # Allow explicit UUID team ids in config (advanced usage).
+  if [[ "$team_name" =~ ^[0-9a-fA-F-]{36}$ ]]; then
+    KEYCLOAK_GROUP_IDS["$team_name"]="$team_name"
+    printf '%s' "$team_name"
+    return 0
+  fi
+
+  encoded_path="$(jq -rn --arg value "/${team_name}" '$value|@uri')"
+  response="$(
+    curl -fsS \
+      -H "Authorization: Bearer ${KEYCLOAK_ADMIN_TOKEN}" \
+      "${KEYCLOAK_SERVER_URL}/admin/realms/${KEYCLOAK_REALM}/group-by-path/${encoded_path}" \
+      || true
+  )"
+  group_id="$(jq -r '.id // empty' <<<"$response" 2>/dev/null || true)"
+
+  if [[ -z "$group_id" ]]; then
+    encoded_name="$(jq -rn --arg value "$team_name" '$value|@uri')"
+    response="$(
+      curl -fsS \
+        -H "Authorization: Bearer ${KEYCLOAK_ADMIN_TOKEN}" \
+        "${KEYCLOAK_SERVER_URL}/admin/realms/${KEYCLOAK_REALM}/groups?search=${encoded_name}&briefRepresentation=true&first=0&max=200" \
+        || true
+    )"
+    group_id="$(
+      jq -r --arg team_name "$team_name" '.[] | select((.name // "") == $team_name) | .id' <<<"$response" \
+        | head -n1
+    )"
+  fi
+
+  [[ -n "$group_id" ]] || die "Keycloak group '${team_name}' not found in realm '${KEYCLOAK_REALM}'"
+
+  KEYCLOAK_GROUP_IDS["$team_name"]="$group_id"
+  printf '%s' "$group_id"
+}
+
 normalize_model_json() {
   jq -cS '
     {
@@ -373,6 +421,7 @@ SKIPPED_TUPLES=0
 
 declare -A TEAM_EXISTS=()
 declare -A KEYCLOAK_USER_IDS=()
+declare -A KEYCLOAK_GROUP_IDS=()
 
 log "waiting for OpenFGA API at '${OPENFGA_URL}'"
 wait_for_openfga || die "OpenFGA API is not reachable at ${OPENFGA_URL}"
@@ -395,6 +444,7 @@ KEYCLOAK_ADMIN_TOKEN="$(kc_admin_token)"
 
 while IFS=$'\t' read -r username relation team; do
   local_user_id=""
+  local_team_id=""
   [[ -n "$username" ]] || continue
   [[ -n "$relation" ]] || continue
   [[ -n "$team" ]] || continue
@@ -405,10 +455,11 @@ while IFS=$'\t' read -r username relation team; do
   fi
 
   local_user_id="$(kc_user_id_by_username "$username")"
-  ensure_team_role_closure "user:${local_user_id}" "$relation" "$team"
+  local_team_id="$(kc_group_id_by_team_name "$team")"
+  ensure_team_role_closure "user:${local_user_id}" "$relation" "$local_team_id"
 
   if is_truthy "$OPENFGA_SEED_INCLUDE_USERNAME_USERS"; then
-    ensure_team_role_closure "user:${username}" "$relation" "$team"
+    ensure_team_role_closure "user:${username}" "$relation" "$local_team_id"
   fi
 done < <(
   jq -r '

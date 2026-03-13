@@ -136,6 +136,9 @@ KEYCLOAK_AGENTIC_CLIENT_SECRET="${KEYCLOAK_AGENTIC_CLIENT_SECRET:-Azerty123_}"
 KEYCLOAK_KNOWLEDGE_FLOW_CLIENT_SECRET="${KEYCLOAK_KNOWLEDGE_FLOW_CLIENT_SECRET:-$(read_env_file_var KEYCLOAK_KNOWLEDGE_FLOW_CLIENT_SECRET)}"
 KEYCLOAK_KNOWLEDGE_FLOW_CLIENT_SECRET="${KEYCLOAK_KNOWLEDGE_FLOW_CLIENT_SECRET:-Azerty123_}"
 
+KEYCLOAK_CONTROL_PLANE_CLIENT_SECRET="${KEYCLOAK_CONTROL_PLANE_CLIENT_SECRET:-$(read_env_file_var KEYCLOAK_CONTROL_PLANE_CLIENT_SECRET)}"
+KEYCLOAK_CONTROL_PLANE_CLIENT_SECRET="${KEYCLOAK_CONTROL_PLANE_CLIENT_SECRET:-Azerty123_}"
+
 KEYCLOAK_KF_ENABLE_MANAGE_USERS="${KEYCLOAK_KF_ENABLE_MANAGE_USERS:-$(read_env_file_var KEYCLOAK_KF_ENABLE_MANAGE_USERS)}"
 KEYCLOAK_KF_ENABLE_MANAGE_USERS="${KEYCLOAK_KF_ENABLE_MANAGE_USERS:-true}"
 
@@ -332,29 +335,42 @@ kc_http_request() {
   local response
   local body
   local status
+  local attempt=1
+  local max_attempts=2
 
-  if [[ -n "$payload" ]]; then
-    response="$(
-      curl -sS -w $'\n%{http_code}' -X "$method" "$url" \
-        -H "Authorization: Bearer ${KEYCLOAK_ADMIN_HTTP_TOKEN}" \
-        -H "Content-Type: application/json" \
-        -d "$payload"
-    )"
-  else
-    response="$(
-      curl -sS -w $'\n%{http_code}' -X "$method" "$url" \
-        -H "Authorization: Bearer ${KEYCLOAK_ADMIN_HTTP_TOKEN}"
-    )"
-  fi
+  while (( attempt <= max_attempts )); do
+    if [[ -n "$payload" ]]; then
+      response="$(
+        curl -sS -w $'\n%{http_code}' -X "$method" "$url" \
+          -H "Authorization: Bearer ${KEYCLOAK_ADMIN_HTTP_TOKEN}" \
+          -H "Content-Type: application/json" \
+          -d "$payload"
+      )"
+    else
+      response="$(
+        curl -sS -w $'\n%{http_code}' -X "$method" "$url" \
+          -H "Authorization: Bearer ${KEYCLOAK_ADMIN_HTTP_TOKEN}"
+      )"
+    fi
 
-  body="${response%$'\n'*}"
-  status="${response##*$'\n'}"
+    body="${response%$'\n'*}"
+    status="${response##*$'\n'}"
 
-  if [[ "$status" -lt 200 || "$status" -ge 300 ]]; then
-    die "Keycloak ${method} ${path} failed (${status}): ${body}"
-  fi
+    if [[ "$status" == "401" && "$attempt" -lt "$max_attempts" ]]; then
+      warn "received 401 on ${method} ${path}; refreshing admin token and retrying"
+      KEYCLOAK_ADMIN_HTTP_TOKEN="$(kc_http_admin_token)"
+      ((attempt++))
+      continue
+    fi
+    if [[ "$status" -lt 200 || "$status" -ge 300 ]]; then
+      die "Keycloak ${method} ${path} failed (${status}): ${body}"
+    fi
 
-  printf '%s' "$body"
+    printf '%s' "$body"
+    return 0
+  done
+
+  die "Keycloak ${method} ${path} failed after retry"
 }
 
 kc_http_request_optional_404() {
@@ -365,32 +381,45 @@ kc_http_request_optional_404() {
   local response
   local body
   local status
+  local attempt=1
+  local max_attempts=2
 
-  if [[ -n "$payload" ]]; then
-    response="$(
-      curl -sS -w $'\n%{http_code}' -X "$method" "$url" \
-        -H "Authorization: Bearer ${KEYCLOAK_ADMIN_HTTP_TOKEN}" \
-        -H "Content-Type: application/json" \
-        -d "$payload"
-    )"
-  else
-    response="$(
-      curl -sS -w $'\n%{http_code}' -X "$method" "$url" \
-        -H "Authorization: Bearer ${KEYCLOAK_ADMIN_HTTP_TOKEN}"
-    )"
-  fi
+  while (( attempt <= max_attempts )); do
+    if [[ -n "$payload" ]]; then
+      response="$(
+        curl -sS -w $'\n%{http_code}' -X "$method" "$url" \
+          -H "Authorization: Bearer ${KEYCLOAK_ADMIN_HTTP_TOKEN}" \
+          -H "Content-Type: application/json" \
+          -d "$payload"
+      )"
+    else
+      response="$(
+        curl -sS -w $'\n%{http_code}' -X "$method" "$url" \
+          -H "Authorization: Bearer ${KEYCLOAK_ADMIN_HTTP_TOKEN}"
+      )"
+    fi
 
-  body="${response%$'\n'*}"
-  status="${response##*$'\n'}"
+    body="${response%$'\n'*}"
+    status="${response##*$'\n'}"
 
-  if [[ "$status" == "404" ]]; then
-    return 1
-  fi
-  if [[ "$status" -lt 200 || "$status" -ge 300 ]]; then
-    die "Keycloak ${method} ${path} failed (${status}): ${body}"
-  fi
+    if [[ "$status" == "401" && "$attempt" -lt "$max_attempts" ]]; then
+      warn "received 401 on ${method} ${path}; refreshing admin token and retrying"
+      KEYCLOAK_ADMIN_HTTP_TOKEN="$(kc_http_admin_token)"
+      ((attempt++))
+      continue
+    fi
+    if [[ "$status" == "404" ]]; then
+      return 1
+    fi
+    if [[ "$status" -lt 200 || "$status" -ge 300 ]]; then
+      die "Keycloak ${method} ${path} failed (${status}): ${body}"
+    fi
 
-  printf '%s' "$body"
+    printf '%s' "$body"
+    return 0
+  done
+
+  die "Keycloak ${method} ${path} failed after retry"
 }
 
 kc_http_get() { kc_http_request GET "$1"; }
@@ -895,6 +924,7 @@ KEYCLOAK_ADMIN_HTTP_TOKEN="$(kc_http_admin_token)"
 app_client_uuid="$(ensure_app_client)"
 agentic_client_uuid="$(ensure_service_client_confidential agentic "$KEYCLOAK_AGENTIC_CLIENT_SECRET")"
 knowledge_flow_client_uuid="$(ensure_service_client_confidential knowledge-flow "$KEYCLOAK_KNOWLEDGE_FLOW_CLIENT_SECRET")"
+control_plane_client_uuid="$(ensure_service_client_confidential control-plane "$KEYCLOAK_CONTROL_PLANE_CLIENT_SECRET")"
 
 ensure_client_role app admin "application administrator role"
 ensure_client_role app editor "application editor role"
@@ -903,6 +933,7 @@ ensure_client_role app service_agent "application service agent role"
 
 agentic_service_user="$(wait_for_service_account_username agentic)"
 knowledge_flow_service_user="$(wait_for_service_account_username knowledge-flow)"
+control_plane_service_user="$(wait_for_service_account_username control-plane)"
 
 ensure_user_client_role "$agentic_service_user" realm-management query-users
 ensure_user_client_role "$agentic_service_user" realm-management query-groups
@@ -917,6 +948,12 @@ if is_truthy "$KEYCLOAK_KF_ENABLE_MANAGE_USERS"; then
   ensure_user_client_role "$knowledge_flow_service_user" realm-management manage-users
 fi
 
+ensure_user_client_role "$control_plane_service_user" realm-management query-users
+ensure_user_client_role "$control_plane_service_user" realm-management query-groups
+ensure_user_client_role "$control_plane_service_user" realm-management view-users
+ensure_user_client_role "$control_plane_service_user" realm-management manage-users
+ensure_user_client_role "$control_plane_service_user" account view-groups
+
 groups_scope_uuid="$(ensure_groups_scope)"
 ensure_app_default_scope "$app_client_uuid" "$groups_scope_uuid"
 apply_demo_identity_config "$app_client_uuid"
@@ -930,4 +967,4 @@ if should_force_relogin; then
   fi
 fi
 
-log "post-install completed (app=${app_client_uuid}, agentic=${agentic_client_uuid}, knowledge-flow=${knowledge_flow_client_uuid}, changes=${CHANGED})"
+log "post-install completed (app=${app_client_uuid}, agentic=${agentic_client_uuid}, knowledge-flow=${knowledge_flow_client_uuid}, control-plane=${control_plane_client_uuid}, changes=${CHANGED})"

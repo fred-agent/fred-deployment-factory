@@ -49,6 +49,10 @@ make docker-wipe
 
 If you need custom values, edit `docker-compose/.env.template` before running `make docker-up`.
 
+Keycloak backend client secrets:
+- Docker Compose mode: set `KEYCLOAK_AGENTIC_CLIENT_SECRET`, `KEYCLOAK_KNOWLEDGE_FLOW_CLIENT_SECRET`, and `KEYCLOAK_CONTROL_PLANE_CLIENT_SECRET` in `docker-compose/.env.template`.
+- k3d mode: set `auth.keycloakAgenticClientSecret`, `auth.keycloakKnowledgeFlowClientSecret`, and `auth.keycloakControlPlaneClientSecret` in `helm/fred-stack/values.yaml` (or via Helm overrides).
+
 ### Docker demos: single config file (users, roles, teams)
 For the Docker Compose workflow (`make docker-up`), the single source of truth for demo identities is:
 

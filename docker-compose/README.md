@@ -49,6 +49,7 @@ Here are **examples** of custom deployment params you can modify:
 - ``POSTGRES_MAX_CONNECTIONS``
 - ``KEYCLOAK_AGENTIC_CLIENT_SECRET``
 - ``KEYCLOAK_KNOWLEDGE_FLOW_CLIENT_SECRET``
+- ``KEYCLOAK_CONTROL_PLANE_CLIENT_SECRET``
 - ``KEYCLOAK_FORCE_RELOGIN``
 - ``OPENFGA_STORE_NAME``
 - ``TEMPORAL_UI_PORT``
@@ -85,9 +86,9 @@ bash docker-compose/keycloak/keycloak-post-install.sh
 ```
 
 The Keycloak post-install script is idempotent and enforces:
-- clients `app`, `agentic`, `knowledge-flow`
-- `agentic` and `knowledge-flow` as confidential clients with service accounts enabled
-- service account roles for `agentic` and `knowledge-flow` (`realm-management` + `account:view-groups`, including `manage-users` for Knowledge Flow when `KEYCLOAK_KF_ENABLE_MANAGE_USERS=true`)
+- clients `app`, `agentic`, `knowledge-flow`, `control-plane`
+- `agentic`, `knowledge-flow`, and `control-plane` as confidential clients with service accounts enabled
+- service account roles for `agentic`, `knowledge-flow`, and `control-plane` (`realm-management` + `account:view-groups`, including `manage-users` for Knowledge Flow when `KEYCLOAK_KF_ENABLE_MANAGE_USERS=true`)
 - client roles `app:admin/editor/viewer/service_agent` (plus any extra roles declared in `config/configuration.yaml`)
 - demo groups, demo users, app-role assignments, and group memberships from `config/configuration.yaml` (reconciled by post-install)
 - client scope `groups-scope` with `oidc-group-membership-mapper` (claim `groups`, full path, access/id/userinfo token claims, multivalued)
