@@ -3,16 +3,6 @@ SHELL := /bin/bash
 
 DOCKER_COMPOSE_BASE := docker compose -f docker-compose/docker-compose-
 
-CORE_COMPOSE_FILES := \
-	docker-compose/docker-compose-postgres.yml \
-	docker-compose/docker-compose-temporal.yml \
-	docker-compose/docker-compose-opensearch.yml \
-	docker-compose/docker-compose-clickhouse.yml \
-	docker-compose/docker-compose-langfuse.yml \
-	docker-compose/docker-compose-openfga.yml \
-	docker-compose/docker-compose-minio.yml \
-	docker-compose/docker-compose-keycloak.yml
-
 K3D_CLUSTER ?= fred
 K3D_NAMESPACE ?= fred
 HELM_RELEASE ?= fred-stack
@@ -149,9 +139,14 @@ all-down:
 
 docker-wipe: all-down ## Stop Docker stack, delete volumes, remove network, and prune
 	@echo -e "\n--- WIPE IN PROGRESS ---"
-	@for file in $(CORE_COMPOSE_FILES); do \
-		docker compose -f $$file down -v; \
-	done
+	$(DOCKER_COMPOSE_BASE)langfuse.yml -p langfuse down -v
+	$(DOCKER_COMPOSE_BASE)temporal.yml -p temporal down -v
+	$(DOCKER_COMPOSE_BASE)clickhouse.yml -p clickhouse down -v
+	$(DOCKER_COMPOSE_BASE)opensearch.yml -p opensearch down -v
+	$(DOCKER_COMPOSE_BASE)openfga.yml -p openfga down -v
+	$(DOCKER_COMPOSE_BASE)minio.yml -p minio down -v
+	$(DOCKER_COMPOSE_BASE)keycloak.yml -p keycloak down -v
+	$(DOCKER_COMPOSE_BASE)postgres.yml -p postgres down -v
 	docker network rm fred-shared-network || true
 	docker system prune -f
 	@echo -e "\n--- WIPE COMPLETE ---"

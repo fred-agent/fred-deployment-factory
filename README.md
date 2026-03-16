@@ -64,7 +64,7 @@ This file drives:
 - Keycloak app client roles assigned to users
 - Keycloak group memberships
 - OpenFGA team membership tuples
-- preflight expectations (`make preflight-check`)
+- preflight expectations (`make preflight-check`; agent ownership coverage is opt-in via `PREFLIGHT_CHECK_AGENT_OWNERSHIP=true`)
 
 If you want to prepare a demo/test scenario, edit only `config/configuration.yaml`, then run:
 

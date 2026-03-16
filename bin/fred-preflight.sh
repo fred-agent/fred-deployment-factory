@@ -9,7 +9,7 @@ set -euo pipefail
 # 1) Keycloak realm/clients/users/groups
 # 2) App roles, groups scope mapper, service-account rights
 # 3) OpenFGA store presence + team memberships from demo identity config
-# 4) Postgres agent IDs + owner coverage for Alice (read-only)
+# 4) Optional Postgres agent IDs + owner coverage for Alice (read-only)
 # 5) Langfuse endpoints + MinIO bucket diagnostics
 # -----------------------------------------------------------------------------
 
@@ -56,6 +56,7 @@ LANGFUSE_MINIO_HTTP_RETRIES="${LANGFUSE_MINIO_HTTP_RETRIES:-10}"
 
 # When true, also expect user:<username> team tuples in OpenFGA.
 OPENFGA_EXPECT_USERNAME_SUBJECTS="${OPENFGA_EXPECT_USERNAME_SUBJECTS:-${OPENFGA_SEED_INCLUDE_USERNAME_USERS:-true}}"
+PREFLIGHT_CHECK_AGENT_OWNERSHIP="${PREFLIGHT_CHECK_AGENT_OWNERSHIP:-false}"
 
 REQUIRED_CLIENTS=(app agentic knowledge-flow control-plane)
 REQUIRED_APP_CLIENT_ROLES=(admin editor viewer)
@@ -955,31 +956,34 @@ for u in "${REQUIRED_USERS[@]}"; do
   fi
 done
 
-step "Read agent IDs from Postgres"
-mapfile -t AGENT_IDS < <(
-  psql -h "${PGHOST}" -U "${PGUSER}" -d "${PGDATABASE}" -Atc \
-    "select id from public.\"agent\" order by id;" 2>/dev/null || true
-)
-
-if [[ "${#AGENT_IDS[@]}" -eq 0 ]]; then
-  info "No agents found in Postgres (normal starting situation)"
-else
-  ok "${#AGENT_IDS[@]} agent(s) found"
-  info "IDs: ${AGENT_IDS[*]}"
-fi
-
+AGENT_IDS=()
 TOTAL_TUPLES=-1
 ALICE_OWNER_COUNT=0
 AGENTS_WITH_OWNER=0
 AGENTS_WITHOUT_OWNER=0
 UNSUPPORTED_AGENT_IDS=0
 
+if is_truthy "$PREFLIGHT_CHECK_AGENT_OWNERSHIP"; then
+  step "Read agent IDs from Postgres"
+  mapfile -t AGENT_IDS < <(
+    psql -h "${PGHOST}" -U "${PGUSER}" -d "${PGDATABASE}" -Atc \
+      "select id from public.\"agent\" order by id;" 2>/dev/null || true
+  )
+
+  if [[ "${#AGENT_IDS[@]}" -eq 0 ]]; then
+    info "No agents found in Postgres (normal starting situation)"
+  else
+    ok "${#AGENT_IDS[@]} agent(s) found"
+    info "IDs: ${AGENT_IDS[*]}"
+  fi
+fi
+
 if [[ -n "${ALL_TUPLES}" ]]; then
   step "Inspect OpenFGA tuples"
   TOTAL_TUPLES="$(jq '.tuples | length' <<<"$ALL_TUPLES")"
   ok "Current tuples in store: ${TOTAL_TUPLES}"
 
-  if [[ -n "${ALICE_UID}" ]]; then
+  if is_truthy "$PREFLIGHT_CHECK_AGENT_OWNERSHIP" && [[ -n "${ALICE_UID}" ]]; then
     ALICE_OWNER_COUNT="$(
       jq -r --arg uid "user:${ALICE_UID}" \
         '[.tuples[].key | select(.user==$uid and .relation=="owner" and (.object|startswith("agent:")))] | length' <<<"$ALL_TUPLES"
@@ -987,7 +991,7 @@ if [[ -n "${ALL_TUPLES}" ]]; then
     info "Alice owner tuples (user UUID): ${ALICE_OWNER_COUNT}"
   fi
 
-  if [[ "${#AGENT_IDS[@]}" -gt 0 && -n "${ALICE_UID}" ]]; then
+  if is_truthy "$PREFLIGHT_CHECK_AGENT_OWNERSHIP" && [[ "${#AGENT_IDS[@]}" -gt 0 && -n "${ALICE_UID}" ]]; then
     step "Check ownership coverage (READ-ONLY)"
     for AGENT_ID in "${AGENT_IDS[@]}"; do
       if [[ ! "${AGENT_ID}" =~ ^[^[:space:]]{2,256}$ ]]; then
@@ -1174,21 +1178,23 @@ info "Langfuse worker endpoint: ${LANGFUSE_WORKER_URL} (HTTP ${LANGFUSE_WORKER_H
 info "Langfuse MinIO endpoint (external check): ${LANGFUSE_MINIO_URL} (HTTP ${LANGFUSE_MINIO_HTTP_CODE})"
 info "Langfuse S3 config gaps (empty bucket names): ${LANGFUSE_S3_CONFIG_GAPS}"
 info "Langfuse MinIO bucket gaps: ${LANGFUSE_MINIO_BUCKET_GAPS}"
-info "Postgres agents: ${#AGENT_IDS[@]}"
 if [[ "${TOTAL_TUPLES}" -ge 0 ]]; then
   info "OpenFGA tuples total: ${TOTAL_TUPLES}"
 fi
-if [[ -n "${ALICE_UID}" && "${TOTAL_TUPLES}" -ge 0 ]]; then
-  info "Alice owner tuples: ${ALICE_OWNER_COUNT}"
-elif [[ -n "${ALICE_UID}" ]]; then
-  info "Alice owner tuples: not evaluated (OpenFGA tuples unavailable)"
-fi
-if [[ "${#AGENT_IDS[@]}" -gt 0 && -n "${ALICE_UID}" ]]; then
-  info "Agents with Alice owner tuple: ${AGENTS_WITH_OWNER}"
-  info "Agents missing Alice owner tuple: ${AGENTS_WITHOUT_OWNER}"
-fi
-if [[ "${UNSUPPORTED_AGENT_IDS}" -gt 0 ]]; then
-  info "Unsupported agent IDs for OpenFGA: ${UNSUPPORTED_AGENT_IDS}"
+if is_truthy "$PREFLIGHT_CHECK_AGENT_OWNERSHIP"; then
+  info "Postgres agents: ${#AGENT_IDS[@]}"
+  if [[ -n "${ALICE_UID}" && "${TOTAL_TUPLES}" -ge 0 ]]; then
+    info "Alice owner tuples: ${ALICE_OWNER_COUNT}"
+  elif [[ -n "${ALICE_UID}" ]]; then
+    info "Alice owner tuples: not evaluated (OpenFGA tuples unavailable)"
+  fi
+  if [[ "${#AGENT_IDS[@]}" -gt 0 && -n "${ALICE_UID}" ]]; then
+    info "Agents with Alice owner tuple: ${AGENTS_WITH_OWNER}"
+    info "Agents missing Alice owner tuple: ${AGENTS_WITHOUT_OWNER}"
+  fi
+  if [[ "${UNSUPPORTED_AGENT_IDS}" -gt 0 ]]; then
+    info "Unsupported agent IDs for OpenFGA: ${UNSUPPORTED_AGENT_IDS}"
+  fi
 fi
 
 printf "\n%s\n" "${BOLD}Readiness:${RESET}"
