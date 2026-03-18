@@ -587,7 +587,9 @@
     "requiredActions" : [ ],
     "realmRoles" : [ "default-roles-app" ],
     "clientRoles" : {
-      "app" : [ "service_agent" ]
+      "app" : [ "service_agent" ],
+      "realm-management" : [ "query-users", "query-groups", "view-users" ],
+      "account" : [ "view-groups" ]
     },
     "notBefore" : 0,
     "groups" : [ ]
