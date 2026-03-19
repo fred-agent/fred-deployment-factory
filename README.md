@@ -99,6 +99,7 @@ By default, this creates a local `k3d` cluster named `fred` with default k3s net
 - OpenFGA gRPC: `localhost:9081`
 - Temporal Frontend gRPC: `localhost:7233`
 - Temporal UI: `http://localhost:8233`
+- Prometheus: `http://localhost:9090`
 
 `make k3d-up` now prints colored step progress (`[STEP]`, `[OK]`, `[WARN]`, `[INFO]`, `[FAIL]`), pre-pulls chart images (and kube-system images by default) on the host and imports them into k3d (`K3D_PREFETCH_IMAGES=true`, `K3D_PREFETCH_SYSTEM_IMAGES=true`), retries image pulls on transient network errors (`IMAGE_PULL_RETRIES`, `IMAGE_PULL_RETRY_DELAY`), shows a deployment heartbeat every 10s while Helm waits, handles `Ctrl+C` cleanly (including stopping Helm subprocesses), and on Helm failure automatically dumps pods/jobs/events plus `helm status`.
 
@@ -109,8 +110,10 @@ If you disable prefetch (`K3D_PREFETCH_IMAGES=false`), `k3d-up` falls back to a 
 If some ports are already used (for example by the Docker Compose stack), override them at launch time:
 
 ```bash
-make k3d-up K3D_HOST_PORT_POSTGRES=15432 K3D_HOST_PORT_KEYCLOAK=18080 K3D_HOST_PORT_MINIO_API=19000
+make k3d-up K3D_HOST_PORT_POSTGRES=15432 K3D_HOST_PORT_KEYCLOAK=18080 K3D_HOST_PORT_MINIO_API=19000 K3D_HOST_PORT_PROMETHEUS=19090
 ```
+
+Prometheus is configured with persistent local storage and discovers scrape targets through standard Kubernetes annotations (`prometheus.io/scrape`, `prometheus.io/port`, `prometheus.io/path`) on Services or Pods.
 
 If your machine is slower, increase Helm wait timeout:
 

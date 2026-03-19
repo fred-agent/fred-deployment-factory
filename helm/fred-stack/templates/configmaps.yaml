@@ -85,3 +85,15 @@ data:
 {{ .Files.Get "files/scripts/openfga-post-install.sh" | indent 4 }}
   keycloak-post-install-k8s.sh: |
 {{ .Files.Get "files/scripts/keycloak-post-install-k8s.sh" | indent 4 }}
+{{- if .Values.prometheus.enabled }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fred-prometheus-config
+  labels:
+    {{- include "fred-stack.labels" . | nindent 4 }}
+data:
+  prometheus.yml: |
+{{ tpl (.Files.Get "files/prometheus/prometheus.yml.tpl") . | indent 4 }}
+{{- end }}
