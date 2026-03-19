@@ -47,7 +47,7 @@ auth:
   minioReadwritePassword: Azerty123_
 
   opensearchAdminUser: admin
-  opensearchAdminPassword: Azerty123_
+  opensearchAdminPassword: FredOpensearch123!!
 
   openfgaApiToken: Azerty123_
   openfgaStoreName: fred
