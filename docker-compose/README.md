@@ -13,6 +13,7 @@ This project helps to deploy the following support services:
 - **Kubernetes MCP Server** - so that AI agents can interact with Kubernetes clusters
 - **Temporal** - for job orchestration
 - **Neo4j** - for graph database capabilities (knowledge graphs, relationship querying)
+- **Prometheus** - for metrics collection and scraping
 
 This repository aims to simplify local development and testing by providing a ready-to-use, reproducible environment for all shared dependencies across the `fred-agent` projects.
 
@@ -56,6 +57,8 @@ Here are **examples** of custom deployment params you can modify:
 - ``MINIO_ROOT_USER``
 - ``MINIO_ROOT_PASSWORD``
 - ``OPENSEARCH_ADMIN_PASSWORD``
+- ``PROMETHEUS_PORT``
+- ``PROMETHEUS_RETENTION``
 
 ## Deployment
 
@@ -75,6 +78,7 @@ I(openfga) --> E(postgres)
 H(temporal) --> A(keycloak)
 H(temporal) --> E(postgres)
 F(k8s mcp) --> G(kubernetes)
+J(prometheus)
 ```
 
 Launch the components according to your needs with these command lines:
@@ -145,6 +149,13 @@ docker compose -f docker-compose/docker-compose-temporal.yml -p temporal up -d
 ```
 docker compose -f docker-compose/docker-compose-neo4j.yml -p neo4j up -d
 ```
+
+- Prometheus
+```
+docker compose -f docker-compose/docker-compose-prometheus.yml -p prometheus up -d
+```
+
+Prometheus starts with self-scraping enabled and can load additional static targets from `docker-compose/prometheus/targets/*.yml`.
 
 ## Access the service interfaces
 
@@ -236,3 +247,8 @@ Hereunder, these are the information to connect to each service with their _loca
   - bolt://$(DOCKER_COMPOSE_HOST_FQDN):7687 (Bolt protocol)
 - Service accounts:
   - `neo4j` (default superuser)
+
+### Prometheus
+
+- URLs:
+  - http://$(DOCKER_COMPOSE_HOST_FQDN):$(PROMETHEUS_PORT) (web UI / API, default: `9090`)
