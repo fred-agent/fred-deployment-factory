@@ -13,21 +13,31 @@
         "kast",
         "poltechng",
         "thanos"
-      ]
+      ],
+      "team_roles": {
+        "owner": [
+          "bidgpt",
+          "kast",
+          "poltechng",
+          "thanos"
+        ]
+      }
     },
     {
       "username": "bob",
       "teams": [
         "bidgpt",
         "kast"
-      ]
+      ],
+      "team_roles": {}
     },
     {
       "username": "phil",
       "teams": [
         "bidgpt",
         "thanos"
-      ]
+      ],
+      "team_roles": {}
     }
   ]
 }

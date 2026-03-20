@@ -322,6 +322,47 @@ k3d-up: k3d-create ## Deploy the full stack into k3d with Helm
 	run_step "Show namespace status $(K3D_NAMESPACE)" \
 	  kubectl get pods,svc -n "$(K3D_NAMESPACE)"
 
+##@ k3d service targets
+k3d-deploy: ## Redeploy the full fred-stack Helm chart (no image prefetch)
+	helm upgrade --install "$(HELM_RELEASE)" "$(HELM_CHART_DIR)" \
+		--namespace "$(K3D_NAMESPACE)" \
+		--create-namespace \
+		--wait \
+		--wait-for-jobs \
+		--timeout "$(HELM_TIMEOUT)"
+
+k3d-restart-keycloak: ## Restart Keycloak and re-run its post-install job
+	kubectl delete job keycloak-post-install -n "$(K3D_NAMESPACE)" --ignore-not-found
+	kubectl rollout restart statefulset/keycloak -n "$(K3D_NAMESPACE)" 2>/dev/null || \
+		kubectl rollout restart deployment/keycloak -n "$(K3D_NAMESPACE)" 2>/dev/null || true
+	$(MAKE) k3d-deploy
+
+k3d-restart-openfga: ## Re-run the OpenFGA post-install job (updates model + seeds tuples)
+	kubectl delete job openfga-post-install -n "$(K3D_NAMESPACE)" --ignore-not-found
+	$(MAKE) k3d-deploy
+
+k3d-restart-opensearch: ## Re-run the OpenSearch post-install job (recreates indices)
+	kubectl delete job opensearch-post-install -n "$(K3D_NAMESPACE)" --ignore-not-found
+	$(MAKE) k3d-deploy
+
+k3d-restart-temporal: ## Re-run the Temporal post-install job (registers namespace)
+	kubectl delete job temporal-post-install -n "$(K3D_NAMESPACE)" --ignore-not-found
+	$(MAKE) k3d-deploy
+
+k3d-restart-minio: ## Re-run the MinIO post-install job (creates buckets)
+	kubectl delete job minio-post-install -n "$(K3D_NAMESPACE)" --ignore-not-found
+	$(MAKE) k3d-deploy
+
+k3d-restart-postgres: ## Restart PostgreSQL
+	kubectl rollout restart statefulset/postgres -n "$(K3D_NAMESPACE)" 2>/dev/null || \
+		kubectl rollout restart deployment/postgres -n "$(K3D_NAMESPACE)" 2>/dev/null || true
+
+k3d-logs: ## Show logs for a service: make k3d-logs SVC=openfga-post-install
+	@if [ -z "$(SVC)" ]; then echo "Usage: make k3d-logs SVC=<name>"; exit 1; fi
+	@kubectl logs -n "$(K3D_NAMESPACE)" -l app=$(SVC) --tail=100 2>/dev/null || \
+		kubectl logs -n "$(K3D_NAMESPACE)" job/$(SVC) --tail=100 2>/dev/null || \
+		echo "No logs found for '$(SVC)'"
+
 k3d-down: ## Uninstall the Helm release from k3d namespace
 	@echo "Removing Helm release '$(HELM_RELEASE)' from namespace '$(K3D_NAMESPACE)'..."
 	-helm uninstall "$(HELM_RELEASE)" -n "$(K3D_NAMESPACE)"
@@ -358,4 +399,4 @@ k3d-airgap-status: ## Show active Cilium network policies
 	@echo "📊 CiliumNetworkPolicies in namespace '$(K3D_NAMESPACE)':"
 	kubectl get ciliumnetworkpolicies -n "$(K3D_NAMESPACE)"
 
-.PHONY: help network-create env-setup keycloak-post-install postgres-up keycloak-up minio-up opensearch-up clickhouse-up langfuse-up openfga-post-install openfga-up temporal-up preflight-check docker-up all-down docker-wipe k3d-create k3d-up k3d-down k3d-delete k3d-wipe k3d-status k3d-airgap-on k3d-airgap-off k3d-airgap-status
+.PHONY: help network-create env-setup keycloak-post-install postgres-up keycloak-up minio-up opensearch-up clickhouse-up langfuse-up openfga-post-install openfga-up temporal-up preflight-check docker-up all-down docker-wipe k3d-create k3d-up k3d-deploy k3d-restart-keycloak k3d-restart-openfga k3d-restart-opensearch k3d-restart-temporal k3d-restart-minio k3d-restart-postgres k3d-logs k3d-down k3d-delete k3d-wipe k3d-status k3d-airgap-on k3d-airgap-off k3d-airgap-status
