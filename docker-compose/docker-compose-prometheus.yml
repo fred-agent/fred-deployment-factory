@@ -1,0 +1,28 @@
+services:
+
+  prometheus:
+    container_name: app-prometheus
+    image: prom/prometheus:v2.54.1
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=${PROMETHEUS_RETENTION:-7d}
+      - --web.enable-lifecycle
+    networks:
+      - app-network
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    ports:
+      - 0.0.0.0:${PROMETHEUS_PORT:-9090}:9090/tcp
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/targets:/etc/prometheus/targets:ro
+      - vol-prometheus-data:/prometheus
+
+volumes:
+  vol-prometheus-data:
+
+networks:
+  app-network:
+    external: true
+    name: fred-shared-network

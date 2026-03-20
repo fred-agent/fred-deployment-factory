@@ -1,20 +1,32 @@
-# FRED Deployment Factory (Docker Core)
+# Fred Deployment Factory (docker-compose & k3d)
 
-Local Docker Compose stack for the core FRED services:
-- Keycloak (+ PostgreSQL)
-- MinIO
-- OpenSearch
-- OpenFGA
-- Temporal
+Local deployment repository for Fred.
+
+The Docker Compose workflow in this repository groups services into two scopes:
+- Structural Fred stack:
+  - PostgreSQL
+  - Keycloak
+  - MinIO
+  - OpenSearch
+  - OpenFGA
+  - Temporal
+- Additional local platform services:
+  - Prometheus for metrics collection and scraping
+  - ClickHouse for analytics/event/vector storage
+  - Langfuse for LLM tracing and observability
 
 ## Related links
-- FRED website: https://fredk8.dev
-- FRED repository: https://github.com/ThalesGroup/fred.git
+- Fred website: https://fredk8.dev
+- Fred repository: https://github.com/ThalesGroup/fred.git
 
 ## Why this repository
-FRED can be started as-is and run with only ChromaDB, SQLite, and the local filesystem.
+Fred can be started as-is and run with only ChromaDB, SQLite, and the local filesystem.
 
-The goal of this `fred-deployment-factory` repository is to provide a fuller local experience with supporting services such as MinIO, Keycloak, OpenSearch, and PostgreSQL (along with OpenFGA and Temporal in this stack).
+The goal of this `fred-deployment-factory` repository is to provide a fuller local experience around Fred.
+
+The structural Fred services exposed here are PostgreSQL, Keycloak, MinIO, OpenSearch, OpenFGA, and Temporal.
+
+Prometheus, ClickHouse, and Langfuse are also available for local observability, tracing, and analytics, but they are not structural requirements.
 
 ## Prerequisites
 - Docker
@@ -26,11 +38,20 @@ The goal of this `fred-deployment-factory` repository is to provide a fuller loc
 
 - `config/configuration.yaml`
 
-2. Start everything:
+2. Start the full local Docker environment:
 
 ```bash
 make docker-up
 ```
+
+This launches both the structural Fred services and the additional local platform services (`Prometheus`, `ClickHouse`, and `Langfuse`).
+
+Default endpoints for the additional services:
+- Prometheus: `http://localhost:9090`
+- ClickHouse SQL UI / HTTP API: `http://localhost:8123/play`
+- Langfuse: `http://localhost:3001`
+
+If you only need part of the platform, use the per-service Make targets such as `make keycloak-up`, `make minio-up`, `make opensearch-up`, `make openfga-up`, `make temporal-up`, `make clickhouse-up`, `make langfuse-up`, or `make prometheus-up`.
 
 3. Optional (for browser SSO callbacks to Keycloak on local machine):
 
@@ -52,6 +73,14 @@ If you need custom values, edit `docker-compose/.env.template` before running `m
 Keycloak backend client secrets:
 - Docker Compose mode: set `KEYCLOAK_AGENTIC_CLIENT_SECRET`, `KEYCLOAK_KNOWLEDGE_FLOW_CLIENT_SECRET`, and `KEYCLOAK_CONTROL_PLANE_CLIENT_SECRET` in `docker-compose/.env.template`.
 - k3d mode: set `auth.keycloakAgenticClientSecret`, `auth.keycloakKnowledgeFlowClientSecret`, and `auth.keycloakControlPlaneClientSecret` in `helm/fred-stack/values.yaml` (or via Helm overrides).
+
+Additional Docker settings:
+- ClickHouse: set `CLICKHOUSE_DB`, `CLICKHOUSE_USER`, `CLICKHOUSE_PASSWORD`, `CLICKHOUSE_HTTP_PORT`, and `CLICKHOUSE_NATIVE_PORT` as needed.
+- Langfuse: set `POSTGRES_LANGFUSE_USER`, `POSTGRES_LANGFUSE_PASSWORD`, `POSTGRES_LANGFUSE_DB`, and the relevant `LANGFUSE_S3_*` bucket settings.
+
+Prometheus Docker settings:
+- set `PROMETHEUS_PORT` to change the exposed host port
+- set `PROMETHEUS_RETENTION` to change TSDB retention
 
 ### Docker demos: single config file (users, roles, teams)
 For the Docker Compose workflow (`make docker-up`), the single source of truth for demo identities is:
@@ -82,6 +111,8 @@ This repository also includes a Kubernetes deployment path using:
 - a vanilla `k3d` cluster
 - a standard Helm chart at `helm/fred-stack`
 - optional Cilium (`K3D_USE_CILIUM=true`) only for CiliumNetworkPolicy/air-gap flows
+
+At the moment, the `k3d` / Helm path covers the structural Fred stack + Prometheus. The optional ClickHouse and Langfuse services are currently available through Docker Compose only.
 
 ### Bring it up
 ```bash
