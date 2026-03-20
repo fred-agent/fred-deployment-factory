@@ -1,6 +1,6 @@
-# FRED Deployment Factory
+# Fred Deployment Factory (docker-compose & k3d)
 
-Local deployment repository for FRED.
+Local deployment repository for Fred.
 
 The Docker Compose workflow in this repository groups services into two scopes:
 - Structural Fred stack:
@@ -16,11 +16,11 @@ The Docker Compose workflow in this repository groups services into two scopes:
   - Langfuse for LLM tracing and observability
 
 ## Related links
-- FRED website: https://fredk8.dev
-- FRED repository: https://github.com/ThalesGroup/fred.git
+- Fred website: https://fredk8.dev
+- Fred repository: https://github.com/ThalesGroup/fred.git
 
 ## Why this repository
-FRED can be started as-is and run with only ChromaDB, SQLite, and the local filesystem.
+Fred can be started as-is and run with only ChromaDB, SQLite, and the local filesystem.
 
 The goal of this `fred-deployment-factory` repository is to provide a fuller local experience around Fred.
 
@@ -44,7 +44,7 @@ Prometheus, ClickHouse, and Langfuse are also available for local observability,
 make docker-up
 ```
 
-This launches both the structural FRED services and the additional local platform services (`Prometheus`, `ClickHouse`, and `Langfuse`).
+This launches both the structural Fred services and the additional local platform services (`Prometheus`, `ClickHouse`, and `Langfuse`).
 
 Default endpoints for the additional services:
 - Prometheus: `http://localhost:9090`
