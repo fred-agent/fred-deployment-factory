@@ -132,6 +132,8 @@ docker-up: postgres-up keycloak-up minio-up opensearch-up openfga-up temporal-up
 	$(MAKE) preflight-check
 	@echo "All Docker stack services are running and preflight passed."
 
+docker-down: all-down ## Stop the Docker stack
+
 all-down:
 	@echo "Stopping Docker stack services..."
 	$(DOCKER_COMPOSE_BASE)prometheus.yml -p prometheus down
@@ -364,4 +366,4 @@ k3d-airgap-status: ## Show active Cilium network policies
 	@echo "📊 CiliumNetworkPolicies in namespace '$(K3D_NAMESPACE)':"
 	kubectl get ciliumnetworkpolicies -n "$(K3D_NAMESPACE)"
 
-.PHONY: help network-create env-setup keycloak-post-install postgres-up keycloak-up minio-up opensearch-up clickhouse-up langfuse-up prometheus-up openfga-post-install openfga-up temporal-up preflight-check docker-up all-down docker-wipe k3d-create k3d-up k3d-down k3d-delete k3d-wipe k3d-status k3d-airgap-on k3d-airgap-off k3d-airgap-status
+.PHONY: help network-create env-setup keycloak-post-install postgres-up keycloak-up minio-up opensearch-up clickhouse-up langfuse-up prometheus-up openfga-post-install openfga-up temporal-up preflight-check docker-up docker-down all-down docker-wipe k3d-create k3d-up k3d-down k3d-delete k3d-wipe k3d-status k3d-airgap-on k3d-airgap-off k3d-airgap-status
