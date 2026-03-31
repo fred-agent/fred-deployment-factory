@@ -21,6 +21,20 @@ spec:
   resources:
     requests:
       storage: {{ .Values.persistence.minioSize }}
+{{- if .Values.clickhouse.enabled }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: clickhouse-data
+  labels:
+    {{- include "fred-stack.labels" . | nindent 4 }}
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: {{ .Values.persistence.clickhouseSize }}
+{{- end }}
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim

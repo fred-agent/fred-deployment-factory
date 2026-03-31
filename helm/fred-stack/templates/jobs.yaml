@@ -157,6 +157,41 @@ spec:
         - name: openfga-config
           configMap:
             name: fred-openfga-config
+{{- if .Values.clickhouse.enabled }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: clickhouse-post-install
+  labels:
+    {{- include "fred-stack.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-weight: "35"
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        {{- include "fred-stack.selectorLabels" . | nindent 8 }}
+    spec:
+      enableServiceLinks: false
+      restartPolicy: OnFailure
+      containers:
+        - name: clickhouse-post-install
+          image: {{ .Values.images.clickhouse }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          envFrom:
+            - secretRef:
+                name: fred-secrets
+          command:
+            - /bin/sh
+            - -ec
+            - |
+              until clickhouse-client --host clickhouse --user "$CLICKHOUSE_USER" --password "$CLICKHOUSE_PASSWORD" --query "SELECT 1" >/dev/null 2>&1; do sleep 2; done
+              clickhouse-client --host clickhouse --user "$CLICKHOUSE_USER" --password "$CLICKHOUSE_PASSWORD" --query "CREATE DATABASE IF NOT EXISTS $CLICKHOUSE_DB"
+{{- end }}
 ---
 apiVersion: batch/v1
 kind: Job

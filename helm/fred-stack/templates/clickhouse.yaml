@@ -1,0 +1,102 @@
+{{- if .Values.clickhouse.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: clickhouse
+  labels:
+    {{- include "fred-stack.labels" . | nindent 4 }}
+    app.kubernetes.io/component: clickhouse
+spec:
+  type: {{ include "fred-stack.serviceType" . }}
+  ports:
+    - name: http
+      port: 8123
+      targetPort: 8123
+      {{- if eq (include "fred-stack.serviceType" .) "NodePort" }}
+      nodePort: {{ .Values.service.nodePorts.clickhouseHttp }}
+      {{- end }}
+    - name: native
+      port: 9000
+      targetPort: 9000
+      {{- if eq (include "fred-stack.serviceType" .) "NodePort" }}
+      nodePort: {{ .Values.service.nodePorts.clickhouseNative }}
+      {{- end }}
+  selector:
+    app.kubernetes.io/component: clickhouse
+    {{- include "fred-stack.selectorLabels" . | nindent 4 }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: clickhouse
+  labels:
+    {{- include "fred-stack.labels" . | nindent 4 }}
+    app.kubernetes.io/component: clickhouse
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: clickhouse
+      {{- include "fred-stack.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: clickhouse
+        {{- include "fred-stack.selectorLabels" . | nindent 8 }}
+    spec:
+      enableServiceLinks: false
+      securityContext:
+        fsGroup: 101
+      containers:
+        - name: clickhouse
+          image: {{ .Values.images.clickhouse }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          env:
+            - name: NO_PROXY
+              value: "*"
+            - name: CLICKHOUSE_DB
+              valueFrom:
+                secretKeyRef:
+                  name: fred-secrets
+                  key: CLICKHOUSE_DB
+            - name: CLICKHOUSE_USER
+              valueFrom:
+                secretKeyRef:
+                  name: fred-secrets
+                  key: CLICKHOUSE_USER
+            - name: CLICKHOUSE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: fred-secrets
+                  key: CLICKHOUSE_PASSWORD
+            - name: CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT
+              value: "1"
+          ports:
+            - name: http
+              containerPort: 8123
+            - name: native
+              containerPort: 9000
+          readinessProbe:
+            httpGet:
+              path: /ping
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 12
+          livenessProbe:
+            httpGet:
+              path: /ping
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 6
+          volumeMounts:
+            - name: clickhouse-data
+              mountPath: /var/lib/clickhouse
+      volumes:
+        - name: clickhouse-data
+          persistentVolumeClaim:
+            claimName: clickhouse-data
+{{- end }}

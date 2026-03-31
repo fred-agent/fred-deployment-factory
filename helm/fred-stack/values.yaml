@@ -46,6 +46,10 @@ auth:
   minioReadwriteUser: app_rw
   minioReadwritePassword: Azerty123_
 
+  clickhouseUser: fred
+  clickhousePassword: Azerty123_
+  clickhouseDb: fred
+
   opensearchAdminUser: admin
   opensearchAdminPassword: FredOpensearch123!!
 
@@ -55,6 +59,9 @@ auth:
 
 temporal:
   uiPort: 8233
+
+clickhouse:
+  enabled: true
 
 prometheus:
   enabled: true
@@ -69,6 +76,8 @@ service:
     keycloak: 30080
     minioApi: 30900
     minioConsole: 30901
+    clickhouseHttp: 30823
+    clickhouseNative: 30902
     opensearch: 30920
     opensearchDashboards: 30561
     openfgaHttp: 30908
@@ -81,6 +90,7 @@ service:
 persistence:
   postgresSize: 10Gi
   minioSize: 10Gi
+  clickhouseSize: 10Gi
   opensearchSize: 10Gi
   prometheusSize: 8Gi
 
@@ -91,6 +101,7 @@ images:
   toolbox: nicolaka/netshoot:v0.13
   minio: minio/minio:RELEASE.2025-02-07T23-21-09Z
   minioClient: minio/mc:RELEASE.2025-02-07T23-21-09Z
+  clickhouse: clickhouse/clickhouse-server:24.12.5.81-alpine
   alpine: mirror.gcr.io/alpine:3.21.3
   opensearch: mirror.gcr.io/opensearchproject/opensearch:2.19.3
   opensearchDashboards: mirror.gcr.io/opensearchproject/opensearch-dashboards:2.19.3
