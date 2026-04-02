@@ -72,7 +72,7 @@ keycloak-post-install:
 
 postgres-up: network-create env-setup
 	@echo "Launching PostgreSQL..."
-	$(DOCKER_COMPOSE_BASE)postgres.yml -p postgres up -d
+	$(DOCKER_COMPOSE_BASE)postgres.yml -p postgres up -d --force-recreate
 	@echo "Waiting for PostgreSQL post-install job..."
 	@set -euo pipefail; \
 		rc="$$(docker wait app-postgres-post-install-job)"; \
@@ -150,7 +150,7 @@ all-down:
 	$(DOCKER_COMPOSE_BASE)keycloak.yml -p keycloak down
 	$(DOCKER_COMPOSE_BASE)postgres.yml -p postgres down
 
-docker-wipe: all-down ## Stop Docker stack, delete containers/volumes/network
+docker-wipe: all-down ## Stop Docker stack, delete containers & volumes
 	@echo -e "\n--- WIPE IN PROGRESS ---"
 	$(DOCKER_COMPOSE_BASE)prometheus.yml -p prometheus down -v
 	$(DOCKER_COMPOSE_BASE)langfuse.yml -p langfuse down -v
@@ -161,7 +161,6 @@ docker-wipe: all-down ## Stop Docker stack, delete containers/volumes/network
 	$(DOCKER_COMPOSE_BASE)minio.yml -p minio down -v
 	$(DOCKER_COMPOSE_BASE)keycloak.yml -p keycloak down -v
 	$(DOCKER_COMPOSE_BASE)postgres.yml -p postgres down -v
-	docker network rm fred-shared-network || true
 	@echo -e "\n--- WIPE COMPLETE ---"
 
 docker-destroy: all-down ## Stop Docker stack, delete containers/volumes/network AND remove images
