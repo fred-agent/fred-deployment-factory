@@ -74,6 +74,9 @@ Keycloak backend client secrets:
 - Docker Compose mode: set `KEYCLOAK_AGENTIC_CLIENT_SECRET`, `KEYCLOAK_KNOWLEDGE_FLOW_CLIENT_SECRET`, and `KEYCLOAK_CONTROL_PLANE_CLIENT_SECRET` in `docker-compose/.env.template`.
 - k3d mode: set `auth.keycloakAgenticClientSecret`, `auth.keycloakKnowledgeFlowClientSecret`, and `auth.keycloakControlPlaneClientSecret` in `helm/fred-stack/values.yaml` (or via Helm overrides).
 
+ClickHouse k3d settings:
+- set `auth.clickhouseUser`, `auth.clickhousePassword`, and `auth.clickhouseDb` in `helm/fred-stack/values.yaml` (or via Helm overrides)
+
 Additional Docker settings:
 - ClickHouse: set `CLICKHOUSE_DB`, `CLICKHOUSE_USER`, `CLICKHOUSE_PASSWORD`, `CLICKHOUSE_HTTP_PORT`, and `CLICKHOUSE_NATIVE_PORT` as needed.
 - Langfuse: set `POSTGRES_LANGFUSE_USER`, `POSTGRES_LANGFUSE_PASSWORD`, `POSTGRES_LANGFUSE_DB`, and the relevant `LANGFUSE_S3_*` bucket settings.
@@ -112,7 +115,7 @@ This repository also includes a Kubernetes deployment path using:
 - a standard Helm chart at `helm/fred-stack`
 - optional Cilium (`K3D_USE_CILIUM=true`) only for CiliumNetworkPolicy/air-gap flows
 
-At the moment, the `k3d` / Helm path covers the structural Fred stack + Prometheus. The optional ClickHouse and Langfuse services are currently available through Docker Compose only.
+At the moment, the `k3d` / Helm path covers the structural Fred stack + Prometheus + ClickHouse. Langfuse remains available through Docker Compose only.
 
 ### Bring it up
 ```bash
@@ -131,6 +134,8 @@ By default, this creates a local `k3d` cluster named `fred` with default k3s net
 - Temporal Frontend gRPC: `localhost:7233`
 - Temporal UI: `http://localhost:8233`
 - Prometheus: `http://localhost:9090`
+- ClickHouse HTTP / SQL UI: `http://localhost:8123/play`
+- ClickHouse native protocol: `localhost:9002`
 
 `make k3d-up` now prints colored step progress (`[STEP]`, `[OK]`, `[WARN]`, `[INFO]`, `[FAIL]`), pre-pulls chart images (and kube-system images by default) on the host and imports them into k3d (`K3D_PREFETCH_IMAGES=true`, `K3D_PREFETCH_SYSTEM_IMAGES=true`), retries image pulls on transient network errors (`IMAGE_PULL_RETRIES`, `IMAGE_PULL_RETRY_DELAY`), shows a deployment heartbeat every 10s while Helm waits, handles `Ctrl+C` cleanly (including stopping Helm subprocesses), and on Helm failure automatically dumps pods/jobs/events plus `helm status`.
 
@@ -141,7 +146,7 @@ If you disable prefetch (`K3D_PREFETCH_IMAGES=false`), `k3d-up` falls back to a 
 If some ports are already used (for example by the Docker Compose stack), override them at launch time:
 
 ```bash
-make k3d-up K3D_HOST_PORT_POSTGRES=15432 K3D_HOST_PORT_KEYCLOAK=18080 K3D_HOST_PORT_MINIO_API=19000 K3D_HOST_PORT_PROMETHEUS=19090
+make k3d-up K3D_HOST_PORT_POSTGRES=15432 K3D_HOST_PORT_KEYCLOAK=18080 K3D_HOST_PORT_MINIO_API=19000 K3D_HOST_PORT_CLICKHOUSE_HTTP=18123 K3D_HOST_PORT_CLICKHOUSE_NATIVE=19002 K3D_HOST_PORT_PROMETHEUS=19090
 ```
 
 Prometheus is configured with persistent local storage and discovers scrape targets through standard Kubernetes annotations (`prometheus.io/scrape`, `prometheus.io/port`, `prometheus.io/path`) on Services or Pods.
