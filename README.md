@@ -59,10 +59,16 @@ If you only need part of the platform, use the per-service Make targets such as 
 grep -q '127.0.0.1.*app-keycloak' /etc/hosts || echo "127.0.0.1 app-keycloak" | sudo tee -a /etc/hosts
 ```
 
-4. Full cleanup (containers, volumes, network, docker prune):
+4. Data cleanup (containers, volumes, network):
 
 ```bash
 make docker-wipe
+```
+
+4. Docker complete cleanup (containers, volumes, network, and images):
+
+```bash
+make docker-detroy
 ```
 
 ## Configuration
