@@ -68,7 +68,7 @@ make docker-wipe
 4. Docker complete cleanup (containers, volumes, network, and images):
 
 ```bash
-make docker-detroy
+make docker-destroy
 ```
 
 ## Configuration
