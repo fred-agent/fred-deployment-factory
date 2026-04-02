@@ -150,7 +150,7 @@ all-down:
 	$(DOCKER_COMPOSE_BASE)keycloak.yml -p keycloak down
 	$(DOCKER_COMPOSE_BASE)postgres.yml -p postgres down
 
-docker-wipe: all-down ## Stop Docker stack, delete volumes, remove network, and prune
+docker-wipe: all-down ## Stop Docker stack, delete containers/volumes/network
 	@echo -e "\n--- WIPE IN PROGRESS ---"
 	$(DOCKER_COMPOSE_BASE)prometheus.yml -p prometheus down -v
 	$(DOCKER_COMPOSE_BASE)langfuse.yml -p langfuse down -v
@@ -162,8 +162,21 @@ docker-wipe: all-down ## Stop Docker stack, delete volumes, remove network, and 
 	$(DOCKER_COMPOSE_BASE)keycloak.yml -p keycloak down -v
 	$(DOCKER_COMPOSE_BASE)postgres.yml -p postgres down -v
 	docker network rm fred-shared-network || true
-	docker system prune -f
 	@echo -e "\n--- WIPE COMPLETE ---"
+
+docker-detroy: all-down ## Stop Docker stack, delete containers/volumes/network AND remove images
+	@echo -e "\n--- detroy IN PROGRESS ---"
+	$(DOCKER_COMPOSE_BASE)prometheus.yml -p prometheus down -v --rmi all
+	$(DOCKER_COMPOSE_BASE)langfuse.yml -p langfuse down -v --rmi all
+	$(DOCKER_COMPOSE_BASE)temporal.yml -p temporal down -v --rmi all
+	$(DOCKER_COMPOSE_BASE)clickhouse.yml -p clickhouse down -v --rmi all
+	$(DOCKER_COMPOSE_BASE)opensearch.yml -p opensearch down -v --rmi all
+	$(DOCKER_COMPOSE_BASE)openfga.yml -p openfga down -v --rmi all
+	$(DOCKER_COMPOSE_BASE)minio.yml -p minio down -v --rmi all
+	$(DOCKER_COMPOSE_BASE)keycloak.yml -p keycloak down -v --rmi all
+	$(DOCKER_COMPOSE_BASE)postgres.yml -p postgres down -v --rmi all
+	docker network rm fred-shared-network || true
+	@echo -e "\n--- detroy COMPLETE ---"
 
 ##@ k3d
 k3d-create: ## Create a local k3d cluster (set K3D_USE_CILIUM=true for air-gap/Cilium policies)
@@ -370,4 +383,4 @@ k3d-airgap-status: ## Show active Cilium network policies
 	@echo "📊 CiliumNetworkPolicies in namespace '$(K3D_NAMESPACE)':"
 	kubectl get ciliumnetworkpolicies -n "$(K3D_NAMESPACE)"
 
-.PHONY: help network-create env-setup keycloak-post-install postgres-up keycloak-up minio-up opensearch-up clickhouse-up langfuse-up prometheus-up openfga-post-install openfga-up temporal-up preflight-check docker-up docker-down all-down docker-wipe k3d-create k3d-up k3d-down k3d-delete k3d-wipe k3d-status k3d-airgap-on k3d-airgap-off k3d-airgap-status
+.PHONY: help network-create env-setup keycloak-post-install postgres-up keycloak-up minio-up opensearch-up clickhouse-up langfuse-up prometheus-up openfga-post-install openfga-up temporal-up preflight-check docker-up docker-down all-down docker-wipe docker-detroy k3d-create k3d-up k3d-down k3d-delete k3d-wipe k3d-status k3d-airgap-on k3d-airgap-off k3d-airgap-status
