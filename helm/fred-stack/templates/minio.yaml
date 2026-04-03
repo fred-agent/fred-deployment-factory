@@ -64,6 +64,8 @@ spec:
                 secretKeyRef:
                   name: fred-secrets
                   key: MINIO_ROOT_PASSWORD
+            - name: MINIO_PROMETHEUS_AUTH_TYPE
+              value: public
             - name: MINIO_IDENTITY_OPENID_CONFIG_URL
               value: http://keycloak:8080/realms/app/.well-known/openid-configuration
             - name: MINIO_IDENTITY_OPENID_CLIENT_ID

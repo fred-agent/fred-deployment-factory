@@ -85,6 +85,27 @@ data:
 {{ .Files.Get "files/scripts/openfga-post-install.sh" | indent 4 }}
   keycloak-post-install-k8s.sh: |
 {{ .Files.Get "files/scripts/keycloak-post-install-k8s.sh" | indent 4 }}
+{{- if .Values.clickhouse.enabled }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fred-clickhouse-config
+  labels:
+    {{- include "fred-stack.labels" . | nindent 4 }}
+data:
+  prometheus.xml: |
+    <clickhouse>
+        <prometheus>
+            <endpoint>/metrics</endpoint>
+            <port>9363</port>
+            <metrics>true</metrics>
+            <events>true</events>
+            <asynchronous_metrics>true</asynchronous_metrics>
+            <errors>true</errors>
+        </prometheus>
+    </clickhouse>
+{{- end }}
 {{- if .Values.prometheus.enabled }}
 ---
 apiVersion: v1

@@ -40,6 +40,10 @@ spec:
       {{- include "fred-stack.selectorLabels" . | nindent 6 }}
   template:
     metadata:
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: /metrics
+        prometheus.io/port: "9363"
       labels:
         app.kubernetes.io/component: clickhouse
         {{- include "fred-stack.selectorLabels" . | nindent 8 }}
@@ -76,6 +80,8 @@ spec:
               containerPort: 8123
             - name: native
               containerPort: 9000
+            - name: metrics
+              containerPort: 9363
           readinessProbe:
             httpGet:
               path: /ping
@@ -95,8 +101,14 @@ spec:
           volumeMounts:
             - name: clickhouse-data
               mountPath: /var/lib/clickhouse
+            - name: clickhouse-config
+              mountPath: /etc/clickhouse-server/config.d/prometheus.xml
+              subPath: prometheus.xml
       volumes:
         - name: clickhouse-data
           persistentVolumeClaim:
             claimName: clickhouse-data
+        - name: clickhouse-config
+          configMap:
+            name: fred-clickhouse-config
 {{- end }}

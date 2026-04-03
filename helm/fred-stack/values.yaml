@@ -68,6 +68,39 @@ prometheus:
   scrapeInterval: 15s
   evaluationInterval: 15s
   retention: 7d
+  extraMetricsTargets:
+    - enabled: true
+      jobName: agentic-backend
+      target: agentic-backend-metrics:9000
+      metricsPath: /metrics
+    - enabled: true
+      jobName: knowledge-flow-backend
+      target: knowledge-flow-backend-metrics:9111
+      metricsPath: /metrics
+  minioMetricsPaths:
+    - /minio/metrics/v3/api/requests
+    - /minio/metrics/v3/bucket/api
+    - /minio/metrics/v3/audit
+    - /minio/metrics/v3/batch
+    - /minio/metrics/v3/bucket/batch
+    - /minio/metrics/v3/cluster/config
+    - /minio/metrics/v3/cluster/erasure-set
+    - /minio/metrics/v3/cluster/health
+    - /minio/metrics/v3/cluster/iam
+    - /minio/metrics/v3/cluster/usage/buckets
+    - /minio/metrics/v3/cluster/usage/objects
+    - /minio/metrics/v3/debug/go
+    - /minio/metrics/v3/ilm
+    - /minio/metrics/v3/logger/webhook
+    - /minio/metrics/v3/notification
+    - /minio/metrics/v3/replication
+    - /minio/metrics/v3/bucket/replication
+    - /minio/metrics/v3/scanner
+    - /minio/metrics/v3/system/cpu
+    - /minio/metrics/v3/system/drive
+    - /minio/metrics/v3/system/memory
+    - /minio/metrics/v3/system/network/internode
+    - /minio/metrics/v3/system/process
 
 service:
   type: NodePort
