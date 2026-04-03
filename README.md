@@ -12,6 +12,7 @@ The Docker Compose workflow in this repository groups services into two scopes:
   - Temporal
 - Additional local platform services:
   - Prometheus for metrics collection and scraping
+  - Grafana for metrics dashboards
   - ClickHouse for analytics/event/vector storage
   - Langfuse for LLM tracing and observability
 
@@ -26,7 +27,7 @@ The goal of this `fred-deployment-factory` repository is to provide a fuller loc
 
 The structural Fred services exposed here are PostgreSQL, Keycloak, MinIO, OpenSearch, OpenFGA, and Temporal.
 
-Prometheus, ClickHouse, and Langfuse are also available for local observability, tracing, and analytics, but they are not structural requirements.
+Prometheus, Grafana, ClickHouse, and Langfuse are also available for local observability, tracing, and analytics, but they are not structural requirements.
 
 ## Prerequisites
 - Docker
@@ -44,14 +45,15 @@ Prometheus, ClickHouse, and Langfuse are also available for local observability,
 make docker-up
 ```
 
-This launches both the structural Fred services and the additional local platform services (`Prometheus`, `ClickHouse`, and `Langfuse`).
+This launches both the structural Fred services and the additional local platform services (`Prometheus`, `Grafana`, `ClickHouse`, and `Langfuse`).
 
 Default endpoints for the additional services:
 - Prometheus: `http://localhost:9090`
+- Grafana: `http://localhost:3002`
 - ClickHouse SQL UI / HTTP API: `http://localhost:8123/play`
 - Langfuse: `http://localhost:3001`
 
-If you only need part of the platform, use the per-service Make targets such as `make keycloak-up`, `make minio-up`, `make opensearch-up`, `make openfga-up`, `make temporal-up`, `make clickhouse-up`, `make langfuse-up`, or `make prometheus-up`.
+If you only need part of the platform, use the per-service Make targets such as `make keycloak-up`, `make minio-up`, `make opensearch-up`, `make openfga-up`, `make temporal-up`, `make clickhouse-up`, `make langfuse-up`, `make prometheus-up`, or `make grafana-up`.
 
 3. Optional (for browser SSO callbacks to Keycloak on local machine):
 
@@ -91,6 +93,10 @@ Prometheus Docker settings:
 - set `PROMETHEUS_PORT` to change the exposed host port
 - set `PROMETHEUS_RETENTION` to change TSDB retention
 
+Grafana Docker settings:
+- set `GRAFANA_PORT` to change the exposed host port
+- set `GRAFANA_ADMIN_USER` and `GRAFANA_ADMIN_PASSWORD` for the local admin account
+
 ### Docker demos: single config file (users, roles, teams)
 For the Docker Compose workflow (`make docker-up`), the single source of truth for demo identities is:
 
@@ -121,7 +127,7 @@ This repository also includes a Kubernetes deployment path using:
 - a standard Helm chart at `helm/fred-stack`
 - optional Cilium (`K3D_USE_CILIUM=true`) only for CiliumNetworkPolicy/air-gap flows
 
-At the moment, the `k3d` / Helm path covers the structural Fred stack + Prometheus + ClickHouse. Langfuse remains available through Docker Compose only.
+At the moment, the `k3d` / Helm path covers the structural Fred stack + Prometheus + Grafana + ClickHouse. Langfuse remains available through Docker Compose only.
 
 ### Bring it up
 ```bash
@@ -140,6 +146,7 @@ By default, this creates a local `k3d` cluster named `fred` with default k3s net
 - Temporal Frontend gRPC: `localhost:7233`
 - Temporal UI: `http://localhost:8233`
 - Prometheus: `http://localhost:9090`
+- Grafana: `http://localhost:3002`
 - ClickHouse HTTP / SQL UI: `http://localhost:8123/play`
 - ClickHouse native protocol: `localhost:9002`
 
@@ -152,10 +159,11 @@ If you disable prefetch (`K3D_PREFETCH_IMAGES=false`), `k3d-up` falls back to a 
 If some ports are already used (for example by the Docker Compose stack), override them at launch time:
 
 ```bash
-make k3d-up K3D_HOST_PORT_POSTGRES=15432 K3D_HOST_PORT_KEYCLOAK=18080 K3D_HOST_PORT_MINIO_API=19000 K3D_HOST_PORT_CLICKHOUSE_HTTP=18123 K3D_HOST_PORT_CLICKHOUSE_NATIVE=19002 K3D_HOST_PORT_PROMETHEUS=19090
+make k3d-up K3D_HOST_PORT_POSTGRES=15432 K3D_HOST_PORT_KEYCLOAK=18080 K3D_HOST_PORT_MINIO_API=19000 K3D_HOST_PORT_CLICKHOUSE_HTTP=18123 K3D_HOST_PORT_CLICKHOUSE_NATIVE=19002 K3D_HOST_PORT_PROMETHEUS=19090 K3D_HOST_PORT_GRAFANA=13000
 ```
 
 Prometheus is configured with persistent local storage and discovers scrape targets through standard Kubernetes annotations (`prometheus.io/scrape`, `prometheus.io/port`, `prometheus.io/path`) on Services or Pods.
+Grafana is pre-provisioned with a Prometheus datasource that targets the in-cluster service `http://prometheus:9090`.
 
 If your machine is slower, increase Helm wait timeout:
 

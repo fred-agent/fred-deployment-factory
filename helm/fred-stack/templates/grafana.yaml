@@ -1,0 +1,109 @@
+{{- if .Values.grafana.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-provisioning
+  labels:
+    {{- include "fred-stack.labels" . | nindent 4 }}
+    app.kubernetes.io/component: grafana
+data:
+  prometheus.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: Prometheus
+        type: prometheus
+        access: proxy
+        url: http://prometheus:9090
+        isDefault: true
+        editable: true
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana
+  labels:
+    {{- include "fred-stack.labels" . | nindent 4 }}
+    app.kubernetes.io/component: grafana
+spec:
+  type: {{ include "fred-stack.serviceType" . }}
+  ports:
+    - name: http
+      port: 3000
+      targetPort: 3000
+      {{- if eq (include "fred-stack.serviceType" .) "NodePort" }}
+      nodePort: {{ .Values.service.nodePorts.grafana }}
+      {{- end }}
+  selector:
+    app.kubernetes.io/component: grafana
+    {{- include "fred-stack.selectorLabels" . | nindent 4 }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grafana
+  labels:
+    {{- include "fred-stack.labels" . | nindent 4 }}
+    app.kubernetes.io/component: grafana
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: grafana
+      {{- include "fred-stack.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: grafana
+        {{- include "fred-stack.selectorLabels" . | nindent 8 }}
+    spec:
+      enableServiceLinks: false
+      securityContext:
+        fsGroup: 472
+      containers:
+        - name: grafana
+          image: {{ .Values.images.grafana }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          env:
+            - name: GF_SECURITY_ADMIN_USER
+              valueFrom:
+                secretKeyRef:
+                  name: fred-secrets
+                  key: GRAFANA_ADMIN_USER
+            - name: GF_SECURITY_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: fred-secrets
+                  key: GRAFANA_ADMIN_PASSWORD
+          ports:
+            - name: http
+              containerPort: 3000
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 12
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 6
+          volumeMounts:
+            - name: grafana-data
+              mountPath: /var/lib/grafana
+            - name: grafana-provisioning
+              mountPath: /etc/grafana/provisioning/datasources/prometheus.yaml
+              subPath: prometheus.yaml
+      volumes:
+        - name: grafana-data
+          persistentVolumeClaim:
+            claimName: grafana-data
+        - name: grafana-provisioning
+          configMap:
+            name: grafana-provisioning
+{{- end }}

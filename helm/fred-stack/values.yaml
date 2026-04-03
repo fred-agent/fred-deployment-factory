@@ -57,6 +57,9 @@ auth:
   openfgaStoreName: fred
   openfgaSeedIncludeUsernameUsers: "true"
 
+  grafanaAdminUser: admin
+  grafanaAdminPassword: Azerty123_
+
 temporal:
   uiPort: 8233
 
@@ -102,6 +105,9 @@ prometheus:
     - /minio/metrics/v3/system/network/internode
     - /minio/metrics/v3/system/process
 
+grafana:
+  enabled: true
+
 service:
   type: NodePort
   nodePorts:
@@ -119,6 +125,7 @@ service:
     temporalFrontend: 30723
     temporalUi: 30233
     prometheus: 30090
+    grafana: 30300
 
 persistence:
   postgresSize: 10Gi
@@ -126,6 +133,7 @@ persistence:
   clickhouseSize: 10Gi
   opensearchSize: 10Gi
   prometheusSize: 8Gi
+  grafanaSize: 4Gi
 
 images:
   postgres: pgvector/pgvector:pg17
@@ -143,3 +151,4 @@ images:
   temporalAdminTools: mirror.gcr.io/temporalio/admin-tools:1.28
   temporalUi: mirror.gcr.io/temporalio/ui:2.38.3
   prometheus: prom/prometheus:v2.54.1
+  grafana: grafana/grafana:11.1.4

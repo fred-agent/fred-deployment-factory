@@ -31,6 +31,7 @@ K3D_HOST_PORT_OPENFGA_GRPC ?= 9081
 K3D_HOST_PORT_TEMPORAL_FRONTEND ?= 7233
 K3D_HOST_PORT_TEMPORAL_UI ?= 8233
 K3D_HOST_PORT_PROMETHEUS ?= 9090
+K3D_HOST_PORT_GRAFANA ?= 3002
 K3D_HOST_PORT_FRONTEND ?= 8088
 
 K3D_CLUSTER_CREATE_BASE_ARGS := \
@@ -50,6 +51,7 @@ K3D_CLUSTER_CREATE_BASE_ARGS := \
 	-p "$(K3D_HOST_PORT_TEMPORAL_FRONTEND):30723@server:0" \
 	-p "$(K3D_HOST_PORT_TEMPORAL_UI):30233@server:0" \
 	-p "$(K3D_HOST_PORT_PROMETHEUS):30090@server:0" \
+	-p "$(K3D_HOST_PORT_GRAFANA):30300@server:0" \
 	-p "$(K3D_HOST_PORT_FRONTEND):80@server:0"
 
 ##@ Help
@@ -115,6 +117,10 @@ prometheus-up: network-create env-setup
 	@echo "Launching Prometheus..."
 	$(DOCKER_COMPOSE_BASE)prometheus.yml -p prometheus up -d
 
+grafana-up: prometheus-up
+	@echo "Launching Grafana..."
+	$(DOCKER_COMPOSE_BASE)grafana.yml -p grafana up -d
+
 openfga-post-install:
 	@echo "Running OpenFGA post-install..."
 	bash docker-compose/openfga/openfga-post-install.sh
@@ -132,7 +138,7 @@ preflight-check:
 	@echo "Running FRED preflight..."
 	bash bin/fred-preflight.sh
 
-docker-up: postgres-up keycloak-up minio-up opensearch-up openfga-up temporal-up clickhouse-up langfuse-up prometheus-up ## Launch the Docker stack (PostgreSQL, Keycloak, MinIO, OpenSearch, OpenFGA, Temporal, ClickHouse, Langfuse, Prometheus)
+docker-up: postgres-up keycloak-up minio-up opensearch-up openfga-up temporal-up clickhouse-up langfuse-up prometheus-up grafana-up ## Launch the Docker stack (PostgreSQL, Keycloak, MinIO, OpenSearch, OpenFGA, Temporal, ClickHouse, Langfuse, Prometheus, Grafana)
 	$(MAKE) preflight-check
 	@echo "All Docker stack services are running and preflight passed."
 
@@ -140,6 +146,7 @@ docker-down: all-down ## Stop the Docker stack
 
 all-down:
 	@echo "Stopping Docker stack services..."
+	$(DOCKER_COMPOSE_BASE)grafana.yml -p grafana down
 	$(DOCKER_COMPOSE_BASE)prometheus.yml -p prometheus down
 	$(DOCKER_COMPOSE_BASE)langfuse.yml -p langfuse down
 	$(DOCKER_COMPOSE_BASE)temporal.yml -p temporal down
@@ -152,6 +159,7 @@ all-down:
 
 docker-wipe: all-down ## Stop Docker stack, delete containers & volumes
 	@echo -e "\n--- WIPE IN PROGRESS ---"
+	$(DOCKER_COMPOSE_BASE)grafana.yml -p grafana down -v
 	$(DOCKER_COMPOSE_BASE)prometheus.yml -p prometheus down -v
 	$(DOCKER_COMPOSE_BASE)langfuse.yml -p langfuse down -v
 	$(DOCKER_COMPOSE_BASE)temporal.yml -p temporal down -v
@@ -165,6 +173,7 @@ docker-wipe: all-down ## Stop Docker stack, delete containers & volumes
 
 docker-destroy: all-down ## Stop Docker stack, delete containers/volumes/network AND remove images
 	@echo -e "\n--- destroy IN PROGRESS ---"
+	$(DOCKER_COMPOSE_BASE)grafana.yml -p grafana down -v --rmi all
 	$(DOCKER_COMPOSE_BASE)prometheus.yml -p prometheus down -v --rmi all
 	$(DOCKER_COMPOSE_BASE)langfuse.yml -p langfuse down -v --rmi all
 	$(DOCKER_COMPOSE_BASE)temporal.yml -p temporal down -v --rmi all
@@ -382,4 +391,4 @@ k3d-airgap-status: ## Show active Cilium network policies
 	@echo "📊 CiliumNetworkPolicies in namespace '$(K3D_NAMESPACE)':"
 	kubectl get ciliumnetworkpolicies -n "$(K3D_NAMESPACE)"
 
-.PHONY: help network-create env-setup keycloak-post-install postgres-up keycloak-up minio-up opensearch-up clickhouse-up langfuse-up prometheus-up openfga-post-install openfga-up temporal-up preflight-check docker-up docker-down all-down docker-wipe docker-destroy k3d-create k3d-up k3d-down k3d-delete k3d-wipe k3d-status k3d-airgap-on k3d-airgap-off k3d-airgap-status
+.PHONY: help network-create env-setup keycloak-post-install postgres-up keycloak-up minio-up opensearch-up clickhouse-up langfuse-up prometheus-up grafana-up openfga-post-install openfga-up temporal-up preflight-check docker-up docker-down all-down docker-wipe docker-destroy k3d-create k3d-up k3d-down k3d-delete k3d-wipe k3d-status k3d-airgap-on k3d-airgap-off k3d-airgap-status

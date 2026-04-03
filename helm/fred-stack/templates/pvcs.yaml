@@ -61,3 +61,17 @@ spec:
     requests:
       storage: {{ .Values.persistence.prometheusSize }}
 {{- end }}
+{{- if .Values.grafana.enabled }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: grafana-data
+  labels:
+    {{- include "fred-stack.labels" . | nindent 4 }}
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: {{ .Values.persistence.grafanaSize }}
+{{- end }}

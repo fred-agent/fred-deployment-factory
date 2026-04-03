@@ -12,4 +12,5 @@ docker compose -f docker-compose-opensearch.yml -p opensearch up -d
 docker compose -f docker-compose-kubernetes.yml -p kubernetes up -d
 docker compose -f docker-compose-k8s-mcp.yml -p k8s-mcp up -d
 docker compose -f docker-compose-temporal.yml -p temporal up -d
-docker compose -f docker-compose-minio.yml -p minio up -d
+docker compose -f docker-compose-prometheus.yml -p prometheus up -d
+docker compose -f docker-compose-grafana.yml -p grafana up -d

@@ -14,6 +14,7 @@ This project helps to deploy the following support services:
 - **Temporal** - for job orchestration
 - **Neo4j** - for graph database capabilities (knowledge graphs, relationship querying)
 - **Prometheus** - for metrics collection and scraping
+- **Grafana** - for dashboards and metrics visualization
 
 This repository aims to simplify local development and testing by providing a ready-to-use, reproducible environment for all shared dependencies across the `fred-agent` projects.
 
@@ -59,6 +60,9 @@ Here are **examples** of custom deployment params you can modify:
 - ``OPENSEARCH_ADMIN_PASSWORD``
 - ``PROMETHEUS_PORT``
 - ``PROMETHEUS_RETENTION``
+- ``GRAFANA_PORT``
+- ``GRAFANA_ADMIN_USER``
+- ``GRAFANA_ADMIN_PASSWORD``
 
 ## Deployment
 
@@ -79,6 +83,7 @@ H(temporal) --> A(keycloak)
 H(temporal) --> E(postgres)
 F(k8s mcp) --> G(kubernetes)
 J(prometheus)
+K(grafana) --> J(prometheus)
 ```
 
 Launch the components according to your needs with these command lines:
@@ -155,6 +160,11 @@ docker compose -f docker-compose/docker-compose-neo4j.yml -p neo4j up -d
 docker compose -f docker-compose/docker-compose-prometheus.yml -p prometheus up -d
 ```
 
+- Grafana
+```
+docker compose -f docker-compose/docker-compose-grafana.yml -p grafana up -d
+```
+
 Prometheus starts with self-scraping enabled and can load additional static targets from `docker-compose/prometheus/targets/*.yml`.
 It also scrapes the native metrics endpoints exposed in Docker Compose mode for:
 - `Keycloak` on `app-keycloak:9000/metrics`
@@ -162,6 +172,8 @@ It also scrapes the native metrics endpoints exposed in Docker Compose mode for:
 - `ClickHouse` on `app-clickhouse:9363/metrics`
 - `Temporal` on `app-temporal:9090/metrics`
 - `MinIO` on its `/minio/metrics/v3/*` endpoints through `app-minio:9000`
+
+Grafana is pre-provisioned with a Prometheus datasource pointing to `http://app-prometheus:9090` on the shared Docker network.
 
 ## Access the service interfaces
 
@@ -212,6 +224,13 @@ Hereunder, these are the information to connect to each service with their _loca
   - Create a project in that organization.
   - Generate API keys in `Settings` -> `Projects` -> `<Project name>` -> `API Keys`.
   - Use the generated values as `LANGFUSE_PUBLIC_KEY` and `LANGFUSE_SECRET_KEY` in your environment variable file, typically `.env` in Fred.
+
+### Grafana
+
+- URL:
+  - http://$(DOCKER_COMPOSE_HOST_FQDN):$(GRAFANA_PORT) (default: `3002`)
+- Default admin account:
+  - `${GRAFANA_ADMIN_USER}` / `${GRAFANA_ADMIN_PASSWORD}`
 
 ### MinIO:
 

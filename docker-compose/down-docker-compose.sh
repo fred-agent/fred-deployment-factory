@@ -1,5 +1,7 @@
 #!/bin/bash
 
+docker compose -f docker-compose-grafana.yml -p grafana down
+docker compose -f docker-compose-prometheus.yml -p prometheus down
 docker compose -f docker-compose-keycloak.yml -p keycloak down
 docker compose -f docker-compose-opensearch.yml -p opensearch down
 docker compose -f docker-compose-kubernetes.yml -p kubernetes down
