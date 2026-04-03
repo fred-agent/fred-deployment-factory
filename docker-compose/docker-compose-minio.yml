@@ -13,6 +13,7 @@ services:
       MINIO_IDENTITY_OPENID_CLAIM_NAME: policy
       MINIO_IDENTITY_OPENID_SCOPES: openid
       MINIO_IDENTITY_OPENID_REDIRECT_URI: "http://${DOCKER_COMPOSE_HOST_FQDN:-localhost}:9001/oauth_callback"
+      MINIO_PROMETHEUS_AUTH_TYPE: public
     command:
       - server
       - /data

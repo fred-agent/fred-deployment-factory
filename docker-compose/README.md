@@ -156,6 +156,12 @@ docker compose -f docker-compose/docker-compose-prometheus.yml -p prometheus up 
 ```
 
 Prometheus starts with self-scraping enabled and can load additional static targets from `docker-compose/prometheus/targets/*.yml`.
+It also scrapes the native metrics endpoints exposed in Docker Compose mode for:
+- `Keycloak` on `app-keycloak:9000/metrics`
+- `OpenFGA` on `openfga:2112/metrics`
+- `ClickHouse` on `app-clickhouse:9363/metrics`
+- `Temporal` on `app-temporal:9090/metrics`
+- `MinIO` on its `/minio/metrics/v3/*` endpoints through `app-minio:9000`
 
 ## Access the service interfaces
 

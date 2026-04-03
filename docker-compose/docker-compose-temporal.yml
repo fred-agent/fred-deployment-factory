@@ -65,6 +65,7 @@ services:
       VISIBILITY_POSTGRES_PWD: ${POSTGRES_TEMPORAL_PASSWORD:-Azerty123_}
       TEMPORAL_ADDRESS: app-temporal:7233
       TEMPORAL_CLI_ADDRESS: app-temporal:7233
+      PROMETHEUS_ENDPOINT: 0.0.0.0:9090
     networks:
       - app-network
     ports:
