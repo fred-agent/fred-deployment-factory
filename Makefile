@@ -261,7 +261,10 @@ k3d-up: k3d-create ## Deploy the full stack into k3d with Helm
 	  kubectl config use-context "k3d-$(K3D_CLUSTER)"; \
 	if [ "$(K3D_PREFETCH_IMAGES)" = "true" ] || [ "$(K3D_PREFETCH_IMAGES)" = "1" ]; then \
 	  step "Resolve chart images from $(HELM_CHART_DIR)"; \
-	  mapfile -t helm_images < <(helm template "$(HELM_RELEASE)" "$(HELM_CHART_DIR)" | awk '/image:[[:space:]]*/ {print $$2}' | tr -d '"' | sort -u); \
+	  helm_images=(); \
+	  while IFS= read -r image; do \
+	    [ -n "$$image" ] && helm_images+=("$$image"); \
+	  done < <(helm template "$(HELM_RELEASE)" "$(HELM_CHART_DIR)" | awk '/image:[[:space:]]*/ {print $$2}' | tr -d '"' | sort -u); \
 	  if [ "$${#helm_images[@]}" -eq 0 ]; then \
 	    fail "No images found in chart template for prefetch."; \
 	  fi; \
@@ -269,10 +272,17 @@ k3d-up: k3d-create ## Deploy the full stack into k3d with Helm
 	  all_images=("$${helm_images[@]}"); \
 	  if [ "$(K3D_PREFETCH_SYSTEM_IMAGES)" = "true" ] || [ "$(K3D_PREFETCH_SYSTEM_IMAGES)" = "1" ]; then \
 	    step "Resolve kube-system images"; \
-	    mapfile -t k3s_system_images < <(kubectl get deploy,daemonset -n kube-system -o jsonpath='{..image}' 2>/dev/null | tr -s '[:space:]' '\n' | sed '/^$$/d' | sort -u || true); \
+	    k3s_system_images=(); \
+	    while IFS= read -r image; do \
+	      [ -n "$$image" ] && k3s_system_images+=("$$image"); \
+	    done < <(kubectl get deploy,daemonset -n kube-system -o jsonpath='{..image}' 2>/dev/null | tr -s '[:space:]' '\n' | sed '/^$$/d' | sort -u || true); \
 	    if [ "$${#k3s_system_images[@]}" -gt 0 ]; then \
 	      ok "Resolve kube-system images ($${#k3s_system_images[@]} images)"; \
-	      mapfile -t all_images < <(printf "%s\n" "$${all_images[@]}" "$${k3s_system_images[@]}" | sed '/^$$/d' | sort -u); \
+	      merged_images=(); \
+	      while IFS= read -r image; do \
+	        [ -n "$$image" ] && merged_images+=("$$image"); \
+	      done < <(printf "%s\n" "$${all_images[@]}" "$${k3s_system_images[@]}" | sed '/^$$/d' | sort -u); \
+	      all_images=("$${merged_images[@]}"); \
 	      ok "Prepared prefetch image set ($${#all_images[@]} unique images)"; \
 	    else \
 	      warn "Could not resolve kube-system images; continuing with chart images only."; \
