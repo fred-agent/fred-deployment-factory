@@ -365,9 +365,13 @@ k3d-up: k3d-create ## Deploy the full stack into k3d with Helm
 	run_step "Show namespace status $(K3D_NAMESPACE)" \
 	  kubectl get pods,svc -n "$(K3D_NAMESPACE)"
 
-k3d-down: ## Uninstall the Helm release from k3d namespace
+k3d-uninstall: ## Uninstall the Helm release from k3d namespace
 	@echo "Removing Helm release '$(HELM_RELEASE)' from namespace '$(K3D_NAMESPACE)'..."
 	-helm uninstall "$(HELM_RELEASE)" -n "$(K3D_NAMESPACE)"
+
+k3d-down: ## Turn off the k3d containers to release publicly allocated ports
+	@echo "Turning the k3d cluster '$(K3D_CLUSTER)' down, and stopping k3d docker containers"
+	-k3d cluster stop '$(K3D_CLUSTER)'
 
 k3d-delete: ## Delete the k3d cluster
 	@echo "Deleting k3d cluster '$(K3D_CLUSTER)'..."
@@ -375,7 +379,7 @@ k3d-delete: ## Delete the k3d cluster
 
 k3d-wipe: ## Full k3d reset (uninstall Helm release and delete cluster)
 	@echo -e "\n--- K3D WIPE IN PROGRESS ---"
-	@$(MAKE) k3d-down
+	@$(MAKE) k3d-uninstall
 	@$(MAKE) k3d-delete
 	@echo -e "\n--- K3D WIPE COMPLETE ---"
 
@@ -401,4 +405,4 @@ k3d-airgap-status: ## Show active Cilium network policies
 	@echo "📊 CiliumNetworkPolicies in namespace '$(K3D_NAMESPACE)':"
 	kubectl get ciliumnetworkpolicies -n "$(K3D_NAMESPACE)"
 
-.PHONY: help network-create env-setup keycloak-post-install postgres-up keycloak-up minio-up opensearch-up clickhouse-up langfuse-up prometheus-up grafana-up openfga-post-install openfga-up temporal-up preflight-check docker-up docker-down all-down docker-wipe docker-destroy k3d-create k3d-up k3d-down k3d-delete k3d-wipe k3d-status k3d-airgap-on k3d-airgap-off k3d-airgap-status
+.PHONY: help network-create env-setup keycloak-post-install postgres-up keycloak-up minio-up opensearch-up clickhouse-up langfuse-up prometheus-up grafana-up openfga-post-install openfga-up temporal-up preflight-check docker-up docker-down all-down docker-wipe docker-destroy k3d-create k3d-up k3d-down k3d-uninstall k3d-delete k3d-wipe k3d-status k3d-airgap-on k3d-airgap-off k3d-airgap-status
