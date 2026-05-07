@@ -257,6 +257,12 @@ k3d-up: k3d-create ## Deploy the full stack into k3d with Helm
 	command -v kubectl >/dev/null 2>&1 || fail "kubectl is required"; \
 	command -v docker >/dev/null 2>&1 || fail "docker is required"; \
 	command -v k3d >/dev/null 2>&1 || fail "k3d is required"; \
+	if docker ps --format '{{.Names}}' | grep -Eq '^k3d-$(K3D_CLUSTER)-server-0$$'; then \
+	  info "Cluster '$(K3D_CLUSTER)' is already running."; \
+	else \
+	  run_step "Start k3d cluster '$(K3D_CLUSTER)'" \
+	    k3d cluster start "$(K3D_CLUSTER)"; \
+	fi; \
 	run_step "Switch kubectl context to k3d-$(K3D_CLUSTER)" \
 	  kubectl config use-context "k3d-$(K3D_CLUSTER)"; \
 	if [ "$(K3D_PREFETCH_IMAGES)" = "true" ] || [ "$(K3D_PREFETCH_IMAGES)" = "1" ]; then \
