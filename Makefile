@@ -17,6 +17,14 @@ IMAGE_PULL_RETRIES ?= 3
 IMAGE_PULL_RETRY_DELAY ?= 5
 K3D_USE_CILIUM ?= false
 CILIUM_VERSION ?= 1.16.5
+# Mount a host CA bundle into k3d nodes — required in corporate SSL-inspection environments (e.g. Zscaler).
+# Set to your system CA bundle, e.g.: K3D_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
+K3D_CA_BUNDLE ?=
+ifneq ($(K3D_CA_BUNDLE),)
+K3D_CA_VOLUME_ARG := --volume $(K3D_CA_BUNDLE):/etc/ssl/certs/ca-certificates.crt@server:* --volume $(K3D_CA_BUNDLE):/etc/ssl/certs/ca-certificates.crt@agent:*
+else
+K3D_CA_VOLUME_ARG :=
+endif
 
 K3D_HOST_PORT_KEYCLOAK ?= 8080
 K3D_HOST_PORT_POSTGRES ?= 5432
@@ -206,6 +214,7 @@ k3d-create: ## Create a local k3d cluster (set K3D_USE_CILIUM=true for air-gap/C
 	  run_step "Create k3d cluster '$(K3D_CLUSTER)' (Cilium-ready networking)" \
 	    k3d cluster create "$(K3D_CLUSTER)" \
 	    $(K3D_CLUSTER_CREATE_BASE_ARGS) \
+	    $(K3D_CA_VOLUME_ARG) \
 	    --k3s-arg '--flannel-backend=none@server:*' \
 	    --k3s-arg '--disable-network-policy@server:*'; \
 	  run_step "Install Cilium $(CILIUM_VERSION)" cilium install --version "$(CILIUM_VERSION)"; \
@@ -213,7 +222,8 @@ k3d-create: ## Create a local k3d cluster (set K3D_USE_CILIUM=true for air-gap/C
 	else \
 	  run_step "Create k3d cluster '$(K3D_CLUSTER)' (default k3s networking)" \
 	    k3d cluster create "$(K3D_CLUSTER)" \
-	    $(K3D_CLUSTER_CREATE_BASE_ARGS); \
+	    $(K3D_CLUSTER_CREATE_BASE_ARGS) \
+	    $(K3D_CA_VOLUME_ARG); \
 	fi
 
 k3d-up: k3d-create ## Deploy the full stack into k3d with Helm
