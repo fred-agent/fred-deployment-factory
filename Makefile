@@ -401,4 +401,27 @@ k3d-airgap-status: ## Show active Cilium network policies
 	@echo "📊 CiliumNetworkPolicies in namespace '$(K3D_NAMESPACE)':"
 	kubectl get ciliumnetworkpolicies -n "$(K3D_NAMESPACE)"
 
-.PHONY: help network-create env-setup keycloak-post-install postgres-up keycloak-up minio-up opensearch-up clickhouse-up langfuse-up prometheus-up grafana-up openfga-post-install openfga-up temporal-up preflight-check docker-up docker-down all-down docker-wipe docker-destroy k3d-create k3d-up k3d-down k3d-delete k3d-wipe k3d-status k3d-airgap-on k3d-airgap-off k3d-airgap-status
+##@ Checkpoints
+checkpoint-save: ## Save current Docker stack state as a named checkpoint (NAME=<name> required)
+	@test -n "$(NAME)" || (echo "ERROR: NAME is required. Usage: make checkpoint-save NAME=<name>"; exit 1)
+	@bash bin/checkpoint-save.sh "$(NAME)"
+
+checkpoint-restore: ## Restore a named checkpoint — run make docker-up afterwards (NAME=<name> required)
+	@test -n "$(NAME)" || (echo "ERROR: NAME is required. Usage: make checkpoint-restore NAME=<name>"; exit 1)
+	@bash bin/checkpoint-restore.sh "$(NAME)"
+
+docker-restart-from-checkpoint: ## Restore a checkpoint and restart the full Docker stack (NAME=<name> required)
+	@test -n "$(NAME)" || (echo "ERROR: NAME is required. Usage: make docker-restart-from-checkpoint NAME=<name>"; exit 1)
+	@bash bin/checkpoint-restore.sh "$(NAME)"
+	$(MAKE) docker-up
+
+checkpoint-list: ## List all saved checkpoints
+	@bash bin/checkpoint-list.sh
+
+checkpoint-delete: ## Delete a named checkpoint (NAME=<name> required)
+	@test -n "$(NAME)" || (echo "ERROR: NAME is required. Usage: make checkpoint-delete NAME=<name>"; exit 1)
+	@test -d "checkpoints/$(NAME)" || (echo "ERROR: Checkpoint '$(NAME)' not found in checkpoints/"; exit 1)
+	rm -rf "checkpoints/$(NAME)"
+	@echo "Checkpoint '$(NAME)' deleted."
+
+.PHONY: help network-create env-setup keycloak-post-install postgres-up keycloak-up minio-up opensearch-up clickhouse-up langfuse-up prometheus-up grafana-up openfga-post-install openfga-up temporal-up preflight-check docker-up docker-down all-down docker-wipe docker-destroy k3d-create k3d-up k3d-down k3d-delete k3d-wipe k3d-status k3d-airgap-on k3d-airgap-off k3d-airgap-status checkpoint-save checkpoint-restore docker-restart-from-checkpoint checkpoint-list checkpoint-delete
