@@ -28,8 +28,7 @@ endif
 
 K3D_HOST_PORT_KEYCLOAK ?= 8080
 K3D_HOST_PORT_POSTGRES ?= 5432
-K3D_HOST_PORT_MINIO_API ?= 9000
-K3D_HOST_PORT_MINIO_CONSOLE ?= 9001
+K3D_HOST_PORT_SEAWEEDFS_S3 ?= 8333
 K3D_HOST_PORT_CLICKHOUSE_HTTP ?= 8123
 K3D_HOST_PORT_CLICKHOUSE_NATIVE ?= 9002
 K3D_HOST_PORT_OPENSEARCH ?= 9200
@@ -48,8 +47,7 @@ K3D_CLUSTER_CREATE_BASE_ARGS := \
 	--wait \
 	-p "$(K3D_HOST_PORT_POSTGRES):30432@server:0" \
 	-p "$(K3D_HOST_PORT_KEYCLOAK):30080@server:0" \
-	-p "$(K3D_HOST_PORT_MINIO_API):30900@server:0" \
-	-p "$(K3D_HOST_PORT_MINIO_CONSOLE):30901@server:0" \
+	-p "$(K3D_HOST_PORT_SEAWEEDFS_S3):30833@server:0" \
 	-p "$(K3D_HOST_PORT_CLICKHOUSE_HTTP):30823@server:0" \
 	-p "$(K3D_HOST_PORT_CLICKHOUSE_NATIVE):30902@server:0" \
 	-p "$(K3D_HOST_PORT_OPENSEARCH):30920@server:0" \
@@ -97,9 +95,9 @@ keycloak-up: postgres-up
 	$(DOCKER_COMPOSE_BASE)keycloak.yml -p keycloak up -d
 	$(MAKE) keycloak-post-install
 
-minio-up: keycloak-up
-	@echo "Launching MinIO..."
-	$(DOCKER_COMPOSE_BASE)minio.yml -p minio up -d
+seaweedfs-up: keycloak-up
+	@echo "Launching SeaweedFS..."
+	$(DOCKER_COMPOSE_BASE)seaweedfs.yml -p seaweedfs up -d
 
 opensearch-up: keycloak-up
 	@echo "Launching OpenSearch..."
@@ -146,7 +144,7 @@ preflight-check:
 	@echo "Running FRED preflight..."
 	bash bin/fred-preflight.sh
 
-docker-up: postgres-up keycloak-up minio-up opensearch-up openfga-up temporal-up clickhouse-up langfuse-up prometheus-up grafana-up ## Launch the Docker stack (PostgreSQL, Keycloak, MinIO, OpenSearch, OpenFGA, Temporal, ClickHouse, Langfuse, Prometheus, Grafana)
+docker-up: postgres-up keycloak-up seaweedfs-up opensearch-up openfga-up temporal-up clickhouse-up langfuse-up prometheus-up grafana-up ## Launch the Docker stack (PostgreSQL, Keycloak, SeaweedFS, OpenSearch, OpenFGA, Temporal, ClickHouse, Langfuse, Prometheus, Grafana)
 	$(MAKE) preflight-check
 	@echo "All Docker stack services are running and preflight passed."
 
@@ -161,7 +159,7 @@ all-down:
 	$(DOCKER_COMPOSE_BASE)clickhouse.yml -p clickhouse down
 	$(DOCKER_COMPOSE_BASE)opensearch.yml -p opensearch down
 	$(DOCKER_COMPOSE_BASE)openfga.yml -p openfga down
-	$(DOCKER_COMPOSE_BASE)minio.yml -p minio down
+	$(DOCKER_COMPOSE_BASE)seaweedfs.yml -p seaweedfs down
 	$(DOCKER_COMPOSE_BASE)keycloak.yml -p keycloak down
 	$(DOCKER_COMPOSE_BASE)postgres.yml -p postgres down
 
@@ -174,7 +172,7 @@ docker-wipe: all-down ## Stop Docker stack, delete containers & volumes
 	$(DOCKER_COMPOSE_BASE)clickhouse.yml -p clickhouse down -v
 	$(DOCKER_COMPOSE_BASE)opensearch.yml -p opensearch down -v
 	$(DOCKER_COMPOSE_BASE)openfga.yml -p openfga down -v
-	$(DOCKER_COMPOSE_BASE)minio.yml -p minio down -v
+	$(DOCKER_COMPOSE_BASE)seaweedfs.yml -p seaweedfs down -v
 	$(DOCKER_COMPOSE_BASE)keycloak.yml -p keycloak down -v
 	$(DOCKER_COMPOSE_BASE)postgres.yml -p postgres down -v
 	@echo -e "\n--- WIPE COMPLETE ---"
@@ -188,7 +186,7 @@ docker-destroy: all-down ## Stop Docker stack, delete containers/volumes/network
 	$(DOCKER_COMPOSE_BASE)clickhouse.yml -p clickhouse down -v --rmi all
 	$(DOCKER_COMPOSE_BASE)opensearch.yml -p opensearch down -v --rmi all
 	$(DOCKER_COMPOSE_BASE)openfga.yml -p openfga down -v --rmi all
-	$(DOCKER_COMPOSE_BASE)minio.yml -p minio down -v --rmi all
+	$(DOCKER_COMPOSE_BASE)seaweedfs.yml -p seaweedfs down -v --rmi all
 	$(DOCKER_COMPOSE_BASE)keycloak.yml -p keycloak down -v --rmi all
 	$(DOCKER_COMPOSE_BASE)postgres.yml -p postgres down -v --rmi all
 	docker network rm fred-shared-network || true

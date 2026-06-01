@@ -7,7 +7,7 @@ grep -q '127.0.0.1.*app-keycloak' /etc/hosts || echo "127.0.0.1 app-keycloak" | 
 cp docker-compose/.env.template docker-compose/.env
 
 docker compose -f docker-compose-keycloak.yml -p keycloak up -d
-docker compose -f docker-compose-minio.yml -p minio up -d
+docker compose -f docker-compose-seaweedfs.yml -p seaweedfs up -d
 docker compose -f docker-compose-opensearch.yml -p opensearch up -d
 docker compose -f docker-compose-kubernetes.yml -p kubernetes up -d
 docker compose -f docker-compose-k8s-mcp.yml -p k8s-mcp up -d

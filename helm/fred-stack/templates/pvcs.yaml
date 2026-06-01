@@ -13,14 +13,14 @@ spec:
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: minio-data
+  name: seaweedfs-data
   labels:
     {{- include "fred-stack.labels" . | nindent 4 }}
 spec:
   accessModes: ["ReadWriteOnce"]
   resources:
     requests:
-      storage: {{ .Values.persistence.minioSize }}
+      storage: {{ .Values.persistence.seaweedfsSize }}
 {{- if .Values.clickhouse.enabled }}
 ---
 apiVersion: v1
