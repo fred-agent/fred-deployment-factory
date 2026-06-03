@@ -13,14 +13,28 @@ spec:
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: minio-data
+  name: seaweedfs-data
   labels:
     {{- include "fred-stack.labels" . | nindent 4 }}
 spec:
   accessModes: ["ReadWriteOnce"]
   resources:
     requests:
-      storage: {{ .Values.persistence.minioSize }}
+      storage: {{ .Values.persistence.seaweedfsSize }}
+{{- if .Values.clickhouse.enabled }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: clickhouse-data
+  labels:
+    {{- include "fred-stack.labels" . | nindent 4 }}
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: {{ .Values.persistence.clickhouseSize }}
+{{- end }}
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -46,4 +60,18 @@ spec:
   resources:
     requests:
       storage: {{ .Values.persistence.prometheusSize }}
+{{- end }}
+{{- if .Values.grafana.enabled }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: grafana-data
+  labels:
+    {{- include "fred-stack.labels" . | nindent 4 }}
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: {{ .Values.persistence.grafanaSize }}
 {{- end }}

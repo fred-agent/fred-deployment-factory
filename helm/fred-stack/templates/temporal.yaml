@@ -32,6 +32,10 @@ spec:
       {{- include "fred-stack.selectorLabels" . | nindent 6 }}
   template:
     metadata:
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: /metrics
+        prometheus.io/port: "9090"
       labels:
         app.kubernetes.io/component: temporal
         {{- include "fred-stack.selectorLabels" . | nindent 8 }}
@@ -123,9 +127,13 @@ spec:
               value: temporal:7233
             - name: TEMPORAL_CLI_ADDRESS
               value: temporal:7233
+            - name: PROMETHEUS_ENDPOINT
+              value: 0.0.0.0:9090
           ports:
             - name: grpc
               containerPort: 7233
+            - name: metrics
+              containerPort: 9090
           readinessProbe:
             tcpSocket:
               port: 7233

@@ -8,13 +8,35 @@ scrape_configs:
       - targets:
           - localhost:9090
 
-  - job_name: kubernetes-services
+  {{- range $target := .Values.prometheus.extraMetricsTargets }}
+  {{- if $target.enabled }}
+  - job_name: {{ printf "%s-metrics" $target.jobName | quote }}
+    metrics_path: {{ default "/metrics" $target.metricsPath | quote }}
+    static_configs:
+      - targets:
+          - {{ $target.target | quote }}
+  {{- end }}
+  {{- end }}
+
+  - job_name: seaweedfs-s3-metrics
+    metrics_path: {{ .Values.prometheus.seaweedfsMetricsPath | quote }}
+    static_configs:
+      - targets:
+          - seaweedfs:9327
+
+  - job_name: fred-stack-services
     kubernetes_sd_configs:
       - role: service
+        namespaces:
+          names:
+            - {{ .Release.Namespace | quote }}
     relabel_configs:
       - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_scrape]
         action: keep
         regex: "true"
+      - source_labels: [__meta_kubernetes_service_label_app_kubernetes_io_instance]
+        action: keep
+        regex: {{ .Release.Name | quote }}
       - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_scheme]
         action: replace
         target_label: __scheme__
@@ -23,6 +45,9 @@ scrape_configs:
         action: replace
         target_label: __metrics_path__
         regex: (.+)
+      - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_port, __meta_kubernetes_service_port_number]
+        action: keep
+        regex: (\d+);$1
       - source_labels: [__address__, __meta_kubernetes_service_annotation_prometheus_io_port]
         action: replace
         target_label: __address__
@@ -35,13 +60,19 @@ scrape_configs:
       - source_labels: [__meta_kubernetes_service_name]
         target_label: kubernetes_name
 
-  - job_name: kubernetes-pods
+  - job_name: fred-stack-pods
     kubernetes_sd_configs:
       - role: pod
+        namespaces:
+          names:
+            - {{ .Release.Namespace | quote }}
     relabel_configs:
       - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
         action: keep
         regex: "true"
+      - source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_instance]
+        action: keep
+        regex: {{ .Release.Name | quote }}
       - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scheme]
         action: replace
         target_label: __scheme__
@@ -50,6 +81,9 @@ scrape_configs:
         action: replace
         target_label: __metrics_path__
         regex: (.+)
+      - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_port, __meta_kubernetes_pod_container_port_number]
+        action: keep
+        regex: (\d+);$1
       - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
         action: replace
         target_label: __address__

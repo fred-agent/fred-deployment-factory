@@ -12,7 +12,9 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_ADMIN_PASSWORD:-Azerty123_}
       POSTGRES_DB: ${POSTGRES_ADMIN_DB:-postgres}
     networks:
-      - app-network
+      app-network:
+        aliases:
+          - app-postgres
     ports:
       - 0.0.0.0:5432:5432/tcp
     volumes:
@@ -52,7 +54,7 @@ services:
       POSTGRES_TEMPORAL_VISIBILITY_DBNAME: ${POSTGRES_TEMPORAL_VISIBILITY_DBNAME:-temporal_visibility}
     entrypoint:
       - /bin/bash
-      - -c
+      - -ec
     command:
       - |-
         create_env.sh \

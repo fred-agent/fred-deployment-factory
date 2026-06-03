@@ -17,6 +17,7 @@ services:
     volumes:
       - vol-clickhouse-data:/var/lib/clickhouse
       - vol-clickhouse-logs:/var/log/clickhouse-server
+      - ./clickhouse/prometheus.xml:/etc/clickhouse-server/config.d/prometheus.xml:ro
     healthcheck:
       test: clickhouse-client --query "SELECT 1"
       interval: 10s

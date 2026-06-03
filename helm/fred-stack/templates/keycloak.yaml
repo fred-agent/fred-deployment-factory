@@ -32,6 +32,10 @@ spec:
       {{- include "fred-stack.selectorLabels" . | nindent 6 }}
   template:
     metadata:
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: /metrics
+        prometheus.io/port: "9000"
       labels:
         app.kubernetes.io/component: keycloak
         {{- include "fred-stack.selectorLabels" . | nindent 8 }}
@@ -74,6 +78,10 @@ spec:
               value: "true"
             - name: KC_HTTP_PORT
               value: "8080"
+            - name: KC_METRICS_ENABLED
+              value: "true"
+            - name: KC_HTTP_MANAGEMENT_PORT
+              value: "9000"
             - name: KC_HOSTNAME_STRICT
               value: "false"
             - name: KC_HOSTNAME_STRICT_HTTPS
@@ -111,6 +119,8 @@ spec:
           ports:
             - containerPort: 8080
               name: http
+            - containerPort: 9000
+              name: management
           readinessProbe:
             tcpSocket:
               port: 8080

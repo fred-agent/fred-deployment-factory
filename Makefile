@@ -17,11 +17,20 @@ IMAGE_PULL_RETRIES ?= 3
 IMAGE_PULL_RETRY_DELAY ?= 5
 K3D_USE_CILIUM ?= false
 CILIUM_VERSION ?= 1.16.5
+# Mount a host CA bundle into k3d nodes — required in corporate SSL-inspection environments (e.g. Zscaler).
+# Set to your system CA bundle, e.g.: K3D_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
+K3D_CA_BUNDLE ?=
+ifneq ($(K3D_CA_BUNDLE),)
+K3D_CA_VOLUME_ARG := --volume $(K3D_CA_BUNDLE):/etc/ssl/certs/ca-certificates.crt@server:* --volume $(K3D_CA_BUNDLE):/etc/ssl/certs/ca-certificates.crt@agent:*
+else
+K3D_CA_VOLUME_ARG :=
+endif
 
 K3D_HOST_PORT_KEYCLOAK ?= 8080
 K3D_HOST_PORT_POSTGRES ?= 5432
-K3D_HOST_PORT_MINIO_API ?= 9000
-K3D_HOST_PORT_MINIO_CONSOLE ?= 9001
+K3D_HOST_PORT_SEAWEEDFS_S3 ?= 8333
+K3D_HOST_PORT_CLICKHOUSE_HTTP ?= 8123
+K3D_HOST_PORT_CLICKHOUSE_NATIVE ?= 9002
 K3D_HOST_PORT_OPENSEARCH ?= 9200
 K3D_HOST_PORT_OPENSEARCH_DASHBOARDS ?= 5601
 K3D_HOST_PORT_OPENFGA_HTTP ?= 9080
@@ -29,6 +38,7 @@ K3D_HOST_PORT_OPENFGA_GRPC ?= 9081
 K3D_HOST_PORT_TEMPORAL_FRONTEND ?= 7233
 K3D_HOST_PORT_TEMPORAL_UI ?= 8233
 K3D_HOST_PORT_PROMETHEUS ?= 9090
+K3D_HOST_PORT_GRAFANA ?= 3002
 K3D_HOST_PORT_FRONTEND ?= 8088
 
 K3D_CLUSTER_CREATE_BASE_ARGS := \
@@ -37,8 +47,9 @@ K3D_CLUSTER_CREATE_BASE_ARGS := \
 	--wait \
 	-p "$(K3D_HOST_PORT_POSTGRES):30432@server:0" \
 	-p "$(K3D_HOST_PORT_KEYCLOAK):30080@server:0" \
-	-p "$(K3D_HOST_PORT_MINIO_API):30900@server:0" \
-	-p "$(K3D_HOST_PORT_MINIO_CONSOLE):30901@server:0" \
+	-p "$(K3D_HOST_PORT_SEAWEEDFS_S3):30833@server:0" \
+	-p "$(K3D_HOST_PORT_CLICKHOUSE_HTTP):30823@server:0" \
+	-p "$(K3D_HOST_PORT_CLICKHOUSE_NATIVE):30902@server:0" \
 	-p "$(K3D_HOST_PORT_OPENSEARCH):30920@server:0" \
 	-p "$(K3D_HOST_PORT_OPENSEARCH_DASHBOARDS):30561@server:0" \
 	-p "$(K3D_HOST_PORT_OPENFGA_HTTP):30908@server:0" \
@@ -46,6 +57,7 @@ K3D_CLUSTER_CREATE_BASE_ARGS := \
 	-p "$(K3D_HOST_PORT_TEMPORAL_FRONTEND):30723@server:0" \
 	-p "$(K3D_HOST_PORT_TEMPORAL_UI):30233@server:0" \
 	-p "$(K3D_HOST_PORT_PROMETHEUS):30090@server:0" \
+	-p "$(K3D_HOST_PORT_GRAFANA):30300@server:0" \
 	-p "$(K3D_HOST_PORT_FRONTEND):80@server:0"
 
 ##@ Help
@@ -68,7 +80,7 @@ keycloak-post-install:
 
 postgres-up: network-create env-setup
 	@echo "Launching PostgreSQL..."
-	$(DOCKER_COMPOSE_BASE)postgres.yml -p postgres up -d
+	$(DOCKER_COMPOSE_BASE)postgres.yml -p postgres up -d --force-recreate
 	@echo "Waiting for PostgreSQL post-install job..."
 	@set -euo pipefail; \
 		rc="$$(docker wait app-postgres-post-install-job)"; \
@@ -83,9 +95,17 @@ keycloak-up: postgres-up
 	$(DOCKER_COMPOSE_BASE)keycloak.yml -p keycloak up -d
 	$(MAKE) keycloak-post-install
 
-minio-up: keycloak-up
-	@echo "Launching MinIO..."
-	$(DOCKER_COMPOSE_BASE)minio.yml -p minio up -d
+seaweedfs-up: keycloak-up
+	@echo "Launching SeaweedFS..."
+	$(DOCKER_COMPOSE_BASE)seaweedfs.yml -p seaweedfs up -d
+	@echo "Waiting for SeaweedFS post-install job..."
+	@set -euo pipefail; \
+		rc="$$(docker wait app-seaweedfs-post-install-job)"; \
+		if [ "$$rc" != "0" ]; then \
+			echo "SeaweedFS post-install job failed (exit $$rc). Showing logs:"; \
+			docker logs app-seaweedfs-post-install-job || true; \
+			exit 1; \
+		fi
 
 opensearch-up: keycloak-up
 	@echo "Launching OpenSearch..."
@@ -107,6 +127,14 @@ langfuse-up: postgres-up clickhouse-up
 	@echo "Launching Langfuse..."
 	$(DOCKER_COMPOSE_BASE)langfuse.yml -p langfuse up -d
 
+prometheus-up: network-create env-setup
+	@echo "Launching Prometheus..."
+	$(DOCKER_COMPOSE_BASE)prometheus.yml -p prometheus up -d
+
+grafana-up: prometheus-up
+	@echo "Launching Grafana..."
+	$(DOCKER_COMPOSE_BASE)grafana.yml -p grafana up -d
+
 openfga-post-install:
 	@echo "Running OpenFGA post-install..."
 	bash docker-compose/openfga/openfga-post-install.sh
@@ -124,34 +152,53 @@ preflight-check:
 	@echo "Running FRED preflight..."
 	bash bin/fred-preflight.sh
 
-docker-up: postgres-up keycloak-up minio-up opensearch-up openfga-up temporal-up clickhouse-up langfuse-up ## Launch the Docker stack (PostgreSQL, Keycloak, MinIO, OpenSearch, OpenFGA, Temporal, ClickHouse, Langfuse)
+docker-up: postgres-up keycloak-up seaweedfs-up opensearch-up openfga-up temporal-up clickhouse-up langfuse-up prometheus-up grafana-up ## Launch the Docker stack (PostgreSQL, Keycloak, SeaweedFS, OpenSearch, OpenFGA, Temporal, ClickHouse, Langfuse, Prometheus, Grafana)
 	$(MAKE) preflight-check
 	@echo "All Docker stack services are running and preflight passed."
 
+docker-down: all-down ## Stop the Docker stack
+
 all-down:
 	@echo "Stopping Docker stack services..."
+	$(DOCKER_COMPOSE_BASE)grafana.yml -p grafana down
+	$(DOCKER_COMPOSE_BASE)prometheus.yml -p prometheus down
 	$(DOCKER_COMPOSE_BASE)langfuse.yml -p langfuse down
 	$(DOCKER_COMPOSE_BASE)temporal.yml -p temporal down
 	$(DOCKER_COMPOSE_BASE)clickhouse.yml -p clickhouse down
 	$(DOCKER_COMPOSE_BASE)opensearch.yml -p opensearch down
 	$(DOCKER_COMPOSE_BASE)openfga.yml -p openfga down
-	$(DOCKER_COMPOSE_BASE)minio.yml -p minio down
+	$(DOCKER_COMPOSE_BASE)seaweedfs.yml -p seaweedfs down
 	$(DOCKER_COMPOSE_BASE)keycloak.yml -p keycloak down
 	$(DOCKER_COMPOSE_BASE)postgres.yml -p postgres down
 
-docker-wipe: all-down ## Stop Docker stack, delete volumes, remove network, and prune
+docker-wipe: all-down ## Stop Docker stack, delete containers & volumes
 	@echo -e "\n--- WIPE IN PROGRESS ---"
+	$(DOCKER_COMPOSE_BASE)grafana.yml -p grafana down -v
+	$(DOCKER_COMPOSE_BASE)prometheus.yml -p prometheus down -v
 	$(DOCKER_COMPOSE_BASE)langfuse.yml -p langfuse down -v
 	$(DOCKER_COMPOSE_BASE)temporal.yml -p temporal down -v
 	$(DOCKER_COMPOSE_BASE)clickhouse.yml -p clickhouse down -v
 	$(DOCKER_COMPOSE_BASE)opensearch.yml -p opensearch down -v
 	$(DOCKER_COMPOSE_BASE)openfga.yml -p openfga down -v
-	$(DOCKER_COMPOSE_BASE)minio.yml -p minio down -v
+	$(DOCKER_COMPOSE_BASE)seaweedfs.yml -p seaweedfs down -v
 	$(DOCKER_COMPOSE_BASE)keycloak.yml -p keycloak down -v
 	$(DOCKER_COMPOSE_BASE)postgres.yml -p postgres down -v
-	docker network rm fred-shared-network || true
-	docker system prune -f
 	@echo -e "\n--- WIPE COMPLETE ---"
+
+docker-destroy: all-down ## Stop Docker stack, delete containers/volumes/network AND remove images
+	@echo -e "\n--- destroy IN PROGRESS ---"
+	$(DOCKER_COMPOSE_BASE)grafana.yml -p grafana down -v --rmi all
+	$(DOCKER_COMPOSE_BASE)prometheus.yml -p prometheus down -v --rmi all
+	$(DOCKER_COMPOSE_BASE)langfuse.yml -p langfuse down -v --rmi all
+	$(DOCKER_COMPOSE_BASE)temporal.yml -p temporal down -v --rmi all
+	$(DOCKER_COMPOSE_BASE)clickhouse.yml -p clickhouse down -v --rmi all
+	$(DOCKER_COMPOSE_BASE)opensearch.yml -p opensearch down -v --rmi all
+	$(DOCKER_COMPOSE_BASE)openfga.yml -p openfga down -v --rmi all
+	$(DOCKER_COMPOSE_BASE)seaweedfs.yml -p seaweedfs down -v --rmi all
+	$(DOCKER_COMPOSE_BASE)keycloak.yml -p keycloak down -v --rmi all
+	$(DOCKER_COMPOSE_BASE)postgres.yml -p postgres down -v --rmi all
+	docker network rm fred-shared-network || true
+	@echo -e "\n--- destroy COMPLETE ---"
 
 ##@ k3d
 k3d-create: ## Create a local k3d cluster (set K3D_USE_CILIUM=true for air-gap/Cilium policies)
@@ -173,6 +220,7 @@ k3d-create: ## Create a local k3d cluster (set K3D_USE_CILIUM=true for air-gap/C
 	  run_step "Create k3d cluster '$(K3D_CLUSTER)' (Cilium-ready networking)" \
 	    k3d cluster create "$(K3D_CLUSTER)" \
 	    $(K3D_CLUSTER_CREATE_BASE_ARGS) \
+	    $(K3D_CA_VOLUME_ARG) \
 	    --k3s-arg '--flannel-backend=none@server:*' \
 	    --k3s-arg '--disable-network-policy@server:*'; \
 	  run_step "Install Cilium $(CILIUM_VERSION)" cilium install --version "$(CILIUM_VERSION)"; \
@@ -180,7 +228,8 @@ k3d-create: ## Create a local k3d cluster (set K3D_USE_CILIUM=true for air-gap/C
 	else \
 	  run_step "Create k3d cluster '$(K3D_CLUSTER)' (default k3s networking)" \
 	    k3d cluster create "$(K3D_CLUSTER)" \
-	    $(K3D_CLUSTER_CREATE_BASE_ARGS); \
+	    $(K3D_CLUSTER_CREATE_BASE_ARGS) \
+	    $(K3D_CA_VOLUME_ARG); \
 	fi
 
 k3d-up: k3d-create ## Deploy the full stack into k3d with Helm
@@ -224,11 +273,20 @@ k3d-up: k3d-create ## Deploy the full stack into k3d with Helm
 	command -v kubectl >/dev/null 2>&1 || fail "kubectl is required"; \
 	command -v docker >/dev/null 2>&1 || fail "docker is required"; \
 	command -v k3d >/dev/null 2>&1 || fail "k3d is required"; \
+	if docker ps --format '{{.Names}}' | grep -Eq '^k3d-$(K3D_CLUSTER)-server-0$$'; then \
+	  info "Cluster '$(K3D_CLUSTER)' is already running."; \
+	else \
+	  run_step "Start k3d cluster '$(K3D_CLUSTER)'" \
+	    k3d cluster start "$(K3D_CLUSTER)"; \
+	fi; \
 	run_step "Switch kubectl context to k3d-$(K3D_CLUSTER)" \
 	  kubectl config use-context "k3d-$(K3D_CLUSTER)"; \
 	if [ "$(K3D_PREFETCH_IMAGES)" = "true" ] || [ "$(K3D_PREFETCH_IMAGES)" = "1" ]; then \
 	  step "Resolve chart images from $(HELM_CHART_DIR)"; \
-	  mapfile -t helm_images < <(helm template "$(HELM_RELEASE)" "$(HELM_CHART_DIR)" | awk '/image:[[:space:]]*/ {print $$2}' | tr -d '"' | sort -u); \
+	  helm_images=(); \
+	  while IFS= read -r image; do \
+	    [ -n "$$image" ] && helm_images+=("$$image"); \
+	  done < <(helm template "$(HELM_RELEASE)" "$(HELM_CHART_DIR)" | awk '/image:[[:space:]]*/ {print $$2}' | tr -d '"' | sort -u); \
 	  if [ "$${#helm_images[@]}" -eq 0 ]; then \
 	    fail "No images found in chart template for prefetch."; \
 	  fi; \
@@ -236,10 +294,17 @@ k3d-up: k3d-create ## Deploy the full stack into k3d with Helm
 	  all_images=("$${helm_images[@]}"); \
 	  if [ "$(K3D_PREFETCH_SYSTEM_IMAGES)" = "true" ] || [ "$(K3D_PREFETCH_SYSTEM_IMAGES)" = "1" ]; then \
 	    step "Resolve kube-system images"; \
-	    mapfile -t k3s_system_images < <(kubectl get deploy,daemonset -n kube-system -o jsonpath='{..image}' 2>/dev/null | tr -s '[:space:]' '\n' | sed '/^$$/d' | sort -u || true); \
+	    k3s_system_images=(); \
+	    while IFS= read -r image; do \
+	      [ -n "$$image" ] && k3s_system_images+=("$$image"); \
+	    done < <(kubectl get deploy,daemonset -n kube-system -o jsonpath='{..image}' 2>/dev/null | tr -s '[:space:]' '\n' | sed '/^$$/d' | sort -u || true); \
 	    if [ "$${#k3s_system_images[@]}" -gt 0 ]; then \
 	      ok "Resolve kube-system images ($${#k3s_system_images[@]} images)"; \
-	      mapfile -t all_images < <(printf "%s\n" "$${all_images[@]}" "$${k3s_system_images[@]}" | sed '/^$$/d' | sort -u); \
+	      merged_images=(); \
+	      while IFS= read -r image; do \
+	        [ -n "$$image" ] && merged_images+=("$$image"); \
+	      done < <(printf "%s\n" "$${all_images[@]}" "$${k3s_system_images[@]}" | sed '/^$$/d' | sort -u); \
+	      all_images=("$${merged_images[@]}"); \
 	      ok "Prepared prefetch image set ($${#all_images[@]} unique images)"; \
 	    else \
 	      warn "Could not resolve kube-system images; continuing with chart images only."; \
@@ -363,9 +428,13 @@ k3d-logs: ## Show logs for a service: make k3d-logs SVC=openfga-post-install
 		kubectl logs -n "$(K3D_NAMESPACE)" job/$(SVC) --tail=100 2>/dev/null || \
 		echo "No logs found for '$(SVC)'"
 
-k3d-down: ## Uninstall the Helm release from k3d namespace
+k3d-uninstall: ## Uninstall the Helm release from k3d namespace
 	@echo "Removing Helm release '$(HELM_RELEASE)' from namespace '$(K3D_NAMESPACE)'..."
 	-helm uninstall "$(HELM_RELEASE)" -n "$(K3D_NAMESPACE)"
+
+k3d-down: ## Turn off the k3d containers to release publicly allocated ports
+	@echo "Turning the k3d cluster '$(K3D_CLUSTER)' down, and stopping k3d docker containers"
+	-k3d cluster stop '$(K3D_CLUSTER)'
 
 k3d-delete: ## Delete the k3d cluster
 	@echo "Deleting k3d cluster '$(K3D_CLUSTER)'..."
@@ -373,7 +442,7 @@ k3d-delete: ## Delete the k3d cluster
 
 k3d-wipe: ## Full k3d reset (uninstall Helm release and delete cluster)
 	@echo -e "\n--- K3D WIPE IN PROGRESS ---"
-	@$(MAKE) k3d-down
+	@$(MAKE) k3d-uninstall
 	@$(MAKE) k3d-delete
 	@echo -e "\n--- K3D WIPE COMPLETE ---"
 
@@ -399,4 +468,4 @@ k3d-airgap-status: ## Show active Cilium network policies
 	@echo "📊 CiliumNetworkPolicies in namespace '$(K3D_NAMESPACE)':"
 	kubectl get ciliumnetworkpolicies -n "$(K3D_NAMESPACE)"
 
-.PHONY: help network-create env-setup keycloak-post-install postgres-up keycloak-up minio-up opensearch-up clickhouse-up langfuse-up openfga-post-install openfga-up temporal-up preflight-check docker-up all-down docker-wipe k3d-create k3d-up k3d-deploy k3d-restart-keycloak k3d-restart-openfga k3d-restart-opensearch k3d-restart-temporal k3d-restart-minio k3d-restart-postgres k3d-logs k3d-down k3d-delete k3d-wipe k3d-status k3d-airgap-on k3d-airgap-off k3d-airgap-status
+.PHONY: help network-create env-setup keycloak-post-install postgres-up keycloak-up seaweedfs-up opensearch-up clickhouse-up langfuse-up prometheus-up grafana-up openfga-post-install openfga-up temporal-up preflight-check docker-up docker-down all-down docker-wipe docker-destroy k3d-create k3d-up k3d-deploy k3d-restart-keycloak k3d-restart-openfga k3d-restart-opensearch k3d-restart-temporal k3d-restart-minio k3d-restart-postgres k3d-logs k3d-down k3d-uninstall k3d-delete k3d-wipe k3d-status k3d-airgap-on k3d-airgap-off k3d-airgap-status

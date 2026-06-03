@@ -1,0 +1,23 @@
+services:
+
+  grafana:
+    container_name: app-grafana
+    image: grafana/grafana:11.1.4
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-Azerty123_}
+    networks:
+      - app-network
+    ports:
+      - 0.0.0.0:${GRAFANA_PORT:-3002}:3000/tcp
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - vol-grafana-data:/var/lib/grafana
+
+volumes:
+  vol-grafana-data:
+
+networks:
+  app-network:
+    external: true
+    name: fred-shared-network

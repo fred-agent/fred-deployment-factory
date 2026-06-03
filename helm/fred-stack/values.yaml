@@ -39,12 +39,12 @@ auth:
   keycloakKfEnableManageUsers: "true"
   keycloakForceRelogin: auto
 
-  minioRootUser: admin
-  minioRootPassword: Azerty123_
-  minioReadonlyUser: app_ro
-  minioReadonlyPassword: Azerty123_
-  minioReadwriteUser: app_rw
-  minioReadwritePassword: Azerty123_
+  seaweedfsAdminUser: admin
+  seaweedfsAdminPassword: Azerty123_
+
+  clickhouseUser: fred
+  clickhousePassword: Azerty123_
+  clickhouseDb: fred
 
   opensearchAdminUser: admin
   opensearchAdminPassword: FredOpensearch123!!
@@ -53,22 +53,44 @@ auth:
   openfgaStoreName: fred
   openfgaSeedIncludeUsernameUsers: "true"
 
+  grafanaAdminUser: admin
+  grafanaAdminPassword: Azerty123_
+
 temporal:
   uiPort: 8233
+
+clickhouse:
+  enabled: true
 
 prometheus:
   enabled: true
   scrapeInterval: 15s
   evaluationInterval: 15s
   retention: 7d
+  extraMetricsTargets:
+    - enabled: true
+      jobName: agentic-backend
+      target: agentic-backend-metrics:9000
+      metricsPath: /metrics
+    - enabled: true
+      jobName: knowledge-flow-backend
+      target: knowledge-flow-backend-metrics:9111
+      metricsPath: /metrics
+  seaweedfsMetricsPath: /metrics
+
+grafana:
+  enabled: true
 
 service:
   type: NodePort
   nodePorts:
     postgres: 30432
     keycloak: 30080
-    minioApi: 30900
-    minioConsole: 30901
+    seaweedfsS3: 30833
+    seaweedfsFiler: 30888
+    seaweedfsMaster: 30933
+    clickhouseHttp: 30823
+    clickhouseNative: 30902
     opensearch: 30920
     opensearchDashboards: 30561
     openfgaHttp: 30908
@@ -77,20 +99,23 @@ service:
     temporalFrontend: 30723
     temporalUi: 30233
     prometheus: 30090
+    grafana: 30300
 
 persistence:
   postgresSize: 10Gi
-  minioSize: 10Gi
+  seaweedfsSize: 10Gi
+  clickhouseSize: 10Gi
   opensearchSize: 10Gi
   prometheusSize: 8Gi
+  grafanaSize: 4Gi
 
 images:
   postgres: pgvector/pgvector:pg17
   postgresClient: mirror.gcr.io/postgres:15.12-alpine3.20
   keycloak: mirror.gcr.io/keycloak/keycloak:26.3.0
   toolbox: nicolaka/netshoot:v0.13
-  minio: minio/minio:RELEASE.2025-02-07T23-21-09Z
-  minioClient: minio/mc:RELEASE.2025-02-07T23-21-09Z
+  seaweedfs: chrislusf/seaweedfs:4.29
+  clickhouse: clickhouse/clickhouse-server:24.12.5.81-alpine
   alpine: mirror.gcr.io/alpine:3.21.3
   opensearch: mirror.gcr.io/opensearchproject/opensearch:2.19.3
   opensearchDashboards: mirror.gcr.io/opensearchproject/opensearch-dashboards:2.19.3
@@ -99,3 +124,4 @@ images:
   temporalAdminTools: mirror.gcr.io/temporalio/admin-tools:1.28
   temporalUi: mirror.gcr.io/temporalio/ui:2.38.3
   prometheus: prom/prometheus:v2.54.1
+  grafana: grafana/grafana:11.1.4

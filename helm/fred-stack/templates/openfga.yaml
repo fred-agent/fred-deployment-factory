@@ -44,6 +44,10 @@ spec:
       {{- include "fred-stack.selectorLabels" . | nindent 6 }}
   template:
     metadata:
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: /metrics
+        prometheus.io/port: "2112"
       labels:
         app.kubernetes.io/component: openfga
         {{- include "fred-stack.selectorLabels" . | nindent 8 }}
@@ -79,6 +83,10 @@ spec:
               value: "true"
             - name: OPENFGA_PLAYGROUND_PORT
               value: "3000"
+            - name: OPENFGA_METRICS_ENABLED
+              value: "true"
+            - name: OPENFGA_METRICS_ADDR
+              value: 0.0.0.0:2112
             - name: OPENFGA_API_TOKEN
               valueFrom:
                 secretKeyRef:
@@ -91,6 +99,8 @@ spec:
               containerPort: 9081
             - name: playground
               containerPort: 3000
+            - name: metrics
+              containerPort: 2112
           readinessProbe:
             tcpSocket:
               port: 9080
