@@ -111,31 +111,6 @@
         "containerId" : "30d940b6-8dff-485e-97b0-9cf17b090745",
         "attributes" : { }
       } ],
-      "minio-console" : [ {
-        "id" : "2efcfc45-a36d-4599-9bfb-33b7054f47db",
-        "name" : "readonly",
-        "description" : "",
-        "composite" : false,
-        "clientRole" : true,
-        "containerId" : "549e76af-afbc-4ac4-a2db-077240680498",
-        "attributes" : { }
-      }, {
-        "id" : "92d7551f-e248-48b0-b38e-0feff0b9275a",
-        "name" : "consoleAdmin",
-        "description" : "",
-        "composite" : false,
-        "clientRole" : true,
-        "containerId" : "549e76af-afbc-4ac4-a2db-077240680498",
-        "attributes" : { }
-      }, {
-        "id" : "61fcc327-cc89-4cc5-a0e3-7dad58ffa122",
-        "name" : "readwrite",
-        "description" : "",
-        "composite" : false,
-        "clientRole" : true,
-        "containerId" : "549e76af-afbc-4ac4-a2db-077240680498",
-        "attributes" : { }
-      } ],
       "knowledge-flow" : [ ],
       "realm-management" : [ {
         "id" : "25bf77a8-0376-4f77-bb1c-554ea236b3ce",
@@ -512,7 +487,6 @@
     "disableableCredentialTypes" : [ ],
     "requiredActions" : [ ],
     "clientRoles" : {
-      "minio-console" : [ "consoleAdmin" ],
       "app" : [ "admin" ],
       "opensearch-dashboards" : [ "admin" ]
     },
@@ -540,7 +514,6 @@
     "requiredActions" : [ ],
     "realmRoles" : [ "default-roles-app" ],
     "clientRoles" : {
-      "minio-console" : [ "readonly", "readwrite" ],
       "app" : [ "editor", "viewer" ],
       "opensearch-dashboards" : [ "user" ]
     },
@@ -569,7 +542,6 @@
     "realmRoles" : [ "default-roles-app" ],
     "clientRoles" : {
       "app" : [ "viewer" ],
-      "minio-console" : [ "readwrite" ],
       "opensearch-dashboards" : [ "user" ]
     },
     "notBefore" : 0,
@@ -1085,64 +1057,6 @@
         "access.token.claim" : "true",
         "claim.name" : "clientAddress",
         "jsonType.label" : "String"
-      }
-    } ],
-    "defaultClientScopes" : [ "web-origins", "acr", "profile", "roles", "basic", "email" ],
-    "optionalClientScopes" : [ "address", "phone", "offline_access", "microprofile-jwt" ]
-  }, {
-    "id" : "549e76af-afbc-4ac4-a2db-077240680498",
-    "clientId" : "minio-console",
-    "name" : "${client_minio}",
-    "description" : "",
-    "rootUrl" : "",
-    "adminUrl" : "",
-    "baseUrl" : "http://docker-compose.host.fqdn:9001",
-    "surrogateAuthRequired" : false,
-    "enabled" : true,
-    "alwaysDisplayInConsole" : false,
-    "clientAuthenticatorType" : "client-secret",
-    "secret" : "Azerty123_",
-    "redirectUris" : [ "*" ],
-    "webOrigins" : [ "/*" ],
-    "notBefore" : 0,
-    "bearerOnly" : false,
-    "consentRequired" : false,
-    "standardFlowEnabled" : true,
-    "implicitFlowEnabled" : false,
-    "directAccessGrantsEnabled" : true,
-    "serviceAccountsEnabled" : false,
-    "publicClient" : false,
-    "frontchannelLogout" : true,
-    "protocol" : "openid-connect",
-    "attributes" : {
-      "realm_client" : "false",
-      "oidc.ciba.grant.enabled" : "false",
-      "client.secret.creation.time" : "1740691503",
-      "backchannel.logout.session.required" : "true",
-      "post.logout.redirect.uris" : "+",
-      "display.on.consent.screen" : "false",
-      "oauth2.device.authorization.grant.enabled" : "false",
-      "backchannel.logout.revoke.offline.tokens" : "false"
-    },
-    "authenticationFlowBindingOverrides" : { },
-    "fullScopeAllowed" : true,
-    "nodeReRegistrationTimeout" : -1,
-    "protocolMappers" : [ {
-      "id" : "9a4b96a9-3e29-4483-b2e9-833c6275db0f",
-      "name" : "user-client-role",
-      "protocol" : "openid-connect",
-      "protocolMapper" : "oidc-usermodel-client-role-mapper",
-      "consentRequired" : false,
-      "config" : {
-        "introspection.token.claim" : "true",
-        "multivalued" : "true",
-        "userinfo.token.claim" : "true",
-        "id.token.claim" : "true",
-        "lightweight.claim" : "false",
-        "access.token.claim" : "true",
-        "claim.name" : "policy",
-        "jsonType.label" : "String",
-        "usermodel.clientRoleMapping.clientId" : "minio-console"
       }
     } ],
     "defaultClientScopes" : [ "web-origins", "acr", "profile", "roles", "basic", "email" ],

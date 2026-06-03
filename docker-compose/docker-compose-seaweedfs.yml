@@ -7,7 +7,8 @@ services:
       NO_PROXY: "*"
     command:
       - server
-      - -ip=0.0.0.0
+      - -ip=app-seaweedfs
+      - -ip.bind=0.0.0.0
       - -dir=/data
       - -s3
       - -s3.config=/config/s3.json
@@ -20,7 +21,7 @@ services:
       - app-network
     ports:
       - 0.0.0.0:9333:9333/tcp   # Master API
-      - 0.0.0.0:8080:8080/tcp   # Volume API
+      - 0.0.0.0:8081:8080/tcp   # Volume API
       - 0.0.0.0:8888:8888/tcp   # Filer API
       - 0.0.0.0:8333:8333/tcp   # S3 API (compatible MinIO SDK)
     volumes:
@@ -33,6 +34,37 @@ services:
       retries: 5
       start_period: 10s
       start_interval: 2s
+
+  seaweedfs-post-install-job:
+    container_name: app-seaweedfs-post-install-job
+    image: chrislusf/seaweedfs:4.29
+    environment:
+      NO_PROXY: "*"
+      SEAWEEDFS_ADMIN_USER: ${SEAWEEDFS_ADMIN_USER:-admin}
+      SEAWEEDFS_ADMIN_PASSWORD: ${SEAWEEDFS_ADMIN_PASSWORD:-Azerty123_}
+    entrypoint:
+      - /bin/sh
+      - -ec
+    command:
+      - |
+        echo "[seaweedfs-post-install] listing buckets..."
+        shell_output="$$(echo 's3.bucket.list' | weed shell -master=app-seaweedfs:9333 -filer=app-seaweedfs:8888 2>&1)"
+        if [ -n "$$shell_output" ]; then
+          printf '%s\n' "$$shell_output"
+        fi
+
+        if printf '%s\n' "$$shell_output" | grep -Fxq 'langfuse'; then
+          echo "[seaweedfs-post-install] bucket langfuse already exists"
+        else
+          echo "[seaweedfs-post-install] creating bucket langfuse"
+          echo "s3.bucket.create -name langfuse" | weed shell -master=app-seaweedfs:9333 -filer=app-seaweedfs:8888
+        fi
+        echo "[seaweedfs-post-install] bucket initialization finished"
+    networks:
+      - app-network
+    depends_on:
+      seaweedfs:
+        condition: service_healthy
 
 volumes:
   vol-seaweedfs-data:

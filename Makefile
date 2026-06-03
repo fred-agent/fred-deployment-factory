@@ -98,6 +98,14 @@ keycloak-up: postgres-up
 seaweedfs-up: keycloak-up
 	@echo "Launching SeaweedFS..."
 	$(DOCKER_COMPOSE_BASE)seaweedfs.yml -p seaweedfs up -d
+	@echo "Waiting for SeaweedFS post-install job..."
+	@set -euo pipefail; \
+		rc="$$(docker wait app-seaweedfs-post-install-job)"; \
+		if [ "$$rc" != "0" ]; then \
+			echo "SeaweedFS post-install job failed (exit $$rc). Showing logs:"; \
+			docker logs app-seaweedfs-post-install-job || true; \
+			exit 1; \
+		fi
 
 opensearch-up: keycloak-up
 	@echo "Launching OpenSearch..."
@@ -419,4 +427,4 @@ k3d-airgap-status: ## Show active Cilium network policies
 	@echo "📊 CiliumNetworkPolicies in namespace '$(K3D_NAMESPACE)':"
 	kubectl get ciliumnetworkpolicies -n "$(K3D_NAMESPACE)"
 
-.PHONY: help network-create env-setup keycloak-post-install postgres-up keycloak-up minio-up opensearch-up clickhouse-up langfuse-up prometheus-up grafana-up openfga-post-install openfga-up temporal-up preflight-check docker-up docker-down all-down docker-wipe docker-destroy k3d-create k3d-up k3d-down k3d-uninstall k3d-delete k3d-wipe k3d-status k3d-airgap-on k3d-airgap-off k3d-airgap-status
+.PHONY: help network-create env-setup keycloak-post-install postgres-up keycloak-up seaweedfs-up opensearch-up clickhouse-up langfuse-up prometheus-up grafana-up openfga-post-install openfga-up temporal-up preflight-check docker-up docker-down all-down docker-wipe docker-destroy k3d-create k3d-up k3d-down k3d-uninstall k3d-delete k3d-wipe k3d-status k3d-airgap-on k3d-airgap-off k3d-airgap-status

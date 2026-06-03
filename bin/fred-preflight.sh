@@ -10,7 +10,7 @@ set -euo pipefail
 # 2) App roles, groups scope mapper, service-account rights
 # 3) OpenFGA store presence + team memberships from demo identity config
 # 4) Optional Postgres agent IDs + owner coverage for Alice (read-only)
-# 5) Langfuse endpoints + MinIO bucket diagnostics
+# 5) Langfuse endpoints + S3 bucket diagnostics
 # -----------------------------------------------------------------------------
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
@@ -43,16 +43,16 @@ LANGFUSE_UI_URL="${LANGFUSE_UI_URL:-http://${LANGFUSE_UI_HOST}:${LANGFUSE_UI_POR
 LANGFUSE_WORKER_HOST="${LANGFUSE_WORKER_HOST:-127.0.0.1}"
 LANGFUSE_WORKER_PORT="${LANGFUSE_WORKER_PORT:-3030}"
 LANGFUSE_WORKER_URL="${LANGFUSE_WORKER_URL:-http://${LANGFUSE_WORKER_HOST}:${LANGFUSE_WORKER_PORT}}"
-LANGFUSE_MINIO_URL="${LANGFUSE_MINIO_URL:-${LANGFUSE_S3_BATCH_EXPORT_EXTERNAL_ENDPOINT:-http://${DOCKER_COMPOSE_HOST_FQDN:-localhost}:9000}}"
+LANGFUSE_S3_URL="${LANGFUSE_S3_URL:-${LANGFUSE_S3_BATCH_EXPORT_EXTERNAL_ENDPOINT:-http://${DOCKER_COMPOSE_HOST_FQDN:-localhost}:8333}}"
 LANGFUSE_EVENT_BUCKET="${LANGFUSE_EVENT_BUCKET:-${LANGFUSE_S3_EVENT_UPLOAD_BUCKET:-langfuse}}"
 LANGFUSE_MEDIA_BUCKET="${LANGFUSE_MEDIA_BUCKET:-${LANGFUSE_S3_MEDIA_UPLOAD_BUCKET:-langfuse}}"
 LANGFUSE_EXPORT_BUCKET="${LANGFUSE_EXPORT_BUCKET:-${LANGFUSE_S3_BATCH_EXPORT_BUCKET:-langfuse}}"
-MINIO_ROOT_USER="${MINIO_ROOT_USER:-admin}"
-MINIO_ROOT_PASSWORD="${MINIO_ROOT_PASSWORD:-Azerty123_}"
+SEAWEEDFS_ADMIN_USER="${SEAWEEDFS_ADMIN_USER:-admin}"
+SEAWEEDFS_ADMIN_PASSWORD="${SEAWEEDFS_ADMIN_PASSWORD:-Azerty123_}"
 PREFLIGHT_HTTP_RETRY_DELAY_SEC="${PREFLIGHT_HTTP_RETRY_DELAY_SEC:-2}"
 LANGFUSE_UI_HTTP_RETRIES="${LANGFUSE_UI_HTTP_RETRIES:-30}"
 LANGFUSE_WORKER_HTTP_RETRIES="${LANGFUSE_WORKER_HTTP_RETRIES:-10}"
-LANGFUSE_MINIO_HTTP_RETRIES="${LANGFUSE_MINIO_HTTP_RETRIES:-10}"
+LANGFUSE_S3_HTTP_RETRIES="${LANGFUSE_S3_HTTP_RETRIES:-10}"
 
 # When true, also expect user:<username> team tuples in OpenFGA.
 OPENFGA_EXPECT_USERNAME_SUBJECTS="${OPENFGA_EXPECT_USERNAME_SUBJECTS:-${OPENFGA_SEED_INCLUDE_USERNAME_USERS:-true}}"
@@ -448,7 +448,7 @@ info "Postgres: host=${PGHOST} db=${PGDATABASE} user=${PGUSER}"
 info "Temporal UI: ${TEMPORAL_UI_URL}"
 info "Langfuse UI: ${LANGFUSE_UI_URL}"
 info "Langfuse worker: ${LANGFUSE_WORKER_URL}"
-info "Langfuse MinIO endpoint (external check): ${LANGFUSE_MINIO_URL}"
+info "Langfuse S3 endpoint (external check): ${LANGFUSE_S3_URL}"
 info "Langfuse buckets: event=${LANGFUSE_EVENT_BUCKET}, media=${LANGFUSE_MEDIA_BUCKET}, export=${LANGFUSE_EXPORT_BUCKET}"
 info "Mode: READ-ONLY (no write calls are executed)"
 info "Terminology: team = Keycloak group, permission = Keycloak client-role, ReBAC right = OpenFGA tuple"
@@ -1025,11 +1025,11 @@ fi
 
 LANGFUSE_UI_HTTP_CODE="000"
 LANGFUSE_WORKER_HTTP_CODE="000"
-LANGFUSE_MINIO_HTTP_CODE="000"
+LANGFUSE_S3_HTTP_CODE="000"
 LANGFUSE_S3_CONFIG_GAPS=0
-LANGFUSE_MINIO_BUCKET_GAPS=0
+LANGFUSE_S3_BUCKET_GAPS=0
 
-step "Check Langfuse endpoints and MinIO prerequisites"
+step "Check Langfuse endpoints and S3 prerequisites"
 LANGFUSE_UI_HTTP_CODE="$(
   probe_http_status_with_retries \
     "${LANGFUSE_UI_URL}" \
@@ -1058,18 +1058,18 @@ else
   ok "Langfuse worker endpoint reachable (${LANGFUSE_WORKER_URL}, HTTP ${LANGFUSE_WORKER_HTTP_CODE})"
 fi
 
-LANGFUSE_MINIO_HTTP_CODE="$(
+LANGFUSE_S3_HTTP_CODE="$(
   probe_http_status_with_retries \
-    "${LANGFUSE_MINIO_URL}" \
-    "${LANGFUSE_MINIO_HTTP_RETRIES}" \
+    "${LANGFUSE_S3_URL}" \
+    "${LANGFUSE_S3_HTTP_RETRIES}" \
     "${PREFLIGHT_HTTP_RETRY_DELAY_SEC}"
 )"
-if [[ "${LANGFUSE_MINIO_HTTP_CODE}" == "000" ]]; then
-  mark_warning "Langfuse MinIO endpoint unreachable from host (${LANGFUSE_MINIO_URL}, HTTP ${LANGFUSE_MINIO_HTTP_CODE})"
-elif [[ "${LANGFUSE_MINIO_HTTP_CODE}" =~ ^5[0-9][0-9]$ ]]; then
-  mark_warning "Langfuse MinIO endpoint reachable but returned server error (${LANGFUSE_MINIO_URL}, HTTP ${LANGFUSE_MINIO_HTTP_CODE})"
+if [[ "${LANGFUSE_S3_HTTP_CODE}" == "000" ]]; then
+  mark_warning "Langfuse S3 endpoint unreachable from host (${LANGFUSE_S3_URL}, HTTP ${LANGFUSE_S3_HTTP_CODE})"
+elif [[ "${LANGFUSE_S3_HTTP_CODE}" =~ ^5[0-9][0-9]$ ]]; then
+  mark_warning "Langfuse S3 endpoint reachable but returned server error (${LANGFUSE_S3_URL}, HTTP ${LANGFUSE_S3_HTTP_CODE})"
 else
-  ok "Langfuse MinIO endpoint reachable from host (${LANGFUSE_MINIO_URL}, HTTP ${LANGFUSE_MINIO_HTTP_CODE})"
+  ok "Langfuse S3 endpoint reachable from host (${LANGFUSE_S3_URL}, HTTP ${LANGFUSE_S3_HTTP_CODE})"
 fi
 
 for bucket_name in "${LANGFUSE_EVENT_BUCKET}" "${LANGFUSE_MEDIA_BUCKET}" "${LANGFUSE_EXPORT_BUCKET}"; do
@@ -1086,30 +1086,32 @@ else
 fi
 
 if command -v docker >/dev/null 2>&1; then
-  if docker ps --format '{{.Names}}' 2>/dev/null | grep -Fxq "app-minio"; then
-    minio_bucket_listing="$(
-      docker exec app-minio sh -lc \
-        "mc alias set local http://localhost:9000 \"${MINIO_ROOT_USER}\" \"${MINIO_ROOT_PASSWORD}\" >/dev/null 2>&1 && mc ls local 2>/dev/null" \
-        2>/dev/null || true
+  if docker ps --format '{{.Names}}' 2>/dev/null | grep -Fxq "app-seaweedfs"; then
+    candidate_bucket_payload="$(
+      docker exec app-seaweedfs sh -lc \
+        'bucket_output="$(echo "s3.bucket.list" | weed shell -master=127.0.0.1:9333 -filer=127.0.0.1:8888 2>&1)"; rc="$?"; printf "__RC__=%s\n" "$rc"; printf "%s" "$bucket_output"' \
+        || true
     )"
-    if [[ -z "${minio_bucket_listing}" ]]; then
-      mark_warning "Could not list buckets from app-minio with provided MINIO_ROOT_USER/MINIO_ROOT_PASSWORD; skipping Langfuse bucket existence checks"
+    seaweedfs_bucket_listing_rc="$(sed -n '1s/^__RC__=//p' <<<"${candidate_bucket_payload}")"
+    seaweedfs_bucket_listing="$(sed '1d' <<<"${candidate_bucket_payload}")"
+    if [[ "${seaweedfs_bucket_listing_rc}" != "0" ]]; then
+      mark_warning "Could not list buckets from app-seaweedfs; skipping Langfuse bucket existence checks"
     else
       mapfile -t langfuse_unique_buckets < <(
         printf '%s\n' "${LANGFUSE_EVENT_BUCKET}" "${LANGFUSE_MEDIA_BUCKET}" "${LANGFUSE_EXPORT_BUCKET}" \
           | sed '/^$/d' | sort -u
       )
       for bucket_name in "${langfuse_unique_buckets[@]}"; do
-        if grep -Fq "${bucket_name}/" <<<"${minio_bucket_listing}"; then
-          ok "MinIO bucket present for Langfuse: ${bucket_name}"
+        if grep -Fq "${bucket_name}" <<<"${seaweedfs_bucket_listing}"; then
+          ok "S3 bucket present for Langfuse: ${bucket_name}"
         else
-          ((LANGFUSE_MINIO_BUCKET_GAPS+=1))
-          mark_critical "Missing MinIO bucket for Langfuse: ${bucket_name}"
+          ((LANGFUSE_S3_BUCKET_GAPS+=1))
+          mark_critical "Missing S3 bucket for Langfuse: ${bucket_name}"
         fi
       done
     fi
   else
-    mark_warning "Container 'app-minio' not found; skipping Langfuse bucket existence checks"
+    mark_warning "Container 'app-seaweedfs' not found; skipping Langfuse bucket existence checks"
   fi
 else
   mark_warning "docker CLI unavailable; skipping Langfuse bucket existence checks"
@@ -1175,9 +1177,9 @@ fi
 info "Temporal UI endpoint: ${TEMPORAL_UI_URL} (HTTP ${TEMPORAL_UI_HTTP_CODE})"
 info "Langfuse UI endpoint: ${LANGFUSE_UI_URL} (HTTP ${LANGFUSE_UI_HTTP_CODE})"
 info "Langfuse worker endpoint: ${LANGFUSE_WORKER_URL} (HTTP ${LANGFUSE_WORKER_HTTP_CODE})"
-info "Langfuse MinIO endpoint (external check): ${LANGFUSE_MINIO_URL} (HTTP ${LANGFUSE_MINIO_HTTP_CODE})"
+info "Langfuse S3 endpoint (external check): ${LANGFUSE_S3_URL} (HTTP ${LANGFUSE_S3_HTTP_CODE})"
 info "Langfuse S3 config gaps (empty bucket names): ${LANGFUSE_S3_CONFIG_GAPS}"
-info "Langfuse MinIO bucket gaps: ${LANGFUSE_MINIO_BUCKET_GAPS}"
+info "Langfuse S3 bucket gaps: ${LANGFUSE_S3_BUCKET_GAPS}"
 if [[ "${TOTAL_TUPLES}" -ge 0 ]]; then
   info "OpenFGA tuples total: ${TOTAL_TUPLES}"
 fi
