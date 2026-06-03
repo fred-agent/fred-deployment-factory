@@ -1,57 +1,6 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: minio-post-install
-  labels:
-    {{- include "fred-stack.labels" . | nindent 4 }}
-  annotations:
-    helm.sh/hook: post-install,post-upgrade
-    helm.sh/hook-weight: "10"
-    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
-spec:
-  backoffLimit: 3
-  template:
-    metadata:
-      labels:
-        {{- include "fred-stack.selectorLabels" . | nindent 8 }}
-    spec:
-      enableServiceLinks: false
-      restartPolicy: OnFailure
-      containers:
-        - name: minio-post-install
-          image: {{ .Values.images.minio }}
-          imagePullPolicy: {{ .Values.imagePullPolicy }}
-          envFrom:
-            - secretRef:
-                name: fred-secrets
-          command:
-            - /bin/bash
-            - -ec
-            - |
-              until mc alias set minio http://minio:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD"; do sleep 2; done
-
-              mc mb --ignore-existing minio/app-content
-              mc mb --ignore-existing minio/app-feedback
-              mc mb --ignore-existing minio/app-chat-profile
-
-              mc admin policy create minio app-minio-ro-policy /opt/minio/ro-policy.json || true
-              mc admin user add minio "$MINIO_READONLY_USER" "$MINIO_READONLY_PASSWORD" || true
-              mc admin policy attach minio app-minio-ro-policy --user "$MINIO_READONLY_USER" || true
-
-              mc admin policy create minio app-minio-rw-policy /opt/minio/rw-policy.json || true
-              mc admin user add minio "$MINIO_READWRITE_USER" "$MINIO_READWRITE_PASSWORD" || true
-              mc admin policy attach minio app-minio-rw-policy --user "$MINIO_READWRITE_USER" || true
-          volumeMounts:
-            - name: minio-config
-              mountPath: /opt/minio
-      volumes:
-        - name: minio-config
-          configMap:
-            name: fred-minio-config
----
-apiVersion: batch/v1
-kind: Job
-metadata:
   name: opensearch-post-install
   labels:
     {{- include "fred-stack.labels" . | nindent 4 }}

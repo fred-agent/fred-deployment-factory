@@ -1,0 +1,151 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fred-seaweedfs-config
+  labels:
+    {{- include "fred-stack.labels" . | nindent 4 }}
+data:
+  s3.json: |
+    {
+      "identities": [
+        {
+          "name": "admin",
+          "credentials": [
+            {
+              "accessKey": {{ .Values.auth.seaweedfsAdminUser | quote }},
+              "secretKey": {{ .Values.auth.seaweedfsAdminPassword | quote }}
+            }
+          ],
+          "actions": ["Admin", "Read", "Write", "List"]
+        }
+      ]
+    }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: seaweedfs
+  labels:
+    {{- include "fred-stack.labels" . | nindent 4 }}
+spec:
+  type: {{ include "fred-stack.serviceType" . }}
+  ports:
+    - name: s3
+      port: 8333
+      targetPort: 8333
+      {{- if eq (include "fred-stack.serviceType" .) "NodePort" }}
+      nodePort: {{ .Values.service.nodePorts.seaweedfsS3 }}
+      {{- end }}
+    - name: filer
+      port: 8888
+      targetPort: 8888
+      {{- if eq (include "fred-stack.serviceType" .) "NodePort" }}
+      nodePort: {{ .Values.service.nodePorts.seaweedfsFiler }}
+      {{- end }}
+    - name: master
+      port: 9333
+      targetPort: 9333
+      {{- if eq (include "fred-stack.serviceType" .) "NodePort" }}
+      nodePort: {{ .Values.service.nodePorts.seaweedfsMaster }}
+      {{- end }}
+  selector:
+    app.kubernetes.io/component: seaweedfs
+    {{- include "fred-stack.selectorLabels" . | nindent 4 }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: seaweedfs
+  labels:
+    {{- include "fred-stack.labels" . | nindent 4 }}
+    app.kubernetes.io/component: seaweedfs
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: seaweedfs
+      {{- include "fred-stack.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9327"
+        prometheus.io/path: {{ .Values.prometheus.seaweedfsMetricsPath | quote }}
+      labels:
+        app.kubernetes.io/component: seaweedfs
+        {{- include "fred-stack.selectorLabels" . | nindent 8 }}
+    spec:
+      enableServiceLinks: false
+      containers:
+        - name: seaweedfs
+          image: {{ .Values.images.seaweedfs }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          command:
+            - weed
+            - server
+            - -dir=/data
+            - -s3
+            - -s3.config=/config/s3.json
+            - -s3.port=8333
+            - -s3.metricsPort=9327
+            - -master.port=9333
+            - -volume.port=8080
+            - -filer
+            - -filer.port=8888
+          lifecycle:
+            postStart:
+              exec:
+                # Pre-create the S3 buckets the application expects. Runs inside the
+                # SeaweedFS container so "weed shell" reaches master + filer over the
+                # loopback (their gRPC ports are not exposed via the Service). Uses the
+                # bundled "weed" binary, so no extra S3 client image is needed.
+                # NB: use 127.0.0.1, not "localhost" — busybox wget resolves localhost
+                # to IPv6 ::1 first, but weed only listens on IPv4, so localhost hangs.
+                command:
+                  - /bin/sh
+                  - -c
+                  - |
+                    until wget -qO- http://127.0.0.1:9333/cluster/status >/dev/null 2>&1; do sleep 1; done
+                    until wget -qO- http://127.0.0.1:8888/ >/dev/null 2>&1; do sleep 1; done
+                    for bucket in app-content app-feedback app-chat-profile; do
+                      echo "s3.bucket.create -name $bucket" | weed shell -master 127.0.0.1:9333 || true
+                    done
+          ports:
+            - name: s3
+              containerPort: 8333
+            - name: metrics
+              containerPort: 9327
+            - name: master
+              containerPort: 9333
+            - name: volume
+              containerPort: 8080
+            - name: filer
+              containerPort: 8888
+          readinessProbe:
+            httpGet:
+              path: /cluster/status
+              port: 9333
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 12
+          livenessProbe:
+            httpGet:
+              path: /cluster/status
+              port: 9333
+            initialDelaySeconds: 20
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 6
+          volumeMounts:
+            - name: seaweedfs-data
+              mountPath: /data
+            - name: seaweedfs-config
+              mountPath: /config
+      volumes:
+        - name: seaweedfs-data
+          persistentVolumeClaim:
+            claimName: seaweedfs-data
+        - name: seaweedfs-config
+          configMap:
+            name: fred-seaweedfs-config
