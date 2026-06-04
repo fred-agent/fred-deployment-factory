@@ -354,7 +354,7 @@ k3d-up: k3d-create ## Deploy the full stack into k3d with Helm
 		  --set withKea=$(WITH_KEA) \
 		  --wait \
 		  --wait-for-jobs \
-		  --atomic \
+		  --rollback-on-failure \
 		  --history-max "$(HELM_HISTORY_MAX)" \
 		  --timeout "$(HELM_TIMEOUT)" & \
 		helm_pid=$$!; \
