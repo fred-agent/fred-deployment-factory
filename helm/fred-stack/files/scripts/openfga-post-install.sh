@@ -2,8 +2,6 @@
 set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-COMPOSE_DIR="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
-ENV_FILE="${COMPOSE_DIR}/.env"
 
 log() {
   printf '[openfga-post-install] %s\n' "$*"
@@ -20,21 +18,6 @@ die() {
 
 require_cmd() {
   command -v "$1" >/dev/null 2>&1 || die "missing required command: $1"
-}
-
-read_env_file_var() {
-  local key="$1"
-  local value=""
-
-  if [[ -f "$ENV_FILE" ]]; then
-    value="$(grep -E "^${key}=" "$ENV_FILE" | tail -n1 | cut -d= -f2- || true)"
-    value="${value%\"}"
-    value="${value#\"}"
-    value="${value%\'}"
-    value="${value#\'}"
-  fi
-
-  printf '%s' "$value"
 }
 
 is_truthy() {
@@ -157,6 +140,54 @@ kc_user_id_by_username() {
   printf '%s' "$user_id"
 }
 
+kc_group_id_by_team_name() {
+  local team_name="$1"
+  local encoded_path
+  local encoded_name
+  local response
+  local group_id
+
+  if [[ -n "${KEYCLOAK_GROUP_IDS[$team_name]:-}" ]]; then
+    printf '%s' "${KEYCLOAK_GROUP_IDS[$team_name]}"
+    return 0
+  fi
+
+  # Allow explicit UUID team ids in config (advanced usage).
+  if [[ "$team_name" =~ ^[0-9a-fA-F-]{36}$ ]]; then
+    KEYCLOAK_GROUP_IDS["$team_name"]="$team_name"
+    printf '%s' "$team_name"
+    return 0
+  fi
+
+  encoded_path="$(jq -rn --arg value "/${team_name}" '$value|@uri')"
+  response="$(
+    curl -fsS \
+      -H "Authorization: Bearer ${KEYCLOAK_ADMIN_TOKEN}" \
+      "${KEYCLOAK_SERVER_URL}/admin/realms/${KEYCLOAK_REALM}/group-by-path/${encoded_path}" \
+      || true
+  )"
+  group_id="$(jq -r '.id // empty' <<<"$response" 2>/dev/null || true)"
+
+  if [[ -z "$group_id" ]]; then
+    encoded_name="$(jq -rn --arg value "$team_name" '$value|@uri')"
+    response="$(
+      curl -fsS \
+        -H "Authorization: Bearer ${KEYCLOAK_ADMIN_TOKEN}" \
+        "${KEYCLOAK_SERVER_URL}/admin/realms/${KEYCLOAK_REALM}/groups?search=${encoded_name}&briefRepresentation=true&first=0&max=200" \
+        || true
+    )"
+    group_id="$(
+      jq -r --arg team_name "$team_name" '.[] | select((.name // "") == $team_name) | .id' <<<"$response" \
+        | head -n1
+    )"
+  fi
+
+  [[ -n "$group_id" ]] || die "Keycloak group '${team_name}' not found in realm '${KEYCLOAK_REALM}'"
+
+  KEYCLOAK_GROUP_IDS["$team_name"]="$group_id"
+  printf '%s' "$group_id"
+}
+
 normalize_model_json() {
   jq -cS '
     {
@@ -267,19 +298,44 @@ write_tuple() {
   fga_request POST "/stores/${STORE_ID}/write" "$payload" >/dev/null
 }
 
-ensure_membership_tuple() {
+ensure_team_relation_tuple() {
   local user="$1"
-  local team="$2"
+  local relation="$2"
+  local team="$3"
   local object="team:${team}"
 
-  if tuple_exists "$user" member "$object"; then
+  if tuple_exists "$user" "$relation" "$object"; then
     ((SKIPPED_TUPLES+=1))
     return 0
   fi
 
-  write_tuple "$user" member "$object"
+  write_tuple "$user" "$relation" "$object"
   ((ADDED_TUPLES+=1))
   CHANGED=1
+}
+
+ensure_team_role_closure() {
+  local user="$1"
+  local role="$2"
+  local team="$3"
+
+  case "$role" in
+    member)
+      ensure_team_relation_tuple "$user" member "$team"
+      ;;
+    manager)
+      ensure_team_relation_tuple "$user" manager "$team"
+      ensure_team_relation_tuple "$user" member "$team"
+      ;;
+    owner)
+      ensure_team_relation_tuple "$user" owner "$team"
+      ensure_team_relation_tuple "$user" manager "$team"
+      ensure_team_relation_tuple "$user" member "$team"
+      ;;
+    *)
+      die "unsupported team role '${role}' in demo identity config (supported: member, manager, owner)"
+      ;;
+  esac
 }
 
 require_cmd curl
@@ -287,34 +343,48 @@ require_cmd jq
 
 OPENFGA_URL="${OPENFGA_URL:-http://localhost:9080}"
 OPENFGA_URL="${OPENFGA_URL%/}"
-OPENFGA_API_TOKEN="${OPENFGA_API_TOKEN:-$(read_env_file_var OPENFGA_API_TOKEN)}"
 OPENFGA_API_TOKEN="${OPENFGA_API_TOKEN:-Azerty123_}"
-OPENFGA_STORE_NAME="${OPENFGA_STORE_NAME:-$(read_env_file_var OPENFGA_STORE_NAME)}"
 OPENFGA_STORE_NAME="${OPENFGA_STORE_NAME:-fred}"
 OPENFGA_MODEL_FILE="${OPENFGA_MODEL_FILE:-${SCRIPT_DIR}/openfga-model.json}"
+
+# Config file resolution: DEMO_IDENTITY_CONFIG_FILE > OPENFGA_SEED_FILE
 OPENFGA_SEED_FILE="${OPENFGA_SEED_FILE:-${SCRIPT_DIR}/openfga-seed.json}"
-OPENFGA_SEED_INCLUDE_USERNAME_USERS="${OPENFGA_SEED_INCLUDE_USERNAME_USERS:-$(read_env_file_var OPENFGA_SEED_INCLUDE_USERNAME_USERS)}"
+DEMO_IDENTITY_CONFIG_FILE="${DEMO_IDENTITY_CONFIG_FILE:-${OPENFGA_SEED_FILE}}"
+
 OPENFGA_SEED_INCLUDE_USERNAME_USERS="${OPENFGA_SEED_INCLUDE_USERNAME_USERS:-true}"
 
-KEYCLOAK_SERVER_URL="${KEYCLOAK_SERVER_URL:-http://localhost:8080}"
+KEYCLOAK_SERVER_URL="${KEYCLOAK_SERVER_URL:-http://keycloak:8080}"
 KEYCLOAK_SERVER_URL="${KEYCLOAK_SERVER_URL%/}"
 KEYCLOAK_REALM="${KEYCLOAK_REALM:-app}"
 
-if [[ -z "${KC_BOOTSTRAP_ADMIN_USERNAME:-}" ]]; then
-  KC_BOOTSTRAP_ADMIN_USERNAME="$(read_env_file_var KC_BOOTSTRAP_ADMIN_USERNAME)"
-fi
 KC_BOOTSTRAP_ADMIN_USERNAME="${KC_BOOTSTRAP_ADMIN_USERNAME:-admin}"
-
-if [[ -z "${KC_BOOTSTRAP_ADMIN_PASSWORD:-}" ]]; then
-  KC_BOOTSTRAP_ADMIN_PASSWORD="$(read_env_file_var KC_BOOTSTRAP_ADMIN_PASSWORD)"
-fi
 KC_BOOTSTRAP_ADMIN_PASSWORD="${KC_BOOTSTRAP_ADMIN_PASSWORD:-Azerty123_}"
 
 [[ -f "$OPENFGA_MODEL_FILE" ]] || die "OpenFGA model file not found: ${OPENFGA_MODEL_FILE}"
-[[ -f "$OPENFGA_SEED_FILE" ]] || die "OpenFGA seed file not found: ${OPENFGA_SEED_FILE}"
+[[ -f "$DEMO_IDENTITY_CONFIG_FILE" ]] || die "demo identity config file not found: ${DEMO_IDENTITY_CONFIG_FILE}"
 
-jq -e '.teams | type == "array"' "$OPENFGA_SEED_FILE" >/dev/null || die "invalid seed file format: .teams must be an array"
-jq -e '.users | type == "array"' "$OPENFGA_SEED_FILE" >/dev/null || die "invalid seed file format: .users must be an array"
+jq -e '.teams | type == "array"' "$DEMO_IDENTITY_CONFIG_FILE" >/dev/null || die "invalid demo identity config format: .teams must be an array"
+jq -e '.users | type == "array"' "$DEMO_IDENTITY_CONFIG_FILE" >/dev/null || die "invalid demo identity config format: .users must be an array"
+jq -e '
+  all(.users[]?;
+    (.username|type=="string") and
+    ((.teams // [])|type=="array") and
+    all((.teams // [])[]?; type == "string" and length > 0) and
+    (
+      (.team_roles // {}) | type == "object"
+    ) and
+    (
+      ((.team_roles.member // [])|type=="array") and
+      ((.team_roles.manager // [])|type=="array") and
+      ((.team_roles.owner // [])|type=="array")
+    ) and
+    all((.team_roles.member // [])[]?; type == "string" and length > 0) and
+    all((.team_roles.manager // [])[]?; type == "string" and length > 0) and
+    all((.team_roles.owner // [])[]?; type == "string" and length > 0)
+  )
+' "$DEMO_IDENTITY_CONFIG_FILE" >/dev/null || die "invalid demo identity config format: each user must define username, optional teams[], and optional team_roles.{member,manager,owner}[]"
+
+log "using demo identity config file '${DEMO_IDENTITY_CONFIG_FILE}'"
 
 CHANGED=0
 ADDED_TUPLES=0
@@ -322,6 +392,7 @@ SKIPPED_TUPLES=0
 
 declare -A TEAM_EXISTS=()
 declare -A KEYCLOAK_USER_IDS=()
+declare -A KEYCLOAK_GROUP_IDS=()
 
 log "waiting for OpenFGA API at '${OPENFGA_URL}'"
 wait_for_openfga || die "OpenFGA API is not reachable at ${OPENFGA_URL}"
@@ -340,14 +411,16 @@ log "using authorization model '${AUTHORIZATION_MODEL_ID}'"
 while IFS= read -r team; do
   [[ -n "$team" ]] || continue
   TEAM_EXISTS["$team"]=1
-done < <(jq -r '.teams[]? // empty' "$OPENFGA_SEED_FILE")
+done < <(jq -r '.teams[]? // empty' "$DEMO_IDENTITY_CONFIG_FILE")
 
 log "authenticating with Keycloak admin API"
 KEYCLOAK_ADMIN_TOKEN="$(kc_admin_token)"
 
-while IFS=$'\t' read -r username team; do
+while IFS=$'\t' read -r username relation team; do
   local_user_id=""
+  local_team_id=""
   [[ -n "$username" ]] || continue
+  [[ -n "$relation" ]] || continue
   [[ -n "$team" ]] || continue
 
   if [[ -z "${TEAM_EXISTS[$team]:-}" ]]; then
@@ -356,11 +429,24 @@ while IFS=$'\t' read -r username team; do
   fi
 
   local_user_id="$(kc_user_id_by_username "$username")"
-  ensure_membership_tuple "user:${local_user_id}" "$team"
+  local_team_id="$(kc_group_id_by_team_name "$team")"
+  ensure_team_role_closure "user:${local_user_id}" "$relation" "$local_team_id"
 
   if is_truthy "$OPENFGA_SEED_INCLUDE_USERNAME_USERS"; then
-    ensure_membership_tuple "user:${username}" "$team"
+    ensure_team_role_closure "user:${username}" "$relation" "$local_team_id"
   fi
-done < <(jq -r '.users[]? | .username as $u | (.teams[]? // empty) | [$u, .] | @tsv' "$OPENFGA_SEED_FILE")
+done < <(
+  jq -r '
+    .users[]? as $u
+    | ($u.username // empty) as $name
+    | (
+        (($u.teams // [])[]? | [$name, "member", .]) ,
+        (($u.team_roles.member // [])[]? | [$name, "member", .]) ,
+        (($u.team_roles.manager // [])[]? | [$name, "manager", .]) ,
+        (($u.team_roles.owner // [])[]? | [$name, "owner", .])
+      )
+    | @tsv
+  ' "$DEMO_IDENTITY_CONFIG_FILE"
+)
 
 log "post-install completed (store=${STORE_ID}, model=${AUTHORIZATION_MODEL_ID}, tuples_added=${ADDED_TUPLES}, tuples_skipped=${SKIPPED_TUPLES}, changes=${CHANGED})"
