@@ -73,6 +73,49 @@ make docker-wipe
 make docker-destroy
 ```
 
+## Working modes: swift-only vs kea→swift migration testing
+
+This repository supports two releases of Fred: **kea** (the previous release) and **swift** (the current release).
+
+### Mode 1 — swift only (default)
+
+The default for both `make docker-up` and `make k3d-up`. Only the `fred` database is provisioned. This is the right mode for day-to-day swift development or deployment.
+
+```bash
+make docker-up
+# or
+make k3d-up
+```
+
+PostgreSQL databases created:
+
+| Database | Owner | Purpose |
+|----------|-------|---------|
+| `fred` | `fred` | Fred swift (primary) |
+| `keycloak` | `keycloak_db_user` | Keycloak |
+| `data` | `tabular` | Tabular / vector data |
+| `openfga` | `openfga` | OpenFGA |
+| `temporal` | `temporal` | Temporal workflow |
+| `temporal_visibility` | `temporal` | Temporal visibility |
+
+### Mode 2 — kea→swift migration testing
+
+Pass `WITH_KEA=true` to also provision a `fred_kea` database alongside `fred`. This lets you start a kea instance (pointing at `fred_kea`), populate it with agents, sessions, and prompts, then start a swift instance (pointing at `fred`) and run the migration logic against the two databases.
+
+```bash
+make docker-up WITH_KEA=true
+# or
+make k3d-up WITH_KEA=true
+```
+
+The additional database created:
+
+| Database | Owner | Purpose |
+|----------|-------|---------|
+| `fred_kea` | `fred` | Fred kea (source for migration) |
+
+> **Note:** `fred_kea` is intended to be a temporary migration aid. The kea release is deprecated; this mode will be removed once the migration tooling is no longer needed.
+
 ## Configuration
 `make docker-up` regenerates `docker-compose/.env` from `docker-compose/.env.template`.
 

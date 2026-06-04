@@ -3,6 +3,9 @@ SHELL := /bin/bash
 
 DOCKER_COMPOSE_BASE := docker compose -f docker-compose/docker-compose-
 
+WITH_KEA ?= false
+export WITH_KEA
+
 K3D_CLUSTER ?= fred
 K3D_NAMESPACE ?= fred
 HELM_RELEASE ?= fred-stack
@@ -17,6 +20,14 @@ IMAGE_PULL_RETRIES ?= 3
 IMAGE_PULL_RETRY_DELAY ?= 5
 K3D_USE_CILIUM ?= false
 CILIUM_VERSION ?= 1.16.5
+# Mount a host CA bundle into k3d nodes — required in corporate SSL-inspection environments (e.g. Zscaler).
+# Set to your system CA bundle, e.g.: K3D_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
+K3D_CA_BUNDLE ?=
+ifneq ($(K3D_CA_BUNDLE),)
+K3D_CA_VOLUME_ARG := --volume $(K3D_CA_BUNDLE):/etc/ssl/certs/ca-certificates.crt@server:* --volume $(K3D_CA_BUNDLE):/etc/ssl/certs/ca-certificates.crt@agent:*
+else
+K3D_CA_VOLUME_ARG :=
+endif
 
 K3D_HOST_PORT_KEYCLOAK ?= 8080
 K3D_HOST_PORT_POSTGRES ?= 5432
@@ -206,6 +217,7 @@ k3d-create: ## Create a local k3d cluster (set K3D_USE_CILIUM=true for air-gap/C
 	  run_step "Create k3d cluster '$(K3D_CLUSTER)' (Cilium-ready networking)" \
 	    k3d cluster create "$(K3D_CLUSTER)" \
 	    $(K3D_CLUSTER_CREATE_BASE_ARGS) \
+	    $(K3D_CA_VOLUME_ARG) \
 	    --k3s-arg '--flannel-backend=none@server:*' \
 	    --k3s-arg '--disable-network-policy@server:*'; \
 	  run_step "Install Cilium $(CILIUM_VERSION)" cilium install --version "$(CILIUM_VERSION)"; \
@@ -213,7 +225,8 @@ k3d-create: ## Create a local k3d cluster (set K3D_USE_CILIUM=true for air-gap/C
 	else \
 	  run_step "Create k3d cluster '$(K3D_CLUSTER)' (default k3s networking)" \
 	    k3d cluster create "$(K3D_CLUSTER)" \
-	    $(K3D_CLUSTER_CREATE_BASE_ARGS); \
+	    $(K3D_CLUSTER_CREATE_BASE_ARGS) \
+	    $(K3D_CA_VOLUME_ARG); \
 	fi
 
 k3d-up: k3d-create ## Deploy the full stack into k3d with Helm
@@ -257,6 +270,12 @@ k3d-up: k3d-create ## Deploy the full stack into k3d with Helm
 	command -v kubectl >/dev/null 2>&1 || fail "kubectl is required"; \
 	command -v docker >/dev/null 2>&1 || fail "docker is required"; \
 	command -v k3d >/dev/null 2>&1 || fail "k3d is required"; \
+	if docker ps --format '{{.Names}}' | grep -Eq '^k3d-$(K3D_CLUSTER)-server-0$$'; then \
+	  info "Cluster '$(K3D_CLUSTER)' is already running."; \
+	else \
+	  run_step "Start k3d cluster '$(K3D_CLUSTER)'" \
+	    k3d cluster start "$(K3D_CLUSTER)"; \
+	fi; \
 	run_step "Switch kubectl context to k3d-$(K3D_CLUSTER)" \
 	  kubectl config use-context "k3d-$(K3D_CLUSTER)"; \
 	if [ "$(K3D_PREFETCH_IMAGES)" = "true" ] || [ "$(K3D_PREFETCH_IMAGES)" = "1" ]; then \
@@ -326,6 +345,7 @@ k3d-up: k3d-create ## Deploy the full stack into k3d with Helm
 		helm upgrade --install "$(HELM_RELEASE)" "$(HELM_CHART_DIR)" \
 		  --namespace "$(K3D_NAMESPACE)" \
 		  --create-namespace \
+		  --set withKea=$(WITH_KEA) \
 		  --wait \
 		  --wait-for-jobs \
 		  --atomic \
@@ -365,9 +385,13 @@ k3d-up: k3d-create ## Deploy the full stack into k3d with Helm
 	run_step "Show namespace status $(K3D_NAMESPACE)" \
 	  kubectl get pods,svc -n "$(K3D_NAMESPACE)"
 
-k3d-down: ## Uninstall the Helm release from k3d namespace
+k3d-uninstall: ## Uninstall the Helm release from k3d namespace
 	@echo "Removing Helm release '$(HELM_RELEASE)' from namespace '$(K3D_NAMESPACE)'..."
 	-helm uninstall "$(HELM_RELEASE)" -n "$(K3D_NAMESPACE)"
+
+k3d-down: ## Turn off the k3d containers to release publicly allocated ports
+	@echo "Turning the k3d cluster '$(K3D_CLUSTER)' down, and stopping k3d docker containers"
+	-k3d cluster stop '$(K3D_CLUSTER)'
 
 k3d-delete: ## Delete the k3d cluster
 	@echo "Deleting k3d cluster '$(K3D_CLUSTER)'..."
@@ -375,7 +399,7 @@ k3d-delete: ## Delete the k3d cluster
 
 k3d-wipe: ## Full k3d reset (uninstall Helm release and delete cluster)
 	@echo -e "\n--- K3D WIPE IN PROGRESS ---"
-	@$(MAKE) k3d-down
+	@$(MAKE) k3d-uninstall
 	@$(MAKE) k3d-delete
 	@echo -e "\n--- K3D WIPE COMPLETE ---"
 
@@ -424,4 +448,4 @@ checkpoint-delete: ## Delete a named checkpoint (NAME=<name> required)
 	rm -rf "checkpoints/$(NAME)"
 	@echo "Checkpoint '$(NAME)' deleted."
 
-.PHONY: help network-create env-setup keycloak-post-install postgres-up keycloak-up minio-up opensearch-up clickhouse-up langfuse-up prometheus-up grafana-up openfga-post-install openfga-up temporal-up preflight-check docker-up docker-down all-down docker-wipe docker-destroy k3d-create k3d-up k3d-down k3d-delete k3d-wipe k3d-status k3d-airgap-on k3d-airgap-off k3d-airgap-status checkpoint-save checkpoint-restore docker-restart-from-checkpoint checkpoint-list checkpoint-delete
+.PHONY: help network-create env-setup keycloak-post-install postgres-up keycloak-up minio-up opensearch-up clickhouse-up langfuse-up prometheus-up grafana-up openfga-post-install openfga-up temporal-up preflight-check docker-up docker-down all-down docker-wipe docker-destroy k3d-create k3d-up k3d-down k3d-uninstall k3d-delete k3d-wipe k3d-status k3d-airgap-on k3d-airgap-off k3d-airgap-status  checkpoint-save checkpoint-restore docker-restart-from-checkpoint checkpoint-list checkpoint-delete

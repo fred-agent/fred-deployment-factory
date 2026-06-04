@@ -3,6 +3,9 @@ fullnameOverride: ""
 
 imagePullPolicy: IfNotPresent
 
+# Set to true to also provision the fred_kea database (for kea→swift migration testing)
+withKea: false
+
 host:
   fqdn: localhost
 
@@ -17,6 +20,7 @@ auth:
   postgresFredUser: fred
   postgresFredPassword: Azerty123_
   postgresFredDb: fred
+  postgresFredKeaDb: fred_kea
 
   postgresTabularUser: tabular
   postgresTabularPassword: Azerty123_
