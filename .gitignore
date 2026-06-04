@@ -19,6 +19,9 @@ key-int.txt
 key-prod.txt
 *.nosec.yaml
 
+# Checkpoint snapshots (Docker volume archives — can be large)
+/checkpoints/
+
 # Editor and OS artifacts
 .DS_Store
 .vscode/

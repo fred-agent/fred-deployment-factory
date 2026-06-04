@@ -73,6 +73,49 @@ make docker-wipe
 make docker-destroy
 ```
 
+## Working modes: swift-only vs kea→swift migration testing
+
+This repository supports two releases of Fred: **kea** (the previous release) and **swift** (the current release).
+
+### Mode 1 — swift only (default)
+
+The default for both `make docker-up` and `make k3d-up`. Only the `fred` database is provisioned. This is the right mode for day-to-day swift development or deployment.
+
+```bash
+make docker-up
+# or
+make k3d-up
+```
+
+PostgreSQL databases created:
+
+| Database | Owner | Purpose |
+|----------|-------|---------|
+| `fred` | `fred` | Fred swift (primary) |
+| `keycloak` | `keycloak_db_user` | Keycloak |
+| `data` | `tabular` | Tabular / vector data |
+| `openfga` | `openfga` | OpenFGA |
+| `temporal` | `temporal` | Temporal workflow |
+| `temporal_visibility` | `temporal` | Temporal visibility |
+
+### Mode 2 — kea→swift migration testing
+
+Pass `WITH_KEA=true` to also provision a `fred_kea` database alongside `fred`. This lets you start a kea instance (pointing at `fred_kea`), populate it with agents, sessions, and prompts, then start a swift instance (pointing at `fred`) and run the migration logic against the two databases.
+
+```bash
+make docker-up WITH_KEA=true
+# or
+make k3d-up WITH_KEA=true
+```
+
+The additional database created:
+
+| Database | Owner | Purpose |
+|----------|-------|---------|
+| `fred_kea` | `fred` | Fred kea (source for migration) |
+
+> **Note:** `fred_kea` is intended to be a temporary migration aid. The kea release is deprecated; this mode will be removed once the migration tooling is no longer needed.
+
 ## Configuration
 `make docker-up` regenerates `docker-compose/.env` from `docker-compose/.env.template`.
 
@@ -153,7 +196,7 @@ By default, this creates a local `k3d` cluster named `fred` with default k3s net
 
 `make k3d-up` now prints colored step progress (`[STEP]`, `[OK]`, `[WARN]`, `[INFO]`, `[FAIL]`), pre-pulls chart images (and kube-system images by default) on the host and imports them into k3d (`K3D_PREFETCH_IMAGES=true`, `K3D_PREFETCH_SYSTEM_IMAGES=true`), retries image pulls on transient network errors (`IMAGE_PULL_RETRIES`, `IMAGE_PULL_RETRY_DELAY`), shows a deployment heartbeat every 10s while Helm waits, handles `Ctrl+C` cleanly (including stopping Helm subprocesses), and on Helm failure automatically dumps pods/jobs/events plus `helm status`.
 
-The Helm deploy uses `upgrade --install --atomic`, and `k3d-up` auto-recovers a stuck `pending-*` Helm release before deploying, so rerunning `make k3d-up` is safe and converges cleanly.
+The Helm deploy uses `upgrade --install --rollback-on-failure`, and `k3d-up` auto-recovers a stuck `pending-*` Helm release before deploying, so rerunning `make k3d-up` is safe and converges cleanly.
 
 If you disable prefetch (`K3D_PREFETCH_IMAGES=false`), `k3d-up` falls back to a DNS preflight from inside the k3d node and fails fast if registry DNS is broken.
 

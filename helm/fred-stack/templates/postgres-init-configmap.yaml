@@ -14,6 +14,7 @@ data:
       IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '{{ .Values.auth.postgresFredUser }}') THEN
         CREATE ROLE {{ .Values.auth.postgresFredUser }} NOSUPERUSER LOGIN PASSWORD '{{ .Values.auth.postgresFredPassword }}';
       END IF;
+      -- fred_kea reuses the fred role; no separate role needed
       IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '{{ .Values.auth.postgresTabularUser }}') THEN
         CREATE ROLE {{ .Values.auth.postgresTabularUser }} NOSUPERUSER LOGIN PASSWORD '{{ .Values.auth.postgresTabularPassword }}';
       END IF;
@@ -30,6 +31,10 @@ data:
       WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = '{{ .Values.auth.postgresKeycloakDb }}')\gexec
     SELECT 'CREATE DATABASE {{ .Values.auth.postgresFredDb }} OWNER {{ .Values.auth.postgresFredUser }}'
       WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = '{{ .Values.auth.postgresFredDb }}')\gexec
+    {{- if .Values.withKea }}
+    SELECT 'CREATE DATABASE {{ .Values.auth.postgresFredKeaDb }} OWNER {{ .Values.auth.postgresFredUser }}'
+      WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = '{{ .Values.auth.postgresFredKeaDb }}')\gexec
+    {{- end }}
     SELECT 'CREATE DATABASE {{ .Values.auth.postgresTabularDb }} OWNER {{ .Values.auth.postgresTabularUser }}'
       WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = '{{ .Values.auth.postgresTabularDb }}')\gexec
     SELECT 'CREATE DATABASE {{ .Values.auth.postgresOpenfgaDb }} OWNER {{ .Values.auth.postgresOpenfgaUser }}'
@@ -43,6 +48,10 @@ data:
     GRANT CONNECT ON DATABASE {{ .Values.auth.postgresKeycloakDb }} TO {{ .Values.auth.postgresKeycloakUser }};
     REVOKE ALL ON DATABASE {{ .Values.auth.postgresFredDb }} FROM PUBLIC;
     GRANT CONNECT ON DATABASE {{ .Values.auth.postgresFredDb }} TO {{ .Values.auth.postgresFredUser }};
+    {{- if .Values.withKea }}
+    REVOKE ALL ON DATABASE {{ .Values.auth.postgresFredKeaDb }} FROM PUBLIC;
+    GRANT CONNECT ON DATABASE {{ .Values.auth.postgresFredKeaDb }} TO {{ .Values.auth.postgresFredUser }};
+    {{- end }}
     REVOKE ALL ON DATABASE {{ .Values.auth.postgresTabularDb }} FROM PUBLIC;
     GRANT CONNECT ON DATABASE {{ .Values.auth.postgresTabularDb }} TO {{ .Values.auth.postgresTabularUser }};
     REVOKE ALL ON DATABASE {{ .Values.auth.postgresOpenfgaDb }} FROM PUBLIC;
@@ -54,6 +63,11 @@ data:
 
     \connect {{ .Values.auth.postgresFredDb }}
     CREATE EXTENSION IF NOT EXISTS vector;
+
+    {{- if .Values.withKea }}
+    \connect {{ .Values.auth.postgresFredKeaDb }}
+    CREATE EXTENSION IF NOT EXISTS vector;
+    {{- end }}
 
     \connect {{ .Values.auth.postgresTabularDb }}
     CREATE EXTENSION IF NOT EXISTS vector;
