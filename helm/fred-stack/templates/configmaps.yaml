@@ -11,18 +11,6 @@ data:
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: fred-minio-config
-  labels:
-    {{- include "fred-stack.labels" . | nindent 4 }}
-data:
-  ro-policy.json: |
-{{ .Files.Get "files/minio/ro-policy.json" | indent 4 }}
-  rw-policy.json: |
-{{ .Files.Get "files/minio/rw-policy.json" | indent 4 }}
----
-apiVersion: v1
-kind: ConfigMap
-metadata:
   name: fred-openfga-config
   labels:
     {{- include "fred-stack.labels" . | nindent 4 }}

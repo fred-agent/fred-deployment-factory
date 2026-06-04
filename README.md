@@ -6,7 +6,7 @@ The Docker Compose workflow in this repository groups services into two scopes:
 - Structural Fred stack:
   - PostgreSQL
   - Keycloak
-  - MinIO
+  - SeaweedFS
   - OpenSearch
   - OpenFGA
   - Temporal
@@ -25,7 +25,7 @@ Fred can be started as-is and run with only ChromaDB, SQLite, and the local file
 
 The goal of this `fred-deployment-factory` repository is to provide a fuller local experience around Fred.
 
-The structural Fred services exposed here are PostgreSQL, Keycloak, MinIO, OpenSearch, OpenFGA, and Temporal.
+The structural Fred services exposed here are PostgreSQL, Keycloak, SeaweedFS, OpenSearch, OpenFGA, and Temporal.
 
 Prometheus, Grafana, ClickHouse, and Langfuse are also available for local observability, tracing, and analytics, but they are not structural requirements.
 
@@ -53,7 +53,7 @@ Default endpoints for the additional services:
 - ClickHouse SQL UI / HTTP API: `http://localhost:8123/play`
 - Langfuse: `http://localhost:3001`
 
-If you only need part of the platform, use the per-service Make targets such as `make keycloak-up`, `make minio-up`, `make opensearch-up`, `make openfga-up`, `make temporal-up`, `make clickhouse-up`, `make langfuse-up`, `make prometheus-up`, or `make grafana-up`.
+If you only need part of the platform, use the per-service Make targets such as `make keycloak-up`, `make seaweedfs-up`, `make opensearch-up`, `make openfga-up`, `make temporal-up`, `make clickhouse-up`, `make langfuse-up`, `make prometheus-up`, or `make grafana-up`.
 
 3. Optional (for browser SSO callbacks to Keycloak on local machine):
 
@@ -180,8 +180,9 @@ make k3d-up
 By default, this creates a local `k3d` cluster named `fred` with default k3s networking (no Cilium), installs the Helm release (`fred-stack`) into namespace `fred`, and exposes these host ports:
 - PostgreSQL: `localhost:5432`
 - Keycloak: `http://localhost:8080`
-- MinIO API: `http://localhost:9000`
-- MinIO Console: `http://localhost:9001`
+- SeaweedFS S3 API: `http://localhost:8333`
+- SeaweedFS Filer API: `http://localhost:8888`
+- SeaweedFS Master API: `http://localhost:9333`
 - OpenSearch: `https://localhost:9200`
 - OpenSearch Dashboards: `http://localhost:5601`
 - OpenFGA HTTP: `http://localhost:9080`
@@ -202,7 +203,7 @@ If you disable prefetch (`K3D_PREFETCH_IMAGES=false`), `k3d-up` falls back to a 
 If some ports are already used (for example by the Docker Compose stack), override them at launch time:
 
 ```bash
-make k3d-up K3D_HOST_PORT_POSTGRES=15432 K3D_HOST_PORT_KEYCLOAK=18080 K3D_HOST_PORT_MINIO_API=19000 K3D_HOST_PORT_CLICKHOUSE_HTTP=18123 K3D_HOST_PORT_CLICKHOUSE_NATIVE=19002 K3D_HOST_PORT_PROMETHEUS=19090 K3D_HOST_PORT_GRAFANA=13000
+make k3d-up K3D_HOST_PORT_POSTGRES=15432 K3D_HOST_PORT_KEYCLOAK=18080 K3D_HOST_PORT_SEAWEEDFS_S3=18333 K3D_HOST_PORT_CLICKHOUSE_HTTP=18123 K3D_HOST_PORT_CLICKHOUSE_NATIVE=19002 K3D_HOST_PORT_PROMETHEUS=19090 K3D_HOST_PORT_GRAFANA=13000
 ```
 
 Prometheus is configured with persistent local storage and discovers scrape targets through standard Kubernetes annotations (`prometheus.io/scrape`, `prometheus.io/port`, `prometheus.io/path`) on Services or Pods.

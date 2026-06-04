@@ -6,7 +6,7 @@ The `deployment-factory` repository provides the Docker Compose based deployment
 
 This project helps to deploy the following support services:
 - **Keycloak** – for authentication and identity management
-- **MinIO** – for object storage
+- **SeaweedFS** – for S3-compatible object storage
 - **OpenSearch** – for search and analytics capabilities (including vector store capabilities)
 - **OpenFGA** – for relationship-based and fine-grained authorization
 - **k3d** - for setting up a dummy kubernetes cluster (used by Fred project only for development purposes)
@@ -30,7 +30,7 @@ docker network create fred-shared-network --driver bridge
 
 ### Name resolution (optional)
 
-If the browser used to access Fred's frontend/MinIO console/Opensearch dashboards/... (basically all the UIs that may use Keycloak for SSO) is on the same machine as the one where Keycloak is hosted as a container, please add the entry `127.0.0.1 app-keycloak` into your docker host `/etc/hosts` so that your web browser can reach Keycloak instance for authentication:
+If the browser used to access Fred's frontend or OpenSearch dashboards (basically all the UIs that may use Keycloak for SSO) is on the same machine as the one where Keycloak is hosted as a container, please add the entry `127.0.0.1 app-keycloak` into your docker host `/etc/hosts` so that your web browser can reach Keycloak instance for authentication:
 
 ```sh
 grep -q '127.0.0.1.*app-keycloak' /etc/hosts || echo "127.0.0.1 app-keycloak" | sudo tee -a /etc/hosts
@@ -55,8 +55,8 @@ Here are **examples** of custom deployment params you can modify:
 - ``KEYCLOAK_FORCE_RELOGIN``
 - ``OPENFGA_STORE_NAME``
 - ``TEMPORAL_UI_PORT``
-- ``MINIO_ROOT_USER``
-- ``MINIO_ROOT_PASSWORD``
+- ``SEAWEEDFS_ADMIN_USER``
+- ``SEAWEEDFS_ADMIN_PASSWORD``
 - ``OPENSEARCH_ADMIN_PASSWORD``
 - ``PROMETHEUS_PORT``
 - ``PROMETHEUS_RETENTION``
@@ -71,12 +71,11 @@ All these services can be started separately.
 
 Keycloak is already configured with some clients, roles and users.
 
-Minio and Opensearch are already configured to be connected to Keycloak. This is a graph to show the dependencies between compose files:
+OpenSearch is already configured to be connected to Keycloak. This is a graph to show the dependencies between compose files:
 
 ```mermaid
 graph TB
 A(keycloak) --> E(postgres)
-B(minio) --> A(keycloak)
 C(opensearch) --> A(keycloak)
 I(openfga) --> E(postgres)
 H(temporal) --> A(keycloak)
@@ -122,12 +121,14 @@ To change demo users / roles / teams, edit:
 
 The docker post-install scripts also support `DEMO_IDENTITY_CONFIG_FILE=/custom/path.json` if you need a temporary override.
 
-<!-- TODO: Need to check how we can specify hard dependency between Keycloak and depending services (MinIO & Opensearch) -->
+<!-- TODO: Need to check how we can specify hard dependency between Keycloak and depending services (OpenSearch, Temporal, OpenFGA) -->
 
-- MinIO
+- SeaweedFS
 ```
-docker compose -f docker-compose/docker-compose-minio.yml -p minio up -d
+docker compose -f docker-compose/docker-compose-seaweedfs.yml -p seaweedfs up -d
 ```
+
+The SeaweedFS post-install job pre-creates the bucket `langfuse`.
 
 - OpenSearch
 ```
@@ -171,7 +172,7 @@ It also scrapes the native metrics endpoints exposed in Docker Compose mode for:
 - `OpenFGA` on `openfga:2112/metrics`
 - `ClickHouse` on `app-clickhouse:9363/metrics`
 - `Temporal` on `app-temporal:9090/metrics`
-- `MinIO` on its `/minio/metrics/v3/*` endpoints through `app-minio:9000`
+- `SeaweedFS` on `app-seaweedfs:9327/metrics`
 
 Grafana is pre-provisioned with a Prometheus datasource pointing to `http://app-prometheus:9090` on the shared Docker network.
 
@@ -214,7 +215,7 @@ Hereunder, these are the information to connect to each service with their _loca
 
 - URLs:
   - http://$(DOCKER_COMPOSE_HOST_FQDN):$(LANGFUSE_UI_PORT) (web-ui, default: `3001`)
-- MinIO bucket (default in `.env.template`):
+- S3 bucket (default in `.env.template`):
   - `LANGFUSE_S3_EVENT_UPLOAD_BUCKET=langfuse`
   - `LANGFUSE_S3_MEDIA_UPLOAD_BUCKET=langfuse`
   - `LANGFUSE_S3_BATCH_EXPORT_BUCKET=langfuse`
@@ -232,18 +233,19 @@ Hereunder, these are the information to connect to each service with their _loca
 - Default admin account:
   - `${GRAFANA_ADMIN_USER}` / `${GRAFANA_ADMIN_PASSWORD}`
 
-### MinIO:
+### SeaweedFS
 
 - URLs:
-  - http://$(DOCKER_COMPOSE_HOST_FQDN):9001 (web)
-  - http://$(DOCKER_COMPOSE_HOST_FQDN):9000 (service)
+  - http://$(DOCKER_COMPOSE_HOST_FQDN):8333 (S3 API)
+  - http://$(DOCKER_COMPOSE_HOST_FQDN):8888 (Filer API)
+  - http://$(DOCKER_COMPOSE_HOST_FQDN):9333 (Master API)
+  - http://$(DOCKER_COMPOSE_HOST_FQDN):8081 (Volume API)
+- Note:
+  - the SeaweedFS Volume API is intentionally exposed on host port `8081` because host port `8080` is already used by Keycloak
 - Service accounts:
   - `admin` (admin)
-  - `app_ro` (read-only)
-  - `app_rw` (read-write)
- - Buckets:
-   - `app-content`
-   - `app-feedback`
+- Buckets:
+   - `langfuse`
 
 ### OpenSearch
 

@@ -18,14 +18,11 @@ scrape_configs:
   {{- end }}
   {{- end }}
 
-  {{- range $path := .Values.prometheus.minioMetricsPaths }}
-  {{- $jobSuffix := ($path | trimPrefix "/minio/metrics/v3/" | trimPrefix "/minio/metrics/v3" | default "root" | replace "/" "-") }}
-  - job_name: minio-{{ $jobSuffix }}
-    metrics_path: {{ $path | quote }}
+  - job_name: seaweedfs-s3-metrics
+    metrics_path: {{ .Values.prometheus.seaweedfsMetricsPath | quote }}
     static_configs:
       - targets:
-          - minio:9000
-  {{- end }}
+          - seaweedfs:9327
 
   - job_name: fred-stack-services
     kubernetes_sd_configs:
