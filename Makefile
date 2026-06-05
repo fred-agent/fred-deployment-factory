@@ -400,57 +400,17 @@ k3d-deploy: ## Redeploy the full fred-stack Helm chart (no image prefetch)
 		--wait-for-jobs \
 		--timeout "$(HELM_TIMEOUT)"
 
-k3d-restart-postgres: ## Restart PostgreSQL
-	kubectl rollout restart statefulset/postgres -n "$(K3D_NAMESPACE)" 2>/dev/null || \
-		kubectl rollout restart deployment/postgres -n "$(K3D_NAMESPACE)" 2>/dev/null || true
+k3d-restart: ## Restart a k3d component: make k3d-restart COMPONENT=openfga
+	@test -n "$(COMPONENT)" || (echo "ERROR: COMPONENT is required. Usage: make k3d-restart COMPONENT=<name>"; exit 1)
+	kubectl rollout restart statefulset/$(COMPONENT) -n "$(K3D_NAMESPACE)" 2>/dev/null || \
+		kubectl rollout restart deployment/$(COMPONENT) -n "$(K3D_NAMESPACE)"
 
-k3d-restart-keycloak: ## Restart Keycloak
-	kubectl rollout restart statefulset/keycloak -n "$(K3D_NAMESPACE)" 2>/dev/null || \
-		kubectl rollout restart deployment/keycloak -n "$(K3D_NAMESPACE)" 2>/dev/null || true
-
-k3d-restart-seaweedfs: ## Restart SeaweedFS
-	kubectl rollout restart statefulset/seaweedfs -n "$(K3D_NAMESPACE)" 2>/dev/null || \
-		kubectl rollout restart deployment/seaweedfs -n "$(K3D_NAMESPACE)" 2>/dev/null || true
-
-k3d-restart-clickhouse: ## Restart ClickHouse and re-run its post-install job
-	kubectl delete job clickhouse-post-install -n "$(K3D_NAMESPACE)" --ignore-not-found
-	kubectl rollout restart statefulset/clickhouse -n "$(K3D_NAMESPACE)" 2>/dev/null || \
-		kubectl rollout restart deployment/clickhouse -n "$(K3D_NAMESPACE)" 2>/dev/null || true
+k3d-redeploy: ## Restart a k3d component and re-run its post-install job: make k3d-redeploy COMPONENT=openfga
+	@test -n "$(COMPONENT)" || (echo "ERROR: COMPONENT is required. Usage: make k3d-redeploy COMPONENT=<name>"; exit 1)
+	kubectl delete job $(COMPONENT)-post-install -n "$(K3D_NAMESPACE)" --ignore-not-found
+	kubectl rollout restart statefulset/$(COMPONENT) -n "$(K3D_NAMESPACE)" 2>/dev/null || \
+		kubectl rollout restart deployment/$(COMPONENT) -n "$(K3D_NAMESPACE)"
 	$(MAKE) k3d-deploy
-
-k3d-restart-openfga: ## Restart OpenFGA and re-run its post-install job (updates model + seeds tuples)
-	kubectl delete job openfga-post-install -n "$(K3D_NAMESPACE)" --ignore-not-found
-	kubectl rollout restart statefulset/openfga -n "$(K3D_NAMESPACE)" 2>/dev/null || \
-		kubectl rollout restart deployment/openfga -n "$(K3D_NAMESPACE)" 2>/dev/null || true
-	$(MAKE) k3d-deploy
-
-k3d-restart-opensearch: ## Restart OpenSearch and re-run its post-install job (recreates indices)
-	kubectl delete job opensearch-post-install -n "$(K3D_NAMESPACE)" --ignore-not-found
-	kubectl rollout restart statefulset/opensearch -n "$(K3D_NAMESPACE)" 2>/dev/null || \
-		kubectl rollout restart deployment/opensearch -n "$(K3D_NAMESPACE)" 2>/dev/null || true
-	$(MAKE) k3d-deploy
-
-k3d-restart-opensearch-dashboards: ## Restart OpenSearch Dashboards
-	kubectl rollout restart statefulset/opensearch-dashboards -n "$(K3D_NAMESPACE)" 2>/dev/null || \
-		kubectl rollout restart deployment/opensearch-dashboards -n "$(K3D_NAMESPACE)" 2>/dev/null || true
-
-k3d-restart-temporal: ## Restart Temporal and re-run its post-install job (registers namespace)
-	kubectl delete job temporal-post-install -n "$(K3D_NAMESPACE)" --ignore-not-found
-	kubectl rollout restart statefulset/temporal -n "$(K3D_NAMESPACE)" 2>/dev/null || \
-		kubectl rollout restart deployment/temporal -n "$(K3D_NAMESPACE)" 2>/dev/null || true
-	$(MAKE) k3d-deploy
-
-k3d-restart-temporal-ui: ## Restart Temporal UI
-	kubectl rollout restart statefulset/temporal-ui -n "$(K3D_NAMESPACE)" 2>/dev/null || \
-		kubectl rollout restart deployment/temporal-ui -n "$(K3D_NAMESPACE)" 2>/dev/null || true
-
-k3d-restart-prometheus: ## Restart Prometheus
-	kubectl rollout restart statefulset/prometheus -n "$(K3D_NAMESPACE)" 2>/dev/null || \
-		kubectl rollout restart deployment/prometheus -n "$(K3D_NAMESPACE)" 2>/dev/null || true
-
-k3d-restart-grafana: ## Restart Grafana
-	kubectl rollout restart statefulset/grafana -n "$(K3D_NAMESPACE)" 2>/dev/null || \
-		kubectl rollout restart deployment/grafana -n "$(K3D_NAMESPACE)" 2>/dev/null || true
 
 k3d-logs: ## Show logs for a service: make k3d-logs SVC=openfga-post-install
 	@if [ -z "$(SVC)" ]; then echo "Usage: make k3d-logs SVC=<name>"; exit 1; fi
@@ -521,4 +481,4 @@ checkpoint-delete: ## Delete a named checkpoint (NAME=<name> required)
 	rm -rf "checkpoints/$(NAME)"
 	@echo "Checkpoint '$(NAME)' deleted."
 
-.PHONY: help network-create env-setup keycloak-post-install postgres-up keycloak-up seaweedfs-up opensearch-up clickhouse-up langfuse-up prometheus-up grafana-up openfga-post-install openfga-up temporal-up preflight-check docker-up docker-down all-down docker-wipe docker-destroy k3d-create k3d-up k3d-deploy k3d-restart-postgres k3d-restart-keycloak k3d-restart-seaweedfs k3d-restart-clickhouse k3d-restart-openfga k3d-restart-opensearch k3d-restart-opensearch-dashboards k3d-restart-temporal k3d-restart-temporal-ui k3d-restart-prometheus k3d-restart-grafana k3d-logs k3d-down k3d-uninstall k3d-delete k3d-wipe k3d-status k3d-airgap-on k3d-airgap-off k3d-airgap-status checkpoint-save checkpoint-restore docker-restart-from-checkpoint checkpoint-list checkpoint-delete
+.PHONY: help network-create env-setup keycloak-post-install postgres-up keycloak-up seaweedfs-up opensearch-up clickhouse-up langfuse-up prometheus-up grafana-up openfga-post-install openfga-up temporal-up preflight-check docker-up docker-down all-down docker-wipe docker-destroy k3d-create k3d-up k3d-deploy k3d-restart k3d-redeploy k3d-logs k3d-down k3d-uninstall k3d-delete k3d-wipe k3d-status k3d-airgap-on k3d-airgap-off k3d-airgap-status checkpoint-save checkpoint-restore docker-restart-from-checkpoint checkpoint-list checkpoint-delete
