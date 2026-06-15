@@ -6,6 +6,21 @@ DOCKER_COMPOSE_BASE := docker compose -f docker-compose/docker-compose-
 WITH_KEA ?= false
 export WITH_KEA
 
+# SEED_DEMO=false brings the stack up EMPTY (the "freshly deployed s3ns" state):
+#   - Keycloak realm `app` gets clients + service accounts ONLY (no alice/bob/phil, no demo groups)
+#   - Keycloak/OpenFGA post-install seed NO demo users/groups/tuples (store + model still created)
+#   - preflight-check is skipped (there are no demo users to verify)
+# Postgres `fred_kea` and the buckets come up empty either way. Used by `migration-reset`
+# so the identity/data restore populates a genuinely empty target.
+SEED_DEMO ?= true
+export SEED_DEMO
+ifeq ($(SEED_DEMO),false)
+KC_REALM_TEMPLATE := app-realm.empty.json.template
+DEMO_IDENTITY_CONFIG_FILE := $(CURDIR)/config/configuration.empty.yaml
+export KC_REALM_TEMPLATE
+export DEMO_IDENTITY_CONFIG_FILE
+endif
+
 K3D_CLUSTER ?= fred
 K3D_NAMESPACE ?= fred
 HELM_RELEASE ?= fred-stack
@@ -95,6 +110,12 @@ postgres-up: network-create env-setup
 
 keycloak-up: postgres-up
 	@echo "Launching Keycloak..."
+	@if [ "$(SEED_DEMO)" = "false" ]; then \
+	  echo "[SEED_DEMO=false] generating empty realm template (clients + service accounts only)..."; \
+	  jq '.users |= map(select(.username | startswith("service-account-"))) | .groups = []' \
+	    docker-compose/keycloak/app-realm.json.template \
+	    > docker-compose/keycloak/app-realm.empty.json.template; \
+	fi
 	$(DOCKER_COMPOSE_BASE)keycloak.yml -p keycloak up -d
 	$(MAKE) keycloak-post-install
 
@@ -156,8 +177,12 @@ preflight-check:
 	bash bin/fred-preflight.sh
 
 docker-up: postgres-up keycloak-up seaweedfs-up opensearch-up openfga-up temporal-up clickhouse-up langfuse-up prometheus-up grafana-up ## Launch the Docker stack (PostgreSQL, Keycloak, SeaweedFS, OpenSearch, OpenFGA, Temporal, ClickHouse, Langfuse, Prometheus, Grafana)
-	$(MAKE) preflight-check
-	@echo "All Docker stack services are running and preflight passed."
+	@if [ "$(SEED_DEMO)" = "false" ]; then \
+	  echo "[SEED_DEMO=false] empty mode — skipping preflight (no demo users to verify)."; \
+	else \
+	  $(MAKE) preflight-check; \
+	fi
+	@echo "All Docker stack services are running."
 
 docker-down: all-down ## Stop the Docker stack
 
@@ -481,4 +506,38 @@ checkpoint-delete: ## Delete a named checkpoint (NAME=<name> required)
 	rm -rf "checkpoints/$(NAME)"
 	@echo "Checkpoint '$(NAME)' deleted."
 
-.PHONY: help network-create env-setup keycloak-post-install postgres-up keycloak-up seaweedfs-up opensearch-up clickhouse-up langfuse-up prometheus-up grafana-up openfga-post-install openfga-up temporal-up preflight-check docker-up docker-down all-down docker-wipe docker-destroy k3d-create k3d-up k3d-deploy k3d-restart k3d-redeploy k3d-logs k3d-down k3d-uninstall k3d-delete k3d-wipe k3d-status k3d-airgap-on k3d-airgap-off k3d-airgap-status checkpoint-save checkpoint-restore docker-restart-from-checkpoint checkpoint-list checkpoint-delete
+# ─── Migration rehearsal — per-topic dump/restore (identity + data) ─────────────
+# These mirror the production migration steps and, crucially, NEVER touch Postgres:
+# after a wipe, fred_kea is empty so the METADATA import (step 3, in the app) is what
+# repopulates it. Capture with docs loaded, then `migration-reset` to retest from scratch.
+
+kea-identity-dump: ## [identity] Dump Keycloak realm (users+groups, IDs preserved) → dumps/identity/
+	@bash bin/kea-identity-dump.sh
+
+kea-identity-restore: ## [identity · step 1] Restore the Keycloak realm dump into the running stack
+	@bash bin/kea-identity-restore.sh
+
+kea-data-dump: ## [data] Dump all kea-* object-storage buckets, key-for-key → dumps/data/
+	@bash bin/kea-data-dump.sh
+
+kea-data-restore: ## [data · step 2] Restore the object-storage dump into the running stack
+	@bash bin/kea-data-restore.sh
+
+kea-snapshot: kea-identity-dump kea-data-dump ## Capture identity+data golden snapshot (run with docs loaded)
+	@echo ""
+	@echo "✓ Golden snapshot captured (identity + data)."
+	@echo "  For step 3, also export the metadata .zip from the kea admin UI (Platform Migration · Export)."
+
+migration-reset: ## Wipe → up EMPTY (no demo seed) → restore identity + data. fred_kea empty, ready for the metadata import (step 3)
+	$(MAKE) docker-wipe
+	$(MAKE) docker-up WITH_KEA=true SEED_DEMO=false
+	$(MAKE) kea-identity-restore
+	$(MAKE) kea-data-restore
+	@echo ""
+	@echo "============================================================"
+	@echo " Ready for METADATA import (step 3)."
+	@echo "   identity restored · data restored · fred_kea EMPTY"
+	@echo "   → run the import in the app / kea admin UI."
+	@echo "============================================================"
+
+.PHONY: help network-create env-setup keycloak-post-install postgres-up keycloak-up seaweedfs-up opensearch-up clickhouse-up langfuse-up prometheus-up grafana-up openfga-post-install openfga-up temporal-up preflight-check docker-up docker-down all-down docker-wipe docker-destroy k3d-create k3d-up k3d-deploy k3d-restart k3d-redeploy k3d-logs k3d-down k3d-uninstall k3d-delete k3d-wipe k3d-status k3d-airgap-on k3d-airgap-off k3d-airgap-status checkpoint-save checkpoint-restore docker-restart-from-checkpoint checkpoint-list checkpoint-delete kea-identity-dump kea-identity-restore kea-data-dump kea-data-restore kea-snapshot migration-reset

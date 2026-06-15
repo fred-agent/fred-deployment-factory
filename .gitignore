@@ -22,6 +22,12 @@ key-prod.txt
 # Checkpoint snapshots (Docker volume archives — can be large)
 /checkpoints/
 
+# Migration rehearsal dumps (identity = user data, data = document binaries — sensitive, can be large)
+/dumps/
+
+# Generated empty realm template (SEED_DEMO=false) — derived from app-realm.json.template
+/docker-compose/keycloak/app-realm.empty.json.template
+
 # Editor and OS artifacts
 .DS_Store
 .vscode/
