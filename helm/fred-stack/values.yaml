@@ -63,6 +63,9 @@ auth:
 temporal:
   uiPort: 8233
 
+postgres:
+  maxConnections: 250
+
 clickhouse:
   enabled: true
 

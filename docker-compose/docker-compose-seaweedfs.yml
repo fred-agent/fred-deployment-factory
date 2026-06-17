@@ -17,7 +17,7 @@ services:
       - -volume.port=8080
       - -filer
       - -filer.port=8888
-      - -volume.max=0
+      - -volume.max=100
     networks:
       - app-network
     ports:

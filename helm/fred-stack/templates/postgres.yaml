@@ -41,6 +41,10 @@ spec:
         - name: postgres
           image: {{ .Values.images.postgres }}
           imagePullPolicy: {{ .Values.imagePullPolicy }}
+          args:
+            - postgres
+            - -c
+            - max_connections={{ .Values.postgres.maxConnections }}
           env:
             - name: POSTGRES_USER
               valueFrom:

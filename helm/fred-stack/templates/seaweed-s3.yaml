@@ -95,7 +95,7 @@ spec:
             - -metricsPort=9327
             - -master.port=9333
             - -volume.port=8080
-            - -volume.max=0
+            - -volume.max=100
             - -filer
             - -filer.port=8888
           lifecycle:
