@@ -1,4 +1,4 @@
-{{- if .Values.grafana.enabled }}
+{{- if eq (include "fred-stack.grafanaEnabled" .) "true" }}
 apiVersion: v1
 kind: ConfigMap
 metadata:

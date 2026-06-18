@@ -39,21 +39,42 @@ Prometheus, Grafana, ClickHouse, and Langfuse are also available for local obser
 
 - `config/configuration.yaml`
 
-2. Start the full local Docker environment:
+2. Start the local Docker environment:
 
 ```bash
 make docker-up
 ```
 
-This launches both the structural Fred services and the additional local platform services (`Prometheus`, `Grafana`, `ClickHouse`, and `Langfuse`).
+By default this starts the **base** stack (`STACK=base`): the core Fred services without the additional local platform services. To also launch `Prometheus`, `Grafana`, `ClickHouse`, and `Langfuse`, use the **extended** profile:
 
-Default endpoints for the additional services:
+```bash
+make docker-up STACK=extended
+```
+
+Default endpoints for the additional services (extended profile only):
 - Prometheus: `http://localhost:9090`
 - Grafana: `http://localhost:3002`
 - ClickHouse SQL UI / HTTP API: `http://localhost:8123/play`
 - Langfuse: `http://localhost:3001`
 
 If you only need part of the platform, use the per-service Make targets such as `make keycloak-up`, `make seaweedfs-up`, `make opensearch-up`, `make openfga-up`, `make temporal-up`, `make clickhouse-up`, `make langfuse-up`, `make prometheus-up`, or `make grafana-up`.
+
+### Stack profiles: `base` vs `extended`
+
+`STACK` selects which services are launched, for both `make docker-up` and `make k3d-up`:
+
+| `STACK` | Services |
+|---------|----------|
+| `base` (default) | Minimal stack — drops ClickHouse, Langfuse, Redis, Prometheus and Grafana |
+| `extended` | The full stack, including ClickHouse, Langfuse (+ its Redis), Prometheus and Grafana |
+
+```bash
+make docker-up STACK=extended
+# or
+make k3d-up STACK=extended
+```
+
+For Helm, this maps to the chart value `stack` (`--set stack=<profile>`); the extended-only components are deployed only when `stack=extended` **and** their own `enabled` flag is set.
 
 3. Optional (for browser SSO callbacks to Keycloak on local machine):
 

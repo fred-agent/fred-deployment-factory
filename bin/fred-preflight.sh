@@ -58,6 +58,11 @@ LANGFUSE_S3_HTTP_RETRIES="${LANGFUSE_S3_HTTP_RETRIES:-10}"
 OPENFGA_EXPECT_USERNAME_SUBJECTS="${OPENFGA_EXPECT_USERNAME_SUBJECTS:-${OPENFGA_SEED_INCLUDE_USERNAME_USERS:-true}}"
 PREFLIGHT_CHECK_AGENT_OWNERSHIP="${PREFLIGHT_CHECK_AGENT_OWNERSHIP:-false}"
 
+# Stack profile (extended|base). In the "base" profile Langfuse (and its Redis/
+# ClickHouse dependencies) is not deployed, so its endpoint/S3 prerequisite checks
+# are skipped instead of being reported as critical failures.
+STACK="${STACK:-base}"
+
 REQUIRED_CLIENTS=(app agentic knowledge-flow control-plane)
 REQUIRED_APP_CLIENT_ROLES=(admin editor viewer)
 EXPECTED_SERVICE_APP_ROLE="service_agent"
@@ -167,6 +172,11 @@ is_truthy() {
     true|1|yes|on|always) return 0 ;;
     *) return 1 ;;
   esac
+}
+
+# Langfuse is only deployed in the "extended" stack profile.
+langfuse_expected() {
+  [[ "${STACK,,}" != "base" ]]
 }
 
 words_to_sorted_lines() {
@@ -1030,6 +1040,9 @@ LANGFUSE_S3_CONFIG_GAPS=0
 LANGFUSE_S3_BUCKET_GAPS=0
 
 step "Check Langfuse endpoints and S3 prerequisites"
+if ! langfuse_expected; then
+  info "Skipped: Langfuse is not deployed in the 'base' stack profile (STACK=${STACK})"
+else
 LANGFUSE_UI_HTTP_CODE="$(
   probe_http_status_with_retries \
     "${LANGFUSE_UI_URL}" \
@@ -1116,6 +1129,7 @@ if command -v docker >/dev/null 2>&1; then
 else
   mark_warning "docker CLI unavailable; skipping Langfuse bucket existence checks"
 fi
+fi
 
 printf "\n%s\n" "${BOLD}============================================================${RESET}"
 printf "%s\n" "${BOLD}Preflight Summary (READ-ONLY)${RESET}"
@@ -1175,11 +1189,15 @@ else
   info "Team owner-role gaps (OpenFGA username-subject): skipped by config"
 fi
 info "Temporal UI endpoint: ${TEMPORAL_UI_URL} (HTTP ${TEMPORAL_UI_HTTP_CODE})"
-info "Langfuse UI endpoint: ${LANGFUSE_UI_URL} (HTTP ${LANGFUSE_UI_HTTP_CODE})"
-info "Langfuse worker endpoint: ${LANGFUSE_WORKER_URL} (HTTP ${LANGFUSE_WORKER_HTTP_CODE})"
-info "Langfuse S3 endpoint (external check): ${LANGFUSE_S3_URL} (HTTP ${LANGFUSE_S3_HTTP_CODE})"
-info "Langfuse S3 config gaps (empty bucket names): ${LANGFUSE_S3_CONFIG_GAPS}"
-info "Langfuse S3 bucket gaps: ${LANGFUSE_S3_BUCKET_GAPS}"
+if langfuse_expected; then
+  info "Langfuse UI endpoint: ${LANGFUSE_UI_URL} (HTTP ${LANGFUSE_UI_HTTP_CODE})"
+  info "Langfuse worker endpoint: ${LANGFUSE_WORKER_URL} (HTTP ${LANGFUSE_WORKER_HTTP_CODE})"
+  info "Langfuse S3 endpoint (external check): ${LANGFUSE_S3_URL} (HTTP ${LANGFUSE_S3_HTTP_CODE})"
+  info "Langfuse S3 config gaps (empty bucket names): ${LANGFUSE_S3_CONFIG_GAPS}"
+  info "Langfuse S3 bucket gaps: ${LANGFUSE_S3_BUCKET_GAPS}"
+else
+  info "Langfuse: skipped (base stack profile)"
+fi
 if [[ "${TOTAL_TUPLES}" -ge 0 ]]; then
   info "OpenFGA tuples total: ${TOTAL_TUPLES}"
 fi

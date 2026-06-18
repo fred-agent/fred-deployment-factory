@@ -21,7 +21,7 @@ spec:
   resources:
     requests:
       storage: {{ .Values.persistence.seaweedfsSize }}
-{{- if .Values.clickhouse.enabled }}
+{{- if eq (include "fred-stack.clickhouseEnabled" .) "true" }}
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -47,7 +47,7 @@ spec:
   resources:
     requests:
       storage: {{ .Values.persistence.opensearchSize }}
-{{- if .Values.prometheus.enabled }}
+{{- if eq (include "fred-stack.prometheusEnabled" .) "true" }}
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -61,7 +61,7 @@ spec:
     requests:
       storage: {{ .Values.persistence.prometheusSize }}
 {{- end }}
-{{- if .Values.grafana.enabled }}
+{{- if eq (include "fred-stack.grafanaEnabled" .) "true" }}
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim

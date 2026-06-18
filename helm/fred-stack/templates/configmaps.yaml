@@ -73,7 +73,7 @@ data:
 {{ .Files.Get "files/scripts/openfga-post-install.sh" | indent 4 }}
   keycloak-post-install-k8s.sh: |
 {{ .Files.Get "files/scripts/keycloak-post-install-k8s.sh" | indent 4 }}
-{{- if .Values.clickhouse.enabled }}
+{{- if eq (include "fred-stack.clickhouseEnabled" .) "true" }}
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -94,7 +94,7 @@ data:
         </prometheus>
     </clickhouse>
 {{- end }}
-{{- if .Values.prometheus.enabled }}
+{{- if eq (include "fred-stack.prometheusEnabled" .) "true" }}
 ---
 apiVersion: v1
 kind: ConfigMap

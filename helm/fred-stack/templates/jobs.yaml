@@ -106,7 +106,7 @@ spec:
         - name: openfga-config
           configMap:
             name: fred-openfga-config
-{{- if .Values.clickhouse.enabled }}
+{{- if eq (include "fred-stack.clickhouseEnabled" .) "true" }}
 ---
 apiVersion: batch/v1
 kind: Job

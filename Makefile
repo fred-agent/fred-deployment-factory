@@ -21,6 +21,26 @@ export KC_REALM_TEMPLATE
 export DEMO_IDENTITY_CONFIG_FILE
 endif
 
+# STACK selects which services are launched (Docker Compose and Helm):
+#   base (default) → minimal stack: drops ClickHouse, Langfuse (+ its Redis),
+#                    Prometheus and Grafana
+#   extended       → the full stack (everything)
+STACK ?= base
+export STACK
+ifeq ($(filter $(STACK),base extended),)
+$(error Invalid STACK '$(STACK)'. Use STACK=base or STACK=extended)
+endif
+
+# Service groups for `docker-up`. The base group is always launched; the
+# extended group is appended only when STACK=extended.
+DOCKER_BASE_SERVICES := postgres-up keycloak-up seaweedfs-up opensearch-up openfga-up temporal-up
+DOCKER_EXTENDED_SERVICES := clickhouse-up langfuse-up prometheus-up grafana-up
+ifeq ($(STACK),extended)
+DOCKER_UP_SERVICES := $(DOCKER_BASE_SERVICES) $(DOCKER_EXTENDED_SERVICES)
+else
+DOCKER_UP_SERVICES := $(DOCKER_BASE_SERVICES)
+endif
+
 K3D_CLUSTER ?= fred
 K3D_NAMESPACE ?= fred
 HELM_RELEASE ?= fred-stack
@@ -176,7 +196,7 @@ preflight-check:
 	@echo "Running FRED preflight..."
 	bash bin/fred-preflight.sh
 
-docker-up: postgres-up keycloak-up seaweedfs-up opensearch-up openfga-up temporal-up clickhouse-up langfuse-up prometheus-up grafana-up ## Launch the Docker stack (PostgreSQL, Keycloak, SeaweedFS, OpenSearch, OpenFGA, Temporal, ClickHouse, Langfuse, Prometheus, Grafana)
+docker-up: $(DOCKER_UP_SERVICES) ## Launch the Docker stack (STACK=base[default]: minimal; STACK=extended: full stack incl. ClickHouse, Langfuse, Redis, Prometheus, Grafana)
 	@if [ "$(SEED_DEMO)" = "false" ]; then \
 	  echo "[SEED_DEMO=false] empty mode — skipping preflight (no demo users to verify)."; \
 	else \
@@ -314,7 +334,7 @@ k3d-up: k3d-create ## Deploy the full stack into k3d with Helm
 	  helm_images=(); \
 	  while IFS= read -r image; do \
 	    [ -n "$$image" ] && helm_images+=("$$image"); \
-	  done < <(helm template "$(HELM_RELEASE)" "$(HELM_CHART_DIR)" | awk '/image:[[:space:]]*/ {print $$2}' | tr -d '"' | sort -u); \
+	  done < <(helm template "$(HELM_RELEASE)" "$(HELM_CHART_DIR)" --set withKea=$(WITH_KEA) --set stack=$(STACK) | awk '/image:[[:space:]]*/ {print $$2}' | tr -d '"' | sort -u); \
 	  if [ "$${#helm_images[@]}" -eq 0 ]; then \
 	    fail "No images found in chart template for prefetch."; \
 	  fi; \
@@ -377,6 +397,7 @@ k3d-up: k3d-create ## Deploy the full stack into k3d with Helm
 		  --namespace "$(K3D_NAMESPACE)" \
 		  --create-namespace \
 		  --set withKea=$(WITH_KEA) \
+		  --set stack=$(STACK) \
 		  --wait \
 		  --wait-for-jobs \
 		  --rollback-on-failure \
@@ -421,6 +442,8 @@ k3d-deploy: ## Redeploy the full fred-stack Helm chart (no image prefetch)
 	helm upgrade --install "$(HELM_RELEASE)" "$(HELM_CHART_DIR)" \
 		--namespace "$(K3D_NAMESPACE)" \
 		--create-namespace \
+		--set withKea=$(WITH_KEA) \
+		--set stack=$(STACK) \
 		--wait \
 		--wait-for-jobs \
 		--timeout "$(HELM_TIMEOUT)"

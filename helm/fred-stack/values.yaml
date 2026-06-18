@@ -6,6 +6,13 @@ imagePullPolicy: IfNotPresent
 # Set to true to also provision the fred_kea database (for kea→swift migration testing)
 withKea: false
 
+# Stack profile — selects which services are deployed:
+#   base (default) → minimal stack: drops ClickHouse, Prometheus and Grafana
+#   extended       → the full stack (everything)
+# Extended-only components are deployed only when stack=extended AND their own
+# `enabled` flag below is true.
+stack: base
+
 host:
   fqdn: localhost
 
