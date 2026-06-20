@@ -1,6 +1,6 @@
 apiVersion: v2
 name: fredlab-infra
-description: Minimal Fredlab infrastructure stack for GKE Autopilot: PostgreSQL and Keycloak.
+description: "Minimal Fredlab infrastructure stack for GKE Autopilot: PostgreSQL and Keycloak."
 type: application
 version: 0.1.0
 appVersion: "1.0.0"
