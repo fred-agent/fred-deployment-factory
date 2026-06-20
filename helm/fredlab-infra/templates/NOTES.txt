@@ -1,0 +1,14 @@
+Fredlab infra has been rendered for namespace {{ .Release.Namespace }}.
+
+Keycloak internal service:
+  {{ include "fredlab-infra.keycloakName" . }}:{{ .Values.keycloak.service.port }}
+
+PostgreSQL internal service:
+  {{ include "fredlab-infra.postgresName" . }}:{{ .Values.postgresql.service.port }}
+
+External Keycloak host:
+  https://{{ .Values.ingress.keycloakHost }}
+
+GKE static IP reminder:
+  Reserved address: {{ .Values.ingress.staticIpAddress }}
+  Ingress annotation resource name: {{ default "<set ingress.staticIpName to the GCP global address name>" .Values.ingress.staticIpName }}

@@ -1,0 +1,84 @@
+# Fredlab playground target.
+cluster:
+  name: fredlab-playground-gke
+  namespace: default
+
+nameOverride: ""
+fullnameOverride: ""
+imagePullPolicy: IfNotPresent
+
+images:
+  # pgvector is kept because Fred commonly expects PostgreSQL with vector support.
+  postgres: pgvector/pgvector:pg17
+  keycloak: quay.io/keycloak/keycloak:26.3.0
+
+postgresql:
+  service:
+    type: ClusterIP
+    port: 5432
+  persistence:
+    storageClassName: standard-rwo
+    size: 10Gi
+    accessModes:
+      - ReadWriteOnce
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      memory: 2Gi
+  admin:
+    user: admin
+    password: ""
+  keycloak:
+    database: keycloak
+    user: keycloak_db_user
+    password: ""
+
+keycloak:
+  replicaCount: 1
+  service:
+    type: ClusterIP
+    port: 8080
+  hostname: keycloak.fredlab.dev
+  admin:
+    user: admin
+    password: ""
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      memory: 2Gi
+  # KC_PROXY=edge is included for compatibility with the requested generated prompt.
+  # KC_PROXY_HEADERS=xforwarded is the effective modern Keycloak setting for GCE HTTPS termination.
+  proxy: edge
+  proxyHeaders: xforwarded
+  health:
+    enabled: true
+    managementPort: 9000
+
+ingress:
+  enabled: true
+  name: fredlab-infra-ingress
+  className: gce
+  domain: fredlab.dev
+  keycloakHost: keycloak.fredlab.dev
+  # The reserved public IP address is documented here for operators.
+  # GKE Ingress requires the GCP address resource name in the annotation below, not the literal IP.
+  staticIpAddress: 8.233.26.38
+  staticIpName: ""
+  managedCertificateName: fredlab-infra-cert
+  allowHttp: false
+  path: /*
+  backendConfig:
+    enabled: true
+    name: fredlab-keycloak-backendconfig
+    healthCheck:
+      requestPath: /realms/master
+      port: 8080
+      type: HTTP
+      checkIntervalSec: 15
+      timeoutSec: 5
+      healthyThreshold: 1
+      unhealthyThreshold: 3

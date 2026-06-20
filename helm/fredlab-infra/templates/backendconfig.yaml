@@ -1,0 +1,17 @@
+{{- if and .Values.ingress.enabled .Values.ingress.backendConfig.enabled }}
+apiVersion: cloud.google.com/v1
+kind: BackendConfig
+metadata:
+  name: {{ .Values.ingress.backendConfig.name }}
+  labels:
+    {{- include "fredlab-infra.labels" . | nindent 4 }}
+spec:
+  healthCheck:
+    requestPath: {{ .Values.ingress.backendConfig.healthCheck.requestPath | quote }}
+    port: {{ .Values.ingress.backendConfig.healthCheck.port }}
+    type: {{ .Values.ingress.backendConfig.healthCheck.type }}
+    checkIntervalSec: {{ .Values.ingress.backendConfig.healthCheck.checkIntervalSec }}
+    timeoutSec: {{ .Values.ingress.backendConfig.healthCheck.timeoutSec }}
+    healthyThreshold: {{ .Values.ingress.backendConfig.healthCheck.healthyThreshold }}
+    unhealthyThreshold: {{ .Values.ingress.backendConfig.healthCheck.unhealthyThreshold }}
+{{- end }}
