@@ -155,7 +155,8 @@ ingress:
   enabled: true
   name: fredlab-infra-ingress
   className: gce
-  domain: playground.fredlab.dev
+  # Domain rendered in the GKE ManagedCertificate.
+  domain: keycloak.playground.fredlab.dev
   keycloakHost: keycloak.playground.fredlab.dev
   # The reserved public IP address is documented here for operators.
   # GKE Ingress requires the GCP address resource name in the annotation below, not the literal IP.
