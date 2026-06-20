@@ -1,6 +1,6 @@
 # Fredlab Infra
 
-Helm chart for the Fredlab playground on GKE Autopilot.
+Helm chart for Fredlab Playground on GKE Autopilot.
 
 ## Scope
 
@@ -17,9 +17,9 @@ All services use `ClusterIP`. Public routing is handled by the GKE `gce` Ingress
 
 ## Naming Rules
 
-This chart avoids Helm release-name prefixes for service DNS. Component names are fixed through `fullnameOverride` values:
+The chart avoids Helm release-name prefixes for service DNS:
 
-- private services use short names: `postgres`, `openfga`, `temporal`
+- infrastructure services use fixed short names: `postgres`, `keycloak`, `openfga`, `temporal`
 - app backends use `[app-name]-backend`
 - app frontends use `[app-name]-frontend`
 - admin UIs use `[component]-ui`
@@ -32,24 +32,36 @@ The chart is designed for GKE Autopilot:
 - no node-level `sysctl`
 - no privileged `chown` init jobs
 - explicit CPU and memory requests
-- real secrets are supplied through `fredlab-secrets.values.yaml`, which is ignored by Git
+- real secrets live in `fredlab-secrets.values.yaml`, ignored by Git
 
-Admin UIs exposed through Ingress must use Cloud Armor IP allowlisting. Temporal UI is wired through the policy:
+Temporal UI is protected by the Cloud Armor allowlist policy:
 
 ```text
 fredlab-admin-ui-allowlist
 ```
 
-## Secrets
+## Data Ownership
 
-Create the local secret values file from the committed template:
+PostgreSQL provisioning and application schema migrations are intentionally separated:
+
+| Layer | Responsible object | Creates |
+| --- | --- | --- |
+| Database bootstrap | `postgres-provision` Helm hook | PostgreSQL users, databases, grants |
+| Control Plane schema | `control-plane-migration` Helm hook | Control Plane tables via `alembic upgrade head` |
+| Control Plane runtime | `control-plane-backend` Deployment | HTTP service only |
+
+For Swift, the current Fred repository contains multiple Alembic revisions. Fredlab applies the repository contract as-is with `alembic upgrade head`. Before a first production Swift release, decide separately whether to keep this history or squash it into a single bootstrap migration.
+
+## Private Values
+
+Create one complete local secret file from:
 
 ```bash
 cp helm/fredlab-infra/fredlab-secrets.values.example.yaml \
    helm/fredlab-infra/fredlab-secrets.values.yaml
 ```
 
-Required values include:
+Required values:
 
 - `postgresql.admin.password`
 - `postgresql.keycloak.password`
@@ -60,86 +72,23 @@ Required values include:
 - `keycloak.clients.controlPlane.secret`
 - `openfga.auth.apiToken`
 
-## Control Plane Image
-
-The Control Plane backend is present in the chart but disabled by default until an image is available.
-
-Control Plane deployment is intentionally split into two short actions:
-
-1. run `controlPlane.migration.enabled=true` to execute `alembic upgrade head`
-2. run `controlPlane.enabled=true` to start the backend
-
-This makes it clear that:
-
-- `postgres-provision` creates the `fred` database and user
-- the Control Plane migration job creates the application tables
-- the backend deployment only starts the HTTP service
-
-Build and push an image from the Fred source repository in Cloud Shell. Adapt the Dockerfile path to the real Fred repo layout:
+Validate that the secret file is ignored:
 
 ```bash
-PROJECT_ID="$(gcloud config get-value project)"
-REGION="europe-west1"
-REPOSITORY="fred"
-IMAGE="control-plane-backend"
-TAG="$(git rev-parse --short HEAD)"
-
-gcloud artifacts repositories create "${REPOSITORY}" \
-  --repository-format=docker \
-  --location="${REGION}" \
-  --description="Fred playground images" || true
-
-gcloud auth configure-docker "${REGION}-docker.pkg.dev"
-
-docker build \
-  -t "${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/${IMAGE}:${TAG}" \
-  -f apps/control-plane-backend/dockerfiles/Dockerfile-prod \
-  .
-
-docker push "${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/${IMAGE}:${TAG}"
+git status --short --ignored helm/fredlab-infra/fredlab-secrets.values.yaml
 ```
 
-Run migrations once the image exists:
+Expected:
 
-```bash
-helm upgrade --install fredlab-infra ./helm/fredlab-infra \
-  --namespace default \
-  -f helm/fredlab-infra/fredlab-secrets.values.yaml \
-  --set controlPlane.migration.enabled=true \
-  --set controlPlane.enabled=false \
-  --set controlPlane.image.repository="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/${IMAGE}" \
-  --set controlPlane.image.tag="${TAG}"
-```
-
-Then start the backend:
-
-```bash
-helm upgrade --install fredlab-infra ./helm/fredlab-infra \
-  --namespace default \
-  -f helm/fredlab-infra/fredlab-secrets.values.yaml \
-  --set controlPlane.migration.enabled=false \
-  --set controlPlane.enabled=true \
-  --set controlPlane.image.repository="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/${IMAGE}" \
-  --set controlPlane.image.tag="${TAG}"
-```
-
-If the application exposes health on a different path, override it:
-
-```bash
---set controlPlane.health.path=/actuator/health
-```
-
-If the application needs additional environment variables, use:
-
-```yaml
-controlPlane:
-  extraEnv:
-    SOME_SETTING: value
+```text
+!! helm/fredlab-infra/fredlab-secrets.values.yaml
 ```
 
 ## Deploy
 
-Install or upgrade the foundation without Control Plane:
+Use [DEPLOYMENT-STEPS.md](./DEPLOYMENT-STEPS.md) for the canonical GKE deployment procedure.
+
+Foundation only:
 
 ```bash
 helm upgrade --install fredlab-infra ./helm/fredlab-infra \
@@ -147,8 +96,24 @@ helm upgrade --install fredlab-infra ./helm/fredlab-infra \
   -f helm/fredlab-infra/fredlab-secrets.values.yaml
 ```
 
-Check:
+Control Plane is deployed in two explicit phases:
 
 ```bash
-kubectl get pods,svc,ingress,backendconfig,managedcertificate
+# 1. Run database migrations.
+helm upgrade --install fredlab-infra ./helm/fredlab-infra \
+  --namespace default \
+  -f helm/fredlab-infra/fredlab-secrets.values.yaml \
+  --set controlPlane.migration.enabled=true \
+  --set controlPlane.enabled=false \
+  --set controlPlane.image.repository="<artifact-registry-image>" \
+  --set controlPlane.image.tag="<tag>"
+
+# 2. Start the backend.
+helm upgrade --install fredlab-infra ./helm/fredlab-infra \
+  --namespace default \
+  -f helm/fredlab-infra/fredlab-secrets.values.yaml \
+  --set controlPlane.migration.enabled=false \
+  --set controlPlane.enabled=true \
+  --set controlPlane.image.repository="<artifact-registry-image>" \
+  --set controlPlane.image.tag="<tag>"
 ```

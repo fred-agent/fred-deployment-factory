@@ -21,6 +21,7 @@ key-prod.txt
 *.secrets.values.yaml
 fredlab-secrets.values.yaml
 helm/**/fredlab-secrets.values.yaml
+helm/**/fredlab-secrets.values.yaml.*
 
 # Checkpoint snapshots (Docker volume archives — can be large)
 /checkpoints/

@@ -1,43 +1,62 @@
-# Fredlab Deployment Steps
+# Fredlab GKE Deployment Guide
 
-Run each step separately. Do not continue until the validation command succeeds.
+Canonical deployment path for `fredlab-infra` on GKE Autopilot.
 
-## 0. Confirm Context
+## 1. Prerequisites
+
+Run from the repository root:
 
 ```bash
+pwd
 kubectl config current-context
 kubectl get ns default
 ```
 
-Expected: the context is the GKE Autopilot cluster and namespace `default` exists.
+Expected:
 
-## 0.5. Confirm Local Secrets
+- working directory is `~/fred-deployment-factory`
+- current Kubernetes context points to `fredlab-playground-gke`
+- namespace `default` exists
 
-Make sure the local, non-git-tracked file contains the Control Plane secrets:
+## 2. Prepare Private Values
+
+Create one complete local secret file from the committed example:
 
 ```bash
-grep -n "fred:" helm/fredlab-infra/fredlab-secrets.values.yaml
-grep -n "controlPlane:" helm/fredlab-infra/fredlab-secrets.values.yaml
+cp helm/fredlab-infra/fredlab-secrets.values.example.yaml \
+   helm/fredlab-infra/fredlab-secrets.values.yaml
 ```
 
-Expected: both keys exist.
+Fill all required values in:
 
-Minimum required shape:
-
-```yaml
-postgresql:
-  fred:
-    password: "<fred-db-password>"
-
-keycloak:
-  clients:
-    controlPlane:
-      secret: "<keycloak-control-plane-client-secret>"
+```text
+helm/fredlab-infra/fredlab-secrets.values.yaml
 ```
 
-## 1. Deploy Or Upgrade The Foundation
+Required values:
 
-This creates or updates infrastructure objects and runs `postgres-provision`.
+- `postgresql.admin.password`
+- `postgresql.keycloak.password`
+- `postgresql.openfga.password`
+- `postgresql.temporal.password`
+- `postgresql.fred.password`
+- `keycloak.admin.password`
+- `keycloak.clients.controlPlane.secret`
+- `openfga.auth.apiToken`
+
+Validate that the file is ignored by Git:
+
+```bash
+git status --short --ignored helm/fredlab-infra/fredlab-secrets.values.yaml
+```
+
+Expected:
+
+```text
+!! helm/fredlab-infra/fredlab-secrets.values.yaml
+```
+
+## 3. Install Or Upgrade Infrastructure
 
 ```bash
 helm upgrade --install fredlab-infra ./helm/fredlab-infra \
@@ -54,15 +73,16 @@ kubectl get job postgres-provision
 
 Expected:
 
-- `postgres`, `keycloak`, `openfga`, `temporal`, `temporal-ui` services exist.
-- `postgres-provision` is `Complete`.
+- core pods are `Running`
+- `postgres-provision` is `Complete`
+- services include `postgres`, `keycloak`, `openfga`, `temporal`, `temporal-ui`
 
 Responsibility:
 
-- Creates PostgreSQL roles and databases.
-- Does not create application tables.
+- `postgres-provision` creates PostgreSQL users, databases, and grants.
+- It does not create application tables.
 
-## 2. Confirm The Fred Database Exists
+## 4. Confirm Fred Database
 
 ```bash
 kubectl run pg-check-fred --rm -i --restart=Never \
@@ -73,14 +93,34 @@ kubectl run pg-check-fred --rm -i --restart=Never \
 
 Expected: database `fred` exists.
 
-Responsibility:
+## 5. Prepare Artifact Registry
 
-- Database `fred` is created by `postgres-provision`.
-- Tables are not created here.
+Run once per project:
 
-## 3. Build And Push Control Plane Image
+```bash
+PROJECT_ID="$(gcloud config get-value project)"
+REGION="europe-west1"
+REPOSITORY="fred"
 
-Run this from the Fred source repository, not from this deployment repo.
+gcloud artifacts repositories create "${REPOSITORY}" \
+  --repository-format=docker \
+  --location="${REGION}" \
+  --description="Fred playground images" || true
+
+gcloud auth configure-docker "${REGION}-docker.pkg.dev"
+```
+
+If the GKE pull identity does not already have access, grant:
+
+```bash
+gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
+  --member="serviceAccount:<gke-pull-service-account>" \
+  --role="roles/artifactregistry.reader"
+```
+
+## 6. Build And Push Control Plane Image
+
+Run from the root of the Fred source repository:
 
 ```bash
 PROJECT_ID="$(gcloud config get-value project)"
@@ -88,12 +128,6 @@ REGION="europe-west1"
 REPOSITORY="fred"
 IMAGE="control-plane-backend"
 TAG="$(git rev-parse --short HEAD)"
-
-gcloud artifacts repositories create "${REPOSITORY}" \
-  --repository-format=docker \
-  --location="${REGION}" || true
-
-gcloud auth configure-docker "${REGION}-docker.pkg.dev"
 
 docker build \
   -t "${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/${IMAGE}:${TAG}" \
@@ -111,21 +145,16 @@ gcloud artifacts docker images list \
   --include-tags
 ```
 
-Expected: the pushed `${TAG}` is listed.
+Expected: `${TAG}` is listed.
 
-Image must contain:
+Image contract:
 
-- the backend server
-- `alembic`
-- `alembic.ini`
-- `alembic/versions`
-- a runnable command: `alembic upgrade head`
-- the FastAPI server on port `8222`
-- the health endpoint `/healthz`
+- contains `alembic`, `alembic.ini`, and `alembic/versions`
+- supports `alembic upgrade head`
+- runs the FastAPI server on container port `8222`
+- exposes `/healthz`
 
-## 4. Run Control Plane Migrations Only
-
-This creates or upgrades Control Plane tables in database `fred`.
+## 7. Run Control Plane Migrations
 
 ```bash
 helm upgrade --install fredlab-infra ./helm/fredlab-infra \
@@ -147,14 +176,14 @@ kubectl logs job/control-plane-migration
 Expected:
 
 - migration job is `Complete`
-- logs show Alembic applied or confirmed the latest revision
+- logs show Alembic reached `head`
 
 Responsibility:
 
-- Creates and updates Control Plane application tables.
-- Does not create PostgreSQL database `fred`.
+- creates and updates Control Plane application tables in database `fred`
+- does not create the database itself
 
-## 5. Confirm Alembic State
+## 8. Confirm Alembic State
 
 ```bash
 kubectl run pg-check-alembic --rm -i --restart=Never \
@@ -165,7 +194,7 @@ kubectl run pg-check-alembic --rm -i --restart=Never \
 
 Expected: at least one Alembic revision is present.
 
-## 6. Start Control Plane Backend
+## 9. Start Control Plane Backend
 
 ```bash
 helm upgrade --install fredlab-infra ./helm/fredlab-infra \
@@ -191,7 +220,7 @@ Expected:
 - pod is `Running`
 - service `control-plane-backend` exists on port `8080`
 
-## 7. Probe The Backend Internally
+## 10. Probe Control Plane Internally
 
 ```bash
 kubectl run control-plane-curl --rm -i --restart=Never \
@@ -201,15 +230,37 @@ kubectl run control-plane-curl --rm -i --restart=Never \
 
 Expected: HTTP `200` or the app-specific healthy response.
 
-If the app uses another health path, deploy with:
+## Troubleshooting
+
+### Helm Command Run From The Wrong Directory
+
+If Helm reports `path "./helm/fredlab-infra" not found`, return to the repository root:
 
 ```bash
---set controlPlane.health.path=/actual/health/path
+cd ~/fred-deployment-factory
 ```
 
-## Rollback
+### PostgreSQL StatefulSet Immutable Field
 
-Disable the backend but keep data:
+If Helm fails with:
+
+```text
+StatefulSet.apps "postgres" is invalid: spec: Forbidden: updates to statefulset spec ...
+```
+
+recreate only the StatefulSet controller and keep the existing pod/PVC:
+
+```bash
+kubectl delete statefulset postgres --cascade=orphan
+
+helm upgrade --install fredlab-infra ./helm/fredlab-infra \
+  --namespace default \
+  -f helm/fredlab-infra/fredlab-secrets.values.yaml
+```
+
+Use only for immutable StatefulSet spec drift.
+
+### Disable Control Plane Without Deleting Data
 
 ```bash
 helm upgrade --install fredlab-infra ./helm/fredlab-infra \
@@ -218,5 +269,3 @@ helm upgrade --install fredlab-infra ./helm/fredlab-infra \
   --set controlPlane.enabled=false \
   --set controlPlane.migration.enabled=false
 ```
-
-This does not delete PostgreSQL data.
