@@ -1,9 +1,7 @@
 # Fredlab Infra
-
 Helm chart for the Fredlab playground infrastructure on GKE Autopilot.
 
 ## Scope
-
 Deployed components:
 
 | Component | Visibility | Internal DNS | Public host |
@@ -14,115 +12,65 @@ Deployed components:
 | Temporal | Private | `temporal:7233` | none |
 | Temporal UI | Protected public admin UI | `temporal-ui:8080` | `temporal.playground.fredlab.dev` |
 
-All services use `ClusterIP`. Public routing is handled only by the GKE `gce`
-Ingress named `fredlab-infra-ingress`.
+All services use `ClusterIP`. Public routing is handled only by the GKE `gce` Ingress named `fredlab-infra-ingress`.
 
 ## Naming Rules
+This chart intentionally avoids Helm release-name prefixes for service DNS. Component names are fixed through `fullnameOverride` values:
 
-This chart intentionally avoids Helm release-name prefixes for service DNS.
-Component names are fixed through `fullnameOverride` values:
-
-- private services use short names: `postgres`, `openfga`, `temporal`
-- public services use short service names plus DNS hosts under `*.playground.fredlab.dev`
-- future backends should use `[app-name]-backend`
-- future frontends should use `[app-name]-frontend`
-- future admin UIs should use `[component]-ui`
+- Private services use short names: `postgres`, `openfga`, `temporal`
+- Public services use short service names plus DNS hosts under `*.playground.fredlab.dev`
+- Future backends should use `[app-name]-backend`
+- Future frontends should use `[app-name]-frontend`
+- Future admin UUs should use `[component]-ui`
 
 ## Security
-
 The chart is designed for GKE Autopilot:
+- No privileged containers
+- No node-level `sysctl`
+- F privileged `chown` init jobs
+- Explicit CPU and memory requests
+- Secrets are supplied through a local values file ignored by Git
 
-- no privileged containers
-- no node-level `sysctl`
-- no privileged `chown` init jobs
-- explicit CPU and memory requests
-- secrets are supplied through a local values file ignored by Git
+Admin UUs exposed through Ingress must use Cloud Armor IP allowlisting. Temporal UI is wired through a `BackendConfig` that references the policy: `fredlab-admin-ui-allowlist`.
 
-Admin UIs exposed through Ingress must use Cloud Armor IP allowlisting.
-Temporal UI is wired through a `BackendConfig` that references:
-
-```text
-fredlab-admin-ui-allowlist
-```
-
-Maintain the intended operator CIDR placeholders in `values.yaml`:
+Maintain the intended operator CIDR placeholders in `values.yaml` (the real IPs live in `fredlab-secrets.values.yaml` under the same structure):
 
 ```yaml
 adminAccess:
-  allowedOperatorCidrs:
+ allowedOperatorCidrs:
     dimitri: ""
     sebastien: ""
     simon: ""
 ```
 
-Create or update the Cloud Armor policy in GCP before exposing admin UIs:
-
-```bash
-gcloud compute security-policies create fredlab-admin-ui-allowlist \
-  --description="Allowlisted access to Fredlab admin UIs"
-
-gcloud compute security-policies rules create 1000 \
-  --security-policy=fredlab-admin-ui-allowlist \
-  --src-ip-ranges=<dimitri-cidr>,<sebastien-cidr>,<simon-cidr> \
-  --action=allow
-
-gcloud compute security-policies rules update 2147483647 \
-  --security-policy=fredlab-admin-ui-allowlist \
-  --action=deny-403
-```
-
 ## Secrets
-
-The chart is safe to commit. Real passwords live only in:
-
+The chart is safe to commit. Real passwords and sensitive configuration live only in:
 ```text
 helm/fredlab-infra/fredlab-secrets.values.yaml
-```
-
-This file is ignored by Git. Create it from:
-
-```bash
+```JThis file is ignored by Git. Create it from the template:
+``bash
 cp helm/fredlab-infra/fredlab-secrets.values.example.yaml \
    helm/fredlab-infra/fredlab-secrets.values.yaml
 ```
-
 Required secret values:
-
 - `postgresql.admin.password`
 - `postgresql.keycloak.password`
-- `postgresql.openfga.password`
+- `postgresql.openfga.password
 - `postgresql.temporal.password`
 - `keycloak.admin.password`
 - `openfga.auth.apiToken`
 
 ## Deploy
-
-Find the GCP global address resource name for the reserved IP `8.233.26.38`:
-
-```bash
+Find the GCP global address resource name for the reserved static IP:
+``bash
 gcloud compute addresses list --global
-```
-
-Render:
-
-```bash
-helm template fredlab-infra ./helm/fredlab-infra \
-  --namespace default \
-  -f helm/fredlab-infra/fredlab-secrets.values.yaml \
-  --set ingress.staticIpName=<gcp-global-address-resource-name>
-```
-
-Install or upgrade:
-
-```bash
+```Install or upgrade dynamically:
+``bash
 helm upgrade --install fredlab-infra ./helm/fredlab-infra \
   --namespace default \
   -f helm/fredlab-infra/fredlab-secrets.values.yaml \
-  --set ingress.staticIpName=<gcp-global-address-resource-name>
-```
-
-Check:
-
-```bash
-kubectl get pods,svc,ingress,backendconfig
+  --set ingress.staticIpName=fredlab-playground-ip
+```Check cluster convergence:
+fbash
+./bin/check-fredlab.sh
 ```

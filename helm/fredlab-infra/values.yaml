@@ -161,7 +161,7 @@ ingress:
   # The reserved public IP address is documented here for operators.
   # GKE Ingress requires the GCP address resource name in the annotation below, not the literal IP.
   staticIpAddress: 8.233.26.38
-  staticIpName: ""
+  staticIpName: fredlab-playground-ip
   managedCertificateName: fredlab-infra-cert
   allowHttp: false
   path: /*
