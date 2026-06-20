@@ -1,0 +1,161 @@
+{{- if .Values.openfga.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "fredlab-infra.openfgaName" . }}
+  labels:
+    {{- include "fredlab-infra.labels" . | nindent 4 }}
+    app.kubernetes.io/component: openfga
+spec:
+  type: {{ .Values.openfga.service.type }}
+  ports:
+    - name: http
+      port: {{ .Values.openfga.service.httpPort }}
+      targetPort: http
+    - name: grpc
+      port: {{ .Values.openfga.service.grpcPort }}
+      targetPort: grpc
+    - name: metrics
+      port: {{ .Values.openfga.service.metricsPort }}
+      targetPort: metrics
+  selector:
+    {{- include "fredlab-infra.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: openfga
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "fredlab-infra.openfgaName" . }}
+  labels:
+    {{- include "fredlab-infra.labels" . | nindent 4 }}
+    app.kubernetes.io/component: openfga
+spec:
+  replicas: {{ .Values.openfga.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "fredlab-infra.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: openfga
+  template:
+    metadata:
+      labels:
+        {{- include "fredlab-infra.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: openfga
+    spec:
+      enableServiceLinks: false
+      securityContext:
+        runAsUser: 10001
+        runAsGroup: 10001
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        - name: migrate
+          image: {{ .Values.images.openfga | quote }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          args:
+            - migrate
+          env:
+            - name: OPENFGA_DATASTORE_ENGINE
+              value: postgres
+            - name: OPENFGA_DATASTORE_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fredlab-infra.secretName" . }}
+                  key: POSTGRES_OPENFGA_USER
+            - name: OPENFGA_DATASTORE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fredlab-infra.secretName" . }}
+                  key: POSTGRES_OPENFGA_PASSWORD
+            - name: OPENFGA_DATASTORE_DATABASE
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fredlab-infra.secretName" . }}
+                  key: POSTGRES_OPENFGA_DB
+            - name: OPENFGA_DATASTORE_URI
+              value: postgres://$(OPENFGA_DATASTORE_USERNAME):$(OPENFGA_DATASTORE_PASSWORD)@{{ include "fredlab-infra.postgresName" . }}:{{ .Values.postgresql.service.port }}/$(OPENFGA_DATASTORE_DATABASE)?sslmode=disable
+          resources:
+            {{- toYaml .Values.openfga.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+      containers:
+        - name: openfga
+          image: {{ .Values.images.openfga | quote }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          args:
+            - run
+          env:
+            - name: OPENFGA_DATASTORE_ENGINE
+              value: postgres
+            - name: OPENFGA_DATASTORE_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fredlab-infra.secretName" . }}
+                  key: POSTGRES_OPENFGA_USER
+            - name: OPENFGA_DATASTORE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fredlab-infra.secretName" . }}
+                  key: POSTGRES_OPENFGA_PASSWORD
+            - name: OPENFGA_DATASTORE_DATABASE
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fredlab-infra.secretName" . }}
+                  key: POSTGRES_OPENFGA_DB
+            - name: OPENFGA_DATASTORE_URI
+              value: postgres://$(OPENFGA_DATASTORE_USERNAME):$(OPENFGA_DATASTORE_PASSWORD)@{{ include "fredlab-infra.postgresName" . }}:{{ .Values.postgresql.service.port }}/$(OPENFGA_DATASTORE_DATABASE)?sslmode=disable
+            - name: OPENFGA_AUTHN_METHOD
+              value: {{ .Values.openfga.auth.method | quote }}
+            - name: OPENFGA_AUTHN_PRESHARED_KEYS
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fredlab-infra.secretName" . }}
+                  key: OPENFGA_API_TOKEN
+            - name: OPENFGA_LOG_FORMAT
+              value: json
+            - name: OPENFGA_HTTP_ADDR
+              value: 0.0.0.0:{{ .Values.openfga.service.httpPort }}
+            - name: OPENFGA_GRPC_ADDR
+              value: 0.0.0.0:{{ .Values.openfga.service.grpcPort }}
+            - name: OPENFGA_PLAYGROUND_ENABLED
+              value: {{ .Values.openfga.playground.enabled | quote }}
+            - name: OPENFGA_PLAYGROUND_PORT
+              value: {{ .Values.openfga.playground.port | quote }}
+            - name: OPENFGA_METRICS_ENABLED
+              value: "true"
+            - name: OPENFGA_METRICS_ADDR
+              value: 0.0.0.0:{{ .Values.openfga.service.metricsPort }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.openfga.service.httpPort }}
+            - name: grpc
+              containerPort: {{ .Values.openfga.service.grpcPort }}
+            - name: metrics
+              containerPort: {{ .Values.openfga.service.metricsPort }}
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 12
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 6
+          resources:
+            {{- toYaml .Values.openfga.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+{{- end }}

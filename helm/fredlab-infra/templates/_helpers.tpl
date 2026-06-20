@@ -24,13 +24,25 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}
 
 {{- define "fredlab-infra.postgresName" -}}
-{{- printf "%s-postgres" (include "fredlab-infra.fullname" .) | trunc 63 | trimSuffix "-" -}}
+{{- default "postgres" .Values.postgresql.fullnameOverride | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 
 {{- define "fredlab-infra.keycloakName" -}}
-{{- printf "%s-keycloak" (include "fredlab-infra.fullname" .) | trunc 63 | trimSuffix "-" -}}
+{{- default "keycloak" .Values.keycloak.fullnameOverride | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+
+{{- define "fredlab-infra.openfgaName" -}}
+{{- default "openfga" .Values.openfga.fullnameOverride | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+
+{{- define "fredlab-infra.temporalName" -}}
+{{- default "temporal" .Values.temporal.fullnameOverride | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+
+{{- define "fredlab-infra.temporalUiName" -}}
+{{- default "temporal-ui" .Values.temporal.ui.fullnameOverride | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 
 {{- define "fredlab-infra.secretName" -}}
-{{- printf "%s-secrets" (include "fredlab-infra.fullname" .) | trunc 63 | trimSuffix "-" -}}
+{{- default "fredlab-infra-secrets" .Values.secret.fullnameOverride | trunc 63 | trimSuffix "-" -}}
 {{- end -}}

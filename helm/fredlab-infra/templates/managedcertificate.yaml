@@ -1,0 +1,11 @@
+{{- if .Values.ingress.enabled }}
+apiVersion: networking.gke.io/v1
+kind: ManagedCertificate
+metadata:
+  name: {{ .Values.ingress.managedCertificateName | quote }}
+  labels:
+    {{- include "fredlab-infra.labels" . | nindent 4 }}
+spec:
+  domains:
+    - {{ .Values.ingress.domain | quote }}
+{{- end }}

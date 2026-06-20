@@ -24,4 +24,16 @@ spec:
                 name: {{ include "fredlab-infra.keycloakName" . }}
                 port:
                   name: http
+    {{- if and .Values.temporal.enabled .Values.temporal.ui.enabled }}
+    - host: {{ .Values.temporal.ui.hostname | quote }}
+      http:
+        paths:
+          - path: {{ .Values.ingress.path | quote }}
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: {{ include "fredlab-infra.temporalUiName" . }}
+                port:
+                  name: http
+    {{- end }}
 {{- end }}

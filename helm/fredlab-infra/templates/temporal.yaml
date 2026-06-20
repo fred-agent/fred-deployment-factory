@@ -1,0 +1,233 @@
+{{- if .Values.temporal.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "fredlab-infra.temporalName" . }}
+  labels:
+    {{- include "fredlab-infra.labels" . | nindent 4 }}
+    app.kubernetes.io/component: temporal
+spec:
+  type: {{ .Values.temporal.service.type }}
+  ports:
+    - name: grpc
+      port: {{ .Values.temporal.service.grpcPort }}
+      targetPort: grpc
+    - name: metrics
+      port: {{ .Values.temporal.service.metricsPort }}
+      targetPort: metrics
+  selector:
+    {{- include "fredlab-infra.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: temporal
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "fredlab-infra.temporalName" . }}
+  labels:
+    {{- include "fredlab-infra.labels" . | nindent 4 }}
+    app.kubernetes.io/component: temporal
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "fredlab-infra.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: temporal
+  template:
+    metadata:
+      labels:
+        {{- include "fredlab-infra.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: temporal
+    spec:
+      enableServiceLinks: false
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        - name: setup-schema
+          image: {{ .Values.images.temporalAdminTools | quote }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          envFrom:
+            - secretRef:
+                name: {{ include "fredlab-infra.secretName" . }}
+          command:
+            - /bin/sh
+            - -ec
+            - |
+              until { temporal-sql-tool --plugin postgres12 --endpoint {{ include "fredlab-infra.postgresName" . }} --port {{ .Values.postgresql.service.port }} --database "$POSTGRES_TEMPORAL_DB" --user "$POSTGRES_TEMPORAL_USER" --password "$POSTGRES_TEMPORAL_PASSWORD" setup-schema -v 0.0 || true; \
+                temporal-sql-tool --plugin postgres12 --endpoint {{ include "fredlab-infra.postgresName" . }} --port {{ .Values.postgresql.service.port }} --database "$POSTGRES_TEMPORAL_DB" --user "$POSTGRES_TEMPORAL_USER" --password "$POSTGRES_TEMPORAL_PASSWORD" update-schema -d schema/postgresql/v12/temporal/versioned/; }; do
+                sleep 5
+              done
+              until { temporal-sql-tool --plugin postgres12 --endpoint {{ include "fredlab-infra.postgresName" . }} --port {{ .Values.postgresql.service.port }} --database "$POSTGRES_TEMPORAL_VISIBILITY_DB" --user "$POSTGRES_TEMPORAL_USER" --password "$POSTGRES_TEMPORAL_PASSWORD" setup-schema -v 0.0 || true; \
+                temporal-sql-tool --plugin postgres12 --endpoint {{ include "fredlab-infra.postgresName" . }} --port {{ .Values.postgresql.service.port }} --database "$POSTGRES_TEMPORAL_VISIBILITY_DB" --user "$POSTGRES_TEMPORAL_USER" --password "$POSTGRES_TEMPORAL_PASSWORD" update-schema -d schema/postgresql/v12/visibility/versioned/; }; do
+                sleep 5
+              done
+          resources:
+            {{- toYaml .Values.temporal.schema.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+      containers:
+        - name: temporal
+          image: {{ .Values.images.temporalServer | quote }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          env:
+            - name: NO_PROXY
+              value: "*"
+            - name: DB
+              value: postgres12
+            - name: DBNAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fredlab-infra.secretName" . }}
+                  key: POSTGRES_TEMPORAL_DB
+            - name: DB_PORT
+              value: {{ .Values.postgresql.service.port | quote }}
+            - name: POSTGRES_SEEDS
+              value: {{ include "fredlab-infra.postgresName" . }}
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fredlab-infra.secretName" . }}
+                  key: POSTGRES_TEMPORAL_USER
+            - name: POSTGRES_PWD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fredlab-infra.secretName" . }}
+                  key: POSTGRES_TEMPORAL_PASSWORD
+            - name: VISIBILITY_DBNAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fredlab-infra.secretName" . }}
+                  key: POSTGRES_TEMPORAL_VISIBILITY_DB
+            - name: VISIBILITY_DB_PORT
+              value: {{ .Values.postgresql.service.port | quote }}
+            - name: VISIBILITY_POSTGRES_SEEDS
+              value: {{ include "fredlab-infra.postgresName" . }}
+            - name: VISIBILITY_POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fredlab-infra.secretName" . }}
+                  key: POSTGRES_TEMPORAL_USER
+            - name: VISIBILITY_POSTGRES_PWD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fredlab-infra.secretName" . }}
+                  key: POSTGRES_TEMPORAL_PASSWORD
+            - name: TEMPORAL_ADDRESS
+              value: {{ include "fredlab-infra.temporalName" . }}:{{ .Values.temporal.service.grpcPort }}
+            - name: TEMPORAL_CLI_ADDRESS
+              value: {{ include "fredlab-infra.temporalName" . }}:{{ .Values.temporal.service.grpcPort }}
+            - name: PROMETHEUS_ENDPOINT
+              value: 0.0.0.0:{{ .Values.temporal.service.metricsPort }}
+          ports:
+            - name: grpc
+              containerPort: {{ .Values.temporal.service.grpcPort }}
+            - name: metrics
+              containerPort: {{ .Values.temporal.service.metricsPort }}
+          readinessProbe:
+            tcpSocket:
+              port: grpc
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 12
+          livenessProbe:
+            tcpSocket:
+              port: grpc
+            initialDelaySeconds: 40
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 6
+          resources:
+            {{- toYaml .Values.temporal.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+{{- if .Values.temporal.ui.enabled }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "fredlab-infra.temporalUiName" . }}
+  labels:
+    {{- include "fredlab-infra.labels" . | nindent 4 }}
+    app.kubernetes.io/component: temporal-ui
+  annotations:
+    cloud.google.com/neg: '{"ingress": true}'
+    cloud.google.com/backend-config: '{"ports": {"http":"{{ .Values.temporal.ui.backendConfig.name }}"}}'
+spec:
+  type: {{ .Values.temporal.ui.service.type }}
+  ports:
+    - name: http
+      port: {{ .Values.temporal.ui.service.port }}
+      targetPort: http
+  selector:
+    {{- include "fredlab-infra.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: temporal-ui
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "fredlab-infra.temporalUiName" . }}
+  labels:
+    {{- include "fredlab-infra.labels" . | nindent 4 }}
+    app.kubernetes.io/component: temporal-ui
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "fredlab-infra.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: temporal-ui
+  template:
+    metadata:
+      labels:
+        {{- include "fredlab-infra.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: temporal-ui
+    spec:
+      enableServiceLinks: false
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: temporal-ui
+          image: {{ .Values.images.temporalUi | quote }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          env:
+            - name: NO_PROXY
+              value: "*"
+            - name: TEMPORAL_ADDRESS
+              value: {{ include "fredlab-infra.temporalName" . }}:{{ .Values.temporal.service.grpcPort }}
+            - name: TEMPORAL_UI_PORT
+              value: {{ .Values.temporal.ui.service.port | quote }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.temporal.ui.service.port }}
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 12
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 40
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 6
+          resources:
+            {{- toYaml .Values.temporal.ui.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+{{- end }}
+{{- end }}

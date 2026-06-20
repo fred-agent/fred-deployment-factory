@@ -10,9 +10,18 @@ imagePullPolicy: IfNotPresent
 images:
   # pgvector is kept because Fred commonly expects PostgreSQL with vector support.
   postgres: pgvector/pgvector:pg17
+  postgresClient: mirror.gcr.io/postgres:15.12-alpine3.20
   keycloak: quay.io/keycloak/keycloak:26.3.0
+  openfga: openfga/openfga:v1.11.0
+  temporalServer: mirror.gcr.io/temporalio/server:1.28.0
+  temporalAdminTools: mirror.gcr.io/temporalio/admin-tools:1.28
+  temporalUi: mirror.gcr.io/temporalio/ui:2.38.3
+
+secret:
+  fullnameOverride: fredlab-infra-secrets
 
 postgresql:
+  fullnameOverride: postgres
   service:
     type: ClusterIP
     port: 5432
@@ -34,8 +43,18 @@ postgresql:
     database: keycloak
     user: keycloak_db_user
     password: ""
+  openfga:
+    database: openfga
+    user: openfga
+    password: ""
+  temporal:
+    database: temporal
+    visibilityDatabase: temporal_visibility
+    user: temporal
+    password: ""
 
 keycloak:
+  fullnameOverride: keycloak
   replicaCount: 1
   service:
     type: ClusterIP
@@ -58,11 +77,85 @@ keycloak:
     enabled: true
     managementPort: 9000
 
+openfga:
+  enabled: true
+  fullnameOverride: openfga
+  replicaCount: 1
+  service:
+    type: ClusterIP
+    httpPort: 8080
+    grpcPort: 8081
+    metricsPort: 2112
+  auth:
+    method: preshared
+    apiToken: ""
+  playground:
+    enabled: false
+    port: 3000
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      memory: 512Mi
+
+temporal:
+  enabled: true
+  fullnameOverride: temporal
+  service:
+    type: ClusterIP
+    grpcPort: 7233
+    metricsPort: 9090
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      memory: 2Gi
+  schema:
+    resources:
+      requests:
+        cpu: 250m
+        memory: 256Mi
+      limits:
+        memory: 512Mi
+  ui:
+    enabled: true
+    fullnameOverride: temporal-ui
+    hostname: temporal.playground.fredlab.dev
+    service:
+      type: ClusterIP
+      port: 8080
+    resources:
+      requests:
+        cpu: 250m
+        memory: 256Mi
+      limits:
+        memory: 512Mi
+    backendConfig:
+      name: fredlab-temporal-ui-backendconfig
+      healthCheck:
+        requestPath: /
+        port: 8080
+        type: HTTP
+        checkIntervalSec: 15
+        timeoutSec: 5
+        healthyThreshold: 1
+        unhealthyThreshold: 3
+
+adminAccess:
+  # Cloud Armor policy created outside this chart and attached through BackendConfig.
+  securityPolicyName: fredlab-admin-ui-allowlist
+  allowedOperatorCidrs:
+    dimitri: ""
+    sebastien: ""
+    simon: ""
+
 ingress:
   enabled: true
   name: fredlab-infra-ingress
   className: gce
-  domain: keycloak.playground.fredlab.dev
+  domain: playground.fredlab.dev
   keycloakHost: keycloak.playground.fredlab.dev
   # The reserved public IP address is documented here for operators.
   # GKE Ingress requires the GCP address resource name in the annotation below, not the literal IP.

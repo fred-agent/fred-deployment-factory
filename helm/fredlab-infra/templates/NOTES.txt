@@ -6,9 +6,22 @@ Keycloak internal service:
 PostgreSQL internal service:
   {{ include "fredlab-infra.postgresName" . }}:{{ .Values.postgresql.service.port }}
 
+OpenFGA internal service:
+  {{ include "fredlab-infra.openfgaName" . }}:{{ .Values.openfga.service.httpPort }} (HTTP)
+  {{ include "fredlab-infra.openfgaName" . }}:{{ .Values.openfga.service.grpcPort }} (gRPC)
+
+Temporal internal service:
+  {{ include "fredlab-infra.temporalName" . }}:{{ .Values.temporal.service.grpcPort }}
+
 External Keycloak host:
   https://{{ .Values.ingress.keycloakHost }}
+
+Temporal UI host:
+  https://{{ .Values.temporal.ui.hostname }}
 
 GKE static IP reminder:
   Reserved address: {{ .Values.ingress.staticIpAddress }}
   Ingress annotation resource name: {{ default "<set ingress.staticIpName to the GCP global address name>" .Values.ingress.staticIpName }}
+
+Admin UI Cloud Armor policy:
+  {{ .Values.adminAccess.securityPolicyName }}

@@ -14,4 +14,24 @@ spec:
     timeoutSec: {{ .Values.ingress.backendConfig.healthCheck.timeoutSec }}
     healthyThreshold: {{ .Values.ingress.backendConfig.healthCheck.healthyThreshold }}
     unhealthyThreshold: {{ .Values.ingress.backendConfig.healthCheck.unhealthyThreshold }}
+{{- if and .Values.temporal.enabled .Values.temporal.ui.enabled }}
+---
+apiVersion: cloud.google.com/v1
+kind: BackendConfig
+metadata:
+  name: {{ .Values.temporal.ui.backendConfig.name }}
+  labels:
+    {{- include "fredlab-infra.labels" . | nindent 4 }}
+spec:
+  securityPolicy:
+    name: {{ required "adminAccess.securityPolicyName is required when Temporal UI is exposed." .Values.adminAccess.securityPolicyName | quote }}
+  healthCheck:
+    requestPath: {{ .Values.temporal.ui.backendConfig.healthCheck.requestPath | quote }}
+    port: {{ .Values.temporal.ui.backendConfig.healthCheck.port }}
+    type: {{ .Values.temporal.ui.backendConfig.healthCheck.type }}
+    checkIntervalSec: {{ .Values.temporal.ui.backendConfig.healthCheck.checkIntervalSec }}
+    timeoutSec: {{ .Values.temporal.ui.backendConfig.healthCheck.timeoutSec }}
+    healthyThreshold: {{ .Values.temporal.ui.backendConfig.healthCheck.healthyThreshold }}
+    unhealthyThreshold: {{ .Values.temporal.ui.backendConfig.healthCheck.unhealthyThreshold }}
+{{- end }}
 {{- end }}

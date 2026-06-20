@@ -1,0 +1,51 @@
+{{- if .Values.temporal.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: temporal-namespace-provision
+  labels:
+    {{- include "fredlab-infra.labels" . | nindent 4 }}
+    app.kubernetes.io/component: temporal-namespace-provision
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-weight: "20"
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 6
+  template:
+    metadata:
+      labels:
+        {{- include "fredlab-infra.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: temporal-namespace-provision
+    spec:
+      enableServiceLinks: false
+      restartPolicy: OnFailure
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: temporal-namespace-provision
+          image: {{ .Values.images.temporalAdminTools | quote }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          env:
+            - name: TEMPORAL_CLI_ADDRESS
+              value: {{ include "fredlab-infra.temporalName" . }}:{{ .Values.temporal.service.grpcPort }}
+          command:
+            - /bin/sh
+            - -ec
+            - |
+              until tctl --address "$TEMPORAL_CLI_ADDRESS" cluster health; do sleep 5; done
+              tctl --address "$TEMPORAL_CLI_ADDRESS" --ns default namespace describe >/dev/null 2>&1 || \
+                tctl --address "$TEMPORAL_CLI_ADDRESS" --ns default namespace register
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+{{- end }}

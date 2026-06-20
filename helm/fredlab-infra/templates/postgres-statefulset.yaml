@@ -83,13 +83,6 @@ spec:
           volumeMounts:
             - name: data
               mountPath: /var/lib/postgresql/data
-            - name: initdb
-              mountPath: /docker-entrypoint-initdb.d/001-keycloak.sql
-              subPath: 001-keycloak.sql
-      volumes:
-        - name: initdb
-          configMap:
-            name: {{ include "fredlab-infra.postgresName" . }}-init
   volumeClaimTemplates:
     - metadata:
         name: data
