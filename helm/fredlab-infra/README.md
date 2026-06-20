@@ -1,8 +1,8 @@
 # Fredlab Infra
-Helm chart for the Fredlab playground infrastructure on GKE Autopilot.
+
+Helm chart for the Fredlab playground on GKE Autopilot.
 
 ## Scope
-Deployed components:
 
 | Component | Visibility | Internal DNS | Public host |
 | --- | --- | --- | --- |
@@ -10,67 +10,145 @@ Deployed components:
 | Keycloak | Public | `keycloak:8080` | `keycloak.playground.fredlab.dev` |
 | OpenFGA | Private | `openfga:8080`, `openfga:8081` | none |
 | Temporal | Private | `temporal:7233` | none |
-| Temporal UI | Protected public admin UI | `temporal-ui:8080` | `temporal.playground.fredlab.dev` |
+| Temporal UI | Protected admin UI | `temporal-ui:8080` | `temporal.playground.fredlab.dev` |
+| Control Plane backend | Private | `control-plane-backend:8080` | none |
 
-All services use `ClusterIP`. Public routing is handled only by the GKE `gce` Ingress named `fredlab-infra-ingress`.
+All services use `ClusterIP`. Public routing is handled by the GKE `gce` Ingress named `fredlab-infra-ingress`.
 
 ## Naming Rules
-This chart intentionally avoids Helm release-name prefixes for service DNS. Component names are fixed through `fullnameOverride` values:
 
-- Private services use short names: `postgres`, `openfga`, `temporal`
-- Public services use short service names plus DNS hosts under `*.playground.fredlab.dev`
-- Future backends should use `[app-name]-backend`
-- Future frontends should use `[app-name]-frontend`
-- Future admin UUs should use `[component]-ui`
+This chart avoids Helm release-name prefixes for service DNS. Component names are fixed through `fullnameOverride` values:
+
+- private services use short names: `postgres`, `openfga`, `temporal`
+- app backends use `[app-name]-backend`
+- app frontends use `[app-name]-frontend`
+- admin UIs use `[component]-ui`
 
 ## Security
+
 The chart is designed for GKE Autopilot:
-- No privileged containers
-- No node-level `sysctl`
-- F privileged `chown` init jobs
-- Explicit CPU and memory requests
-- Secrets are supplied through a local values file ignored by Git
 
-Admin UUs exposed through Ingress must use Cloud Armor IP allowlisting. Temporal UI is wired through a `BackendConfig` that references the policy: `fredlab-admin-ui-allowlist`.
+- no privileged containers
+- no node-level `sysctl`
+- no privileged `chown` init jobs
+- explicit CPU and memory requests
+- real secrets are supplied through `fredlab-secrets.values.yaml`, which is ignored by Git
 
-Maintain the intended operator CIDR placeholders in `values.yaml` (the real IPs live in `fredlab-secrets.values.yaml` under the same structure):
+Admin UIs exposed through Ingress must use Cloud Armor IP allowlisting. Temporal UI is wired through the policy:
 
-```yaml
-adminAccess:
- allowedOperatorCidrs:
-    dimitri: ""
-    sebastien: ""
-    simon: ""
+```text
+fredlab-admin-ui-allowlist
 ```
 
 ## Secrets
-The chart is safe to commit. Real passwords and sensitive configuration live only in:
-```text
-helm/fredlab-infra/fredlab-secrets.values.yaml
-```JThis file is ignored by Git. Create it from the template:
-``bash
+
+Create the local secret values file from the committed template:
+
+```bash
 cp helm/fredlab-infra/fredlab-secrets.values.example.yaml \
    helm/fredlab-infra/fredlab-secrets.values.yaml
 ```
-Required secret values:
+
+Required values include:
+
 - `postgresql.admin.password`
 - `postgresql.keycloak.password`
-- `postgresql.openfga.password
+- `postgresql.openfga.password`
 - `postgresql.temporal.password`
+- `postgresql.fred.password`
 - `keycloak.admin.password`
+- `keycloak.clients.controlPlane.secret`
 - `openfga.auth.apiToken`
 
-## Deploy
-Find the GCP global address resource name for the reserved static IP:
-``bash
-gcloud compute addresses list --global
-```Install or upgrade dynamically:
-``bash
+## Control Plane Image
+
+The Control Plane backend is present in the chart but disabled by default until an image is available.
+
+Control Plane deployment is intentionally split into two short actions:
+
+1. run `controlPlane.migration.enabled=true` to execute `alembic upgrade head`
+2. run `controlPlane.enabled=true` to start the backend
+
+This makes it clear that:
+
+- `postgres-provision` creates the `fred` database and user
+- the Control Plane migration job creates the application tables
+- the backend deployment only starts the HTTP service
+
+Build and push an image from the Fred source repository in Cloud Shell. Adapt the Dockerfile path to the real Fred repo layout:
+
+```bash
+PROJECT_ID="$(gcloud config get-value project)"
+REGION="europe-west1"
+REPOSITORY="fred"
+IMAGE="control-plane-backend"
+TAG="$(git rev-parse --short HEAD)"
+
+gcloud artifacts repositories create "${REPOSITORY}" \
+  --repository-format=docker \
+  --location="${REGION}" \
+  --description="Fred playground images" || true
+
+gcloud auth configure-docker "${REGION}-docker.pkg.dev"
+
+docker build \
+  -t "${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/${IMAGE}:${TAG}" \
+  -f apps/control-plane-backend/dockerfiles/Dockerfile-prod \
+  .
+
+docker push "${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/${IMAGE}:${TAG}"
+```
+
+Run migrations once the image exists:
+
+```bash
 helm upgrade --install fredlab-infra ./helm/fredlab-infra \
   --namespace default \
   -f helm/fredlab-infra/fredlab-secrets.values.yaml \
-  --set ingress.staticIpName=fredlab-playground-ip
-```Check cluster convergence:
-fbash
-./bin/check-fredlab.sh
+  --set controlPlane.migration.enabled=true \
+  --set controlPlane.enabled=false \
+  --set controlPlane.image.repository="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/${IMAGE}" \
+  --set controlPlane.image.tag="${TAG}"
+```
+
+Then start the backend:
+
+```bash
+helm upgrade --install fredlab-infra ./helm/fredlab-infra \
+  --namespace default \
+  -f helm/fredlab-infra/fredlab-secrets.values.yaml \
+  --set controlPlane.migration.enabled=false \
+  --set controlPlane.enabled=true \
+  --set controlPlane.image.repository="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/${IMAGE}" \
+  --set controlPlane.image.tag="${TAG}"
+```
+
+If the application exposes health on a different path, override it:
+
+```bash
+--set controlPlane.health.path=/actuator/health
+```
+
+If the application needs additional environment variables, use:
+
+```yaml
+controlPlane:
+  extraEnv:
+    SOME_SETTING: value
+```
+
+## Deploy
+
+Install or upgrade the foundation without Control Plane:
+
+```bash
+helm upgrade --install fredlab-infra ./helm/fredlab-infra \
+  --namespace default \
+  -f helm/fredlab-infra/fredlab-secrets.values.yaml
+```
+
+Check:
+
+```bash
+kubectl get pods,svc,ingress,backendconfig,managedcertificate
 ```

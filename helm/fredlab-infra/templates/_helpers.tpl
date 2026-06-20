@@ -43,6 +43,10 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- default "temporal-ui" .Values.temporal.ui.fullnameOverride | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 
+{{- define "fredlab-infra.controlPlaneBackendName" -}}
+{{- default "control-plane-backend" .Values.controlPlane.fullnameOverride | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+
 {{- define "fredlab-infra.secretName" -}}
 {{- default "fredlab-infra-secrets" .Values.secret.fullnameOverride | trunc 63 | trimSuffix "-" -}}
 {{- end -}}

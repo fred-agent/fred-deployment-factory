@@ -8,7 +8,7 @@ metadata:
   annotations:
     helm.sh/hook: post-install,post-upgrade
     helm.sh/hook-weight: "0"
-    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+    helm.sh/hook-delete-policy: before-hook-creation
 spec:
   backoffLimit: 6
   template:
@@ -80,6 +80,7 @@ spec:
               provision_db "$POSTGRES_OPENFGA_DB" "$POSTGRES_OPENFGA_USER" "$POSTGRES_OPENFGA_PASSWORD"
               provision_db "$POSTGRES_TEMPORAL_DB" "$POSTGRES_TEMPORAL_USER" "$POSTGRES_TEMPORAL_PASSWORD"
               provision_db "$POSTGRES_TEMPORAL_VISIBILITY_DB" "$POSTGRES_TEMPORAL_USER" "$POSTGRES_TEMPORAL_PASSWORD"
+              provision_db "$POSTGRES_FRED_DB" "$POSTGRES_FRED_USER" "$POSTGRES_FRED_PASSWORD"
           resources:
             requests:
               cpu: 100m

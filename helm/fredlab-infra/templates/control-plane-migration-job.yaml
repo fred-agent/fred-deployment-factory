@@ -1,0 +1,64 @@
+{{- if .Values.controlPlane.migration.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: control-plane-migration
+  labels:
+    {{- include "fredlab-infra.labels" . | nindent 4 }}
+    app.kubernetes.io/component: control-plane-migration
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-weight: "30"
+    helm.sh/hook-delete-policy: before-hook-creation
+spec:
+  backoffLimit: {{ .Values.controlPlane.migration.backoffLimit }}
+  template:
+    metadata:
+      labels:
+        {{- include "fredlab-infra.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: control-plane-migration
+    spec:
+      enableServiceLinks: false
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: control-plane-migration
+          image: {{ printf "%s:%s" (required "controlPlane.image.repository is required when controlPlane.migration.enabled=true." .Values.controlPlane.image.repository) (required "controlPlane.image.tag is required when controlPlane.migration.enabled=true." .Values.controlPlane.image.tag) | quote }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          command:
+            {{- toYaml .Values.controlPlane.migration.command | nindent 12 }}
+          args:
+            {{- toYaml .Values.controlPlane.migration.args | nindent 12 }}
+          env:
+            - name: POSTGRES_HOST
+              value: {{ include "fredlab-infra.postgresName" . }}
+            - name: POSTGRES_PORT
+              value: {{ .Values.postgresql.service.port | quote }}
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fredlab-infra.secretName" . }}
+                  key: POSTGRES_FRED_DB
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fredlab-infra.secretName" . }}
+                  key: POSTGRES_FRED_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fredlab-infra.secretName" . }}
+                  key: POSTGRES_FRED_PASSWORD
+            - name: DATABASE_URL
+              value: "postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@{{ include "fredlab-infra.postgresName" . }}:{{ .Values.postgresql.service.port }}/$(POSTGRES_DB)?sslmode=disable"
+          resources:
+            {{- toYaml .Values.controlPlane.migration.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+{{- end }}

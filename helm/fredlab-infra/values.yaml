@@ -52,6 +52,10 @@ postgresql:
     visibilityDatabase: temporal_visibility
     user: temporal
     password: ""
+  fred:
+    database: fred
+    user: fred
+    password: ""
 
 keycloak:
   fullnameOverride: keycloak
@@ -63,6 +67,9 @@ keycloak:
   admin:
     user: admin
     password: ""
+  clients:
+    controlPlane:
+      secret: ""
   resources:
     requests:
       cpu: 500m
@@ -150,6 +157,51 @@ adminAccess:
     dimitri: ""
     sebastien: ""
     simon: ""
+
+controlPlane:
+  enabled: false
+  fullnameOverride: control-plane-backend
+  replicaCount: 1
+  image:
+    # Example Artifact Registry image:
+    # europe-west1-docker.pkg.dev/<project-id>/fred/control-plane-backend
+    repository: ""
+    tag: ""
+  service:
+    type: ClusterIP
+    port: 8080
+  containerPort: 8222
+  health:
+    path: /healthz
+  migration:
+    enabled: false
+    backoffLimit: 3
+    command:
+      - alembic
+    args:
+      - upgrade
+      - head
+    resources:
+      requests:
+        cpu: 250m
+        memory: 256Mi
+      limits:
+        memory: 512Mi
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      memory: 1Gi
+  config:
+    keycloakRealm: app
+    keycloakInternalUrl: http://keycloak:8080
+    keycloakIssuerUrl: https://keycloak.playground.fredlab.dev/realms/app
+    keycloakClientId: control-plane
+    openfgaUrl: http://openfga:8080
+    openfgaStoreName: fred
+    temporalAddress: temporal:7233
+  extraEnv: {}
 
 ingress:
   enabled: true

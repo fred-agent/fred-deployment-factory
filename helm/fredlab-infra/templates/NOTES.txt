@@ -19,6 +19,20 @@ External Keycloak host:
 Temporal UI host:
   https://{{ .Values.temporal.ui.hostname }}
 
+Control Plane backend:
+  {{- if .Values.controlPlane.enabled }}
+  {{ include "fredlab-infra.controlPlaneBackendName" . }}:{{ .Values.controlPlane.service.port }}
+  {{- else }}
+  disabled (set controlPlane.enabled=true and provide controlPlane.image.repository/tag)
+  {{- end }}
+
+Control Plane migration:
+  {{- if .Values.controlPlane.migration.enabled }}
+  enabled (alembic upgrade head)
+  {{- else }}
+  disabled (set controlPlane.migration.enabled=true to run Alembic)
+  {{- end }}
+
 GKE static IP reminder:
   Reserved address: {{ .Values.ingress.staticIpAddress }}
   Ingress annotation resource name: {{ default "<set ingress.staticIpName to the GCP global address name>" .Values.ingress.staticIpName }}
