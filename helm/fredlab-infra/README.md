@@ -100,7 +100,7 @@ Control Plane deployment uses the helper scripts from the repository root:
 
 ```bash
 bin/fredlab-gcp-build-prereqs.sh
-FRED_REPO_DIR=~/fred TAG=0.2 bin/fredlab-build-control-plane-image.sh
+FRED_REPO_DIR=~/fred IMAGE=control-plane-backend DOCKERFILE=apps/control-plane-backend/dockerfiles/Dockerfile-prod TAG=0.2 bin/fredlab-build-image.sh
 bin/fredlab-control-plane-deploy.sh migrate 0.2
 bin/fredlab-control-plane-deploy.sh start 0.2
 ```

@@ -118,10 +118,24 @@ Use Cloud Build as the official build path. This avoids depending on Cloud Shell
 Run from the deployment factory repository:
 
 ```bash
-FRED_REPO_DIR=~/fred TAG=0.2 bin/fredlab-build-control-plane-image.sh
+FRED_REPO_DIR=~/fred \
+IMAGE=control-plane-backend \
+DOCKERFILE=apps/control-plane-backend/dockerfiles/Dockerfile-prod \
+TAG=0.2 \
+bin/fredlab-build-image.sh
 ```
 
 If `TAG` is omitted, the script uses the short Git commit SHA from the Fred source repository.
+
+For another Fred image, keep the same command shape and change `IMAGE` and `DOCKERFILE`:
+
+```bash
+FRED_REPO_DIR=~/fred \
+IMAGE=<artifact-registry-image-name> \
+DOCKERFILE=<path-from-fred-repo-root-to-Dockerfile> \
+TAG=<tag> \
+bin/fredlab-build-image.sh
+```
 
 Validate:
 
