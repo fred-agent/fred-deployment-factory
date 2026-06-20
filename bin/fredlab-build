@@ -1,0 +1,85 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+CATALOG="${IMAGE_CATALOG:-${REPO_ROOT}/config/fredlab-images.tsv}"
+
+usage() {
+  cat <<'EOF'
+Usage:
+  bin/fredlab-build list
+  bin/fredlab-build <name> [tag]
+
+Examples:
+  bin/fredlab-build frontend 0.2
+  bin/fredlab-build control-plane-backend 0.2
+  bin/fredlab-build fred-agents 0.2
+
+The image catalog is config/fredlab-images.tsv.
+EOF
+}
+
+expand_path() {
+  local value="$1"
+  case "${value}" in
+    "~")
+      printf '%s\n' "${HOME}"
+      ;;
+    "~/"*)
+      printf '%s/%s\n' "${HOME}" "${value#~/}"
+      ;;
+    "\$HOME/"*)
+      printf '%s/%s\n' "${HOME}" "${value#\$HOME/}"
+      ;;
+    *)
+      printf '%s\n' "${value}"
+      ;;
+  esac
+}
+
+list_images() {
+  printf '%-28s %-32s %-28s %s\n' "NAME" "IMAGE" "REPO_DIR" "DOCKERFILE"
+  while IFS=$'\t' read -r name image repo_dir dockerfile build_context; do
+    [[ -z "${name}" || "${name}" == \#* ]] && continue
+    printf '%-28s %-32s %-28s %s\n' "${name}" "${image}" "${repo_dir}" "${dockerfile}"
+  done < "${CATALOG}"
+}
+
+if [[ ! -f "${CATALOG}" ]]; then
+  echo "Missing image catalog: ${CATALOG}"
+  exit 1
+fi
+
+COMMAND="${1:-}"
+case "${COMMAND}" in
+  ""|-h|--help)
+    usage
+    exit 0
+    ;;
+  list)
+    list_images
+    exit 0
+    ;;
+esac
+
+TARGET_NAME="${COMMAND}"
+TAG="${2:-${TAG:-}}"
+
+while IFS=$'\t' read -r name image repo_dir dockerfile build_context; do
+  [[ -z "${name}" || "${name}" == \#* ]] && continue
+  [[ "${name}" != "${TARGET_NAME}" ]] && continue
+
+  FRED_REPO_DIR="$(expand_path "${repo_dir}")" \
+  IMAGE="${image}" \
+  DOCKERFILE="${dockerfile}" \
+  BUILD_CONTEXT="${build_context:-.}" \
+  TAG="${TAG}" \
+  "${SCRIPT_DIR}/fredlab-build-image.sh"
+  exit 0
+done < "${CATALOG}"
+
+echo "Unknown image name: ${TARGET_NAME}"
+echo
+list_images
+exit 1

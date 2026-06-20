@@ -1,0 +1,17 @@
+# Image build catalog used by bin/fredlab-build.
+# Columns are tab-separated:
+# name	image	repo_dir	dockerfile	build_context
+#
+# name: short command name used as `bin/fredlab-build <name> <tag>`
+# image: Artifact Registry image name under fredlab-repo
+# repo_dir: local source repository root in Cloud Shell
+# dockerfile: Dockerfile path from repo_dir
+# build_context: Docker build context from repo_dir, usually `.`
+control-plane-backend	control-plane-backend	$HOME/fred	apps/control-plane-backend/dockerfiles/Dockerfile-prod	.
+frontend	fred-frontend	$HOME/fred	apps/frontend/dockerfiles/Dockerfile-prod	.
+fred-agents	fred-agents	$HOME/fred	apps/fred-agents/dockerfiles/Dockerfile-prod	.
+knowledge-flow-backend	knowledge-flow-backend	$HOME/fred	apps/knowledge-flow-backend/dockerfiles/Dockerfile-prod	.
+fred-evaluation-api	fred-evaluation-api	$HOME/fred	apps/fred-evaluation-backend/dockerfiles/Dockerfile-api	.
+fred-evaluation-worker	fred-evaluation-worker	$HOME/fred	apps/fred-evaluation-backend/dockerfiles/Dockerfile-worker	.
+dt-agents	dt-agents	$HOME/dt-agents	dockerfiles/Dockerfile	.
+fred-samples	fred-samples	$HOME/fred-samples	dockerfiles/Dockerfile	.

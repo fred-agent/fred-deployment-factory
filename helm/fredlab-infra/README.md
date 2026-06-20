@@ -88,7 +88,7 @@ Expected:
 
 Use [DEPLOYMENT-STEPS.md](./DEPLOYMENT-STEPS.md) for the canonical GKE deployment procedure.
 
-Foundation only:
+Foundation:
 
 ```bash
 helm upgrade --install fredlab-infra ./helm/fredlab-infra \
@@ -96,11 +96,23 @@ helm upgrade --install fredlab-infra ./helm/fredlab-infra \
   -f helm/fredlab-infra/fredlab-secrets.values.yaml
 ```
 
-Control Plane deployment uses the helper scripts from the repository root:
+Images:
+
+Image builds are driven by a small committed catalog: [config/fredlab-images.tsv](../../config/fredlab-images.tsv). This keeps daily commands short while making the required conventions explicit.
 
 ```bash
 bin/fredlab-gcp-build-prereqs.sh
-FRED_REPO_DIR=~/fred IMAGE=control-plane-backend DOCKERFILE=apps/control-plane-backend/dockerfiles/Dockerfile-prod TAG=0.2 bin/fredlab-build-image.sh
+bin/fredlab-build list
+bin/fredlab-build control-plane-backend 0.2
+bin/fredlab-build frontend 0.2
+bin/fredlab-build fred-agents 0.2
+```
+
+The catalog assumes source repositories exist in Cloud Shell at paths such as `~/fred`, `~/dt-agents`, or `~/fred-samples`, and that each image has a Dockerfile path declared from that repository root.
+
+Control Plane runtime:
+
+```bash
 bin/fredlab-control-plane-deploy.sh migrate 0.2
 bin/fredlab-control-plane-deploy.sh start 0.2
 ```

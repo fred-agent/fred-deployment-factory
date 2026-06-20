@@ -111,31 +111,40 @@ gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
   --role="roles/artifactregistry.reader"
 ```
 
-## 6. Build And Push Control Plane Image
+## 6. Build And Push Images
 
-Use Cloud Build as the official build path. This avoids depending on Cloud Shell Docker push connectivity and keeps the build reproducible from the Fred source repository.
+Use Cloud Build as the official build path. This avoids depending on Cloud Shell Docker push connectivity and keeps builds reproducible from source repositories. The build script enables Docker BuildKit, which is required by modern Dockerfile features such as `COPY --chmod`.
 
-Run from the deployment factory repository:
-
-```bash
-FRED_REPO_DIR=~/fred \
-IMAGE=control-plane-backend \
-DOCKERFILE=apps/control-plane-backend/dockerfiles/Dockerfile-prod \
-TAG=0.2 \
-bin/fredlab-build-image.sh
-```
-
-If `TAG` is omitted, the script uses the short Git commit SHA from the Fred source repository.
-
-For another Fred image, keep the same command shape and change `IMAGE` and `DOCKERFILE`:
+The short command is:
 
 ```bash
-FRED_REPO_DIR=~/fred \
-IMAGE=<artifact-registry-image-name> \
-DOCKERFILE=<path-from-fred-repo-root-to-Dockerfile> \
-TAG=<tag> \
-bin/fredlab-build-image.sh
+bin/fredlab-build <name> <tag>
 ```
+
+Examples:
+
+```bash
+bin/fredlab-build control-plane-backend 0.2
+bin/fredlab-build frontend 0.2
+bin/fredlab-build fred-agents 0.2
+bin/fredlab-build knowledge-flow-backend 0.2
+```
+
+Known images are declared in [config/fredlab-images.tsv](../../config/fredlab-images.tsv):
+
+```bash
+bin/fredlab-build list
+```
+
+The catalog is the contract. For each image it declares:
+
+- short name used in the command
+- Artifact Registry image name
+- local source repository root, for example `~/fred`
+- Dockerfile path from that source repository root
+- Docker build context, usually `.`
+
+If a build fails immediately with `Cannot find Dockerfile`, fix the catalog entry or clone the missing source repository at the declared path. If the tag is omitted, `bin/fredlab-build` uses the short Git commit SHA from the source repository declared in the catalog.
 
 Validate:
 
@@ -143,7 +152,7 @@ Validate:
 PROJECT_ID="$(gcloud config get-value project)"
 REGION="europe-west1"
 REPOSITORY="fredlab-repo"
-IMAGE="control-plane-backend"
+IMAGE="<image-name>"
 
 gcloud artifacts docker images list \
   "${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/${IMAGE}" \
@@ -154,7 +163,7 @@ Expected: tag `0.2` is listed.
 
 Do not use a local "push image" wrapper for this step. `gcloud builds submit --tag ... .` rebuilds the current directory; it does not upload an already-built local Docker image passed as an argument. If an image was built locally first, treat it only as a quick local sanity check and still run the Cloud Build command above for the deployable image.
 
-Image contract:
+Control Plane image contract:
 
 - contains `alembic`, `alembic.ini`, and `alembic/versions`
 - supports `alembic upgrade head`

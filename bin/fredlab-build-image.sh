@@ -38,6 +38,8 @@ trap 'rm -f "${BUILD_CONFIG}"' EXIT
 cat > "${BUILD_CONFIG}" <<EOF
 steps:
   - name: gcr.io/cloud-builders/docker
+    env:
+      - DOCKER_BUILDKIT=1
     args:
       - build
       - -f
