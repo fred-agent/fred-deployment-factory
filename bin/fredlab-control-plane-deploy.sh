@@ -1,0 +1,82 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+usage() {
+  cat <<'EOF'
+Usage:
+  bin/fredlab-control-plane-deploy.sh migrate <tag>
+  bin/fredlab-control-plane-deploy.sh start <tag>
+  bin/fredlab-control-plane-deploy.sh disable
+
+Environment overrides:
+  PROJECT_ID, REGION, REPOSITORY, IMAGE, NAMESPACE, SECRET_VALUES_FILE
+EOF
+}
+
+ACTION="${1:-}"
+TAG="${2:-${TAG:-}}"
+
+if [[ -z "${ACTION}" ]]; then
+  usage
+  exit 1
+fi
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+CHART_DIR="${CHART_DIR:-${REPO_ROOT}/helm/fredlab-infra}"
+SECRET_VALUES_FILE="${SECRET_VALUES_FILE:-${CHART_DIR}/fredlab-secrets.values.yaml}"
+NAMESPACE="${NAMESPACE:-default}"
+
+PROJECT_ID="${PROJECT_ID:-$(gcloud config get-value project 2>/dev/null)}"
+REGION="${REGION:-europe-west1}"
+REPOSITORY="${REPOSITORY:-fredlab-repo}"
+IMAGE="${IMAGE:-control-plane-backend}"
+IMAGE_REPOSITORY="${IMAGE_REPOSITORY:-${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/${IMAGE}}"
+
+if [[ ! -f "${SECRET_VALUES_FILE}" ]]; then
+  echo "Missing secret values file: ${SECRET_VALUES_FILE}"
+  exit 1
+fi
+
+case "${ACTION}" in
+  migrate)
+    if [[ -z "${TAG}" ]]; then
+      echo "Missing image tag for migrate."
+      usage
+      exit 1
+    fi
+    helm upgrade --install fredlab-infra "${CHART_DIR}" \
+      --namespace "${NAMESPACE}" \
+      -f "${SECRET_VALUES_FILE}" \
+      --set controlPlane.migration.enabled=true \
+      --set controlPlane.enabled=false \
+      --set controlPlane.image.repository="${IMAGE_REPOSITORY}" \
+      --set controlPlane.image.tag="${TAG}"
+    ;;
+  start)
+    if [[ -z "${TAG}" ]]; then
+      echo "Missing image tag for start."
+      usage
+      exit 1
+    fi
+    helm upgrade --install fredlab-infra "${CHART_DIR}" \
+      --namespace "${NAMESPACE}" \
+      -f "${SECRET_VALUES_FILE}" \
+      --set controlPlane.migration.enabled=false \
+      --set controlPlane.enabled=true \
+      --set controlPlane.image.repository="${IMAGE_REPOSITORY}" \
+      --set controlPlane.image.tag="${TAG}"
+    ;;
+  disable)
+    helm upgrade --install fredlab-infra "${CHART_DIR}" \
+      --namespace "${NAMESPACE}" \
+      -f "${SECRET_VALUES_FILE}" \
+      --set controlPlane.migration.enabled=false \
+      --set controlPlane.enabled=false
+    ;;
+  *)
+    echo "Unknown action: ${ACTION}"
+    usage
+    exit 1
+    ;;
+esac

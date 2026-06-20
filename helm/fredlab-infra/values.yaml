@@ -164,7 +164,7 @@ controlPlane:
   replicaCount: 1
   image:
     # Example Artifact Registry image:
-    # europe-west1-docker.pkg.dev/<project-id>/fred/control-plane-backend
+    # europe-west1-docker.pkg.dev/<project-id>/fredlab-repo/control-plane-backend
     repository: ""
     tag: ""
   service:

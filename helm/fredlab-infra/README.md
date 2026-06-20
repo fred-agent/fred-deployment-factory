@@ -96,24 +96,13 @@ helm upgrade --install fredlab-infra ./helm/fredlab-infra \
   -f helm/fredlab-infra/fredlab-secrets.values.yaml
 ```
 
-Control Plane is deployed in two explicit phases:
+Control Plane deployment uses the helper scripts from the repository root:
 
 ```bash
-# 1. Run database migrations.
-helm upgrade --install fredlab-infra ./helm/fredlab-infra \
-  --namespace default \
-  -f helm/fredlab-infra/fredlab-secrets.values.yaml \
-  --set controlPlane.migration.enabled=true \
-  --set controlPlane.enabled=false \
-  --set controlPlane.image.repository="<artifact-registry-image>" \
-  --set controlPlane.image.tag="<tag>"
-
-# 2. Start the backend.
-helm upgrade --install fredlab-infra ./helm/fredlab-infra \
-  --namespace default \
-  -f helm/fredlab-infra/fredlab-secrets.values.yaml \
-  --set controlPlane.migration.enabled=false \
-  --set controlPlane.enabled=true \
-  --set controlPlane.image.repository="<artifact-registry-image>" \
-  --set controlPlane.image.tag="<tag>"
+bin/fredlab-gcp-build-prereqs.sh
+FRED_REPO_DIR=~/fred TAG=0.2 bin/fredlab-build-control-plane-image.sh
+bin/fredlab-control-plane-deploy.sh migrate 0.2
+bin/fredlab-control-plane-deploy.sh start 0.2
 ```
+
+The deployment phase stays explicit: migrations run first, then the HTTP backend starts.

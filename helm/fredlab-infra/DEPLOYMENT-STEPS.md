@@ -98,17 +98,10 @@ Expected: database `fred` exists.
 Run once per project:
 
 ```bash
-PROJECT_ID="$(gcloud config get-value project)"
-REGION="europe-west1"
-REPOSITORY="fred"
-
-gcloud artifacts repositories create "${REPOSITORY}" \
-  --repository-format=docker \
-  --location="${REGION}" \
-  --description="Fred playground images" || true
-
-gcloud auth configure-docker "${REGION}-docker.pkg.dev"
+bin/fredlab-gcp-build-prereqs.sh
 ```
+
+The script enables the required APIs, creates Artifact Registry repository `fredlab-repo`, grants Cloud Build write access to Artifact Registry, grants Cloud Build logging rights, and grants Cloud Build read access to the staging bucket `gs://<project-id>_cloudbuild`.
 
 If the GKE pull identity does not already have access, grant:
 
@@ -120,32 +113,32 @@ gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
 
 ## 6. Build And Push Control Plane Image
 
-Run from the root of the Fred source repository:
+Use Cloud Build as the official build path. This avoids depending on Cloud Shell Docker push connectivity and keeps the build reproducible from the Fred source repository.
+
+Run from the deployment factory repository:
 
 ```bash
-PROJECT_ID="$(gcloud config get-value project)"
-REGION="europe-west1"
-REPOSITORY="fred"
-IMAGE="control-plane-backend"
-TAG="$(git rev-parse --short HEAD)"
-
-docker build \
-  -t "${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/${IMAGE}:${TAG}" \
-  -f apps/control-plane-backend/dockerfiles/Dockerfile-prod \
-  .
-
-docker push "${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/${IMAGE}:${TAG}"
+FRED_REPO_DIR=~/fred TAG=0.2 bin/fredlab-build-control-plane-image.sh
 ```
+
+If `TAG` is omitted, the script uses the short Git commit SHA from the Fred source repository.
 
 Validate:
 
 ```bash
+PROJECT_ID="$(gcloud config get-value project)"
+REGION="europe-west1"
+REPOSITORY="fredlab-repo"
+IMAGE="control-plane-backend"
+
 gcloud artifacts docker images list \
   "${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/${IMAGE}" \
   --include-tags
 ```
 
-Expected: `${TAG}` is listed.
+Expected: tag `0.2` is listed.
+
+Do not use a local "push image" wrapper for this step. `gcloud builds submit --tag ... .` rebuilds the current directory; it does not upload an already-built local Docker image passed as an argument. If an image was built locally first, treat it only as a quick local sanity check and still run the Cloud Build command above for the deployable image.
 
 Image contract:
 
@@ -157,13 +150,7 @@ Image contract:
 ## 7. Run Control Plane Migrations
 
 ```bash
-helm upgrade --install fredlab-infra ./helm/fredlab-infra \
-  --namespace default \
-  -f helm/fredlab-infra/fredlab-secrets.values.yaml \
-  --set controlPlane.migration.enabled=true \
-  --set controlPlane.enabled=false \
-  --set controlPlane.image.repository="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/${IMAGE}" \
-  --set controlPlane.image.tag="${TAG}"
+bin/fredlab-control-plane-deploy.sh migrate 0.2
 ```
 
 Validate:
@@ -197,13 +184,7 @@ Expected: at least one Alembic revision is present.
 ## 9. Start Control Plane Backend
 
 ```bash
-helm upgrade --install fredlab-infra ./helm/fredlab-infra \
-  --namespace default \
-  -f helm/fredlab-infra/fredlab-secrets.values.yaml \
-  --set controlPlane.migration.enabled=false \
-  --set controlPlane.enabled=true \
-  --set controlPlane.image.repository="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/${IMAGE}" \
-  --set controlPlane.image.tag="${TAG}"
+bin/fredlab-control-plane-deploy.sh start 0.2
 ```
 
 Validate:
@@ -263,9 +244,5 @@ Use only for immutable StatefulSet spec drift.
 ### Disable Control Plane Without Deleting Data
 
 ```bash
-helm upgrade --install fredlab-infra ./helm/fredlab-infra \
-  --namespace default \
-  -f helm/fredlab-infra/fredlab-secrets.values.yaml \
-  --set controlPlane.enabled=false \
-  --set controlPlane.migration.enabled=false
+bin/fredlab-control-plane-deploy.sh disable
 ```
