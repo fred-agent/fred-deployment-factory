@@ -168,12 +168,16 @@ Control Plane image contract:
 - contains `alembic`, `alembic.ini`, and `alembic/versions`
 - supports `alembic upgrade head`
 - runs as UID/GID `1000`, matching the chart `runAsUser`/`runAsGroup`
+- uses `postgresql+asyncpg://...` for `DATABASE_URL`
+- loads Fredlab runtime config from the `control-plane-config` ConfigMap through `CONFIG_FILE`
 - runs the FastAPI server on container port `8222`
-- exposes `/healthz`
+- exposes `/control-plane/v1/healthz`
 
 ## 7. Run Control Plane Migrations
 
 `migrate` means "bring the Control Plane PostgreSQL schema to the version expected by this image". It runs a temporary Kubernetes Job executing `alembic upgrade head`. On a fresh database, this creates the initial tables; on an existing database, it applies pending schema changes.
+
+The chart provides a Fredlab-specific runtime configuration through the `control-plane-config` ConfigMap. This intentionally replaces the image's bundled `configuration_prod.yaml`, which still contains local/example endpoints such as `localhost` and `app-keycloak`.
 
 ```bash
 bin/fredlab-control-plane-deploy.sh migrate 0.2
@@ -232,7 +236,7 @@ Expected:
 ```bash
 kubectl run control-plane-curl --rm -i --restart=Never \
   --image=curlimages/curl:8.10.1 \
-  -- curl -sS -i http://control-plane-backend:8080/healthz
+  -- curl -sS -i http://control-plane-backend:8080/control-plane/v1/healthz
 ```
 
 Expected: HTTP `200` or the app-specific healthy response.

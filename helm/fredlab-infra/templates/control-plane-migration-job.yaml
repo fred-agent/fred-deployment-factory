@@ -35,6 +35,10 @@ spec:
           args:
             {{- toYaml .Values.controlPlane.migration.args | nindent 12 }}
           env:
+            - name: CONFIG_FILE
+              value: /etc/fred/control-plane/configuration.yaml
+            - name: ENV_FILE
+              value: /etc/fred/control-plane/empty.env
             - name: POSTGRES_HOST
               value: {{ include "fredlab-infra.postgresName" . }}
             - name: POSTGRES_PORT
@@ -54,8 +58,13 @@ spec:
                 secretKeyRef:
                   name: {{ include "fredlab-infra.secretName" . }}
                   key: POSTGRES_FRED_PASSWORD
+            - name: FRED_POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fredlab-infra.secretName" . }}
+                  key: POSTGRES_FRED_PASSWORD
             - name: DATABASE_URL
-              value: "postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@{{ include "fredlab-infra.postgresName" . }}:{{ .Values.postgresql.service.port }}/$(POSTGRES_DB)?sslmode=disable"
+              value: "postgresql+asyncpg://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@{{ include "fredlab-infra.postgresName" . }}:{{ .Values.postgresql.service.port }}/$(POSTGRES_DB)"
           resources:
             {{- toYaml .Values.controlPlane.migration.resources | nindent 12 }}
           securityContext:
@@ -63,4 +72,12 @@ spec:
             capabilities:
               drop:
                 - ALL
+          volumeMounts:
+            - name: control-plane-config
+              mountPath: /etc/fred/control-plane
+              readOnly: true
+      volumes:
+        - name: control-plane-config
+          configMap:
+            name: {{ include "fredlab-infra.controlPlaneConfigName" . }}
 {{- end }}

@@ -47,6 +47,10 @@ spec:
           image: {{ printf "%s:%s" (required "controlPlane.image.repository is required when controlPlane.enabled=true." .Values.controlPlane.image.repository) (required "controlPlane.image.tag is required when controlPlane.enabled=true." .Values.controlPlane.image.tag) | quote }}
           imagePullPolicy: {{ .Values.imagePullPolicy }}
           env:
+            - name: CONFIG_FILE
+              value: /etc/fred/control-plane/configuration.yaml
+            - name: ENV_FILE
+              value: /etc/fred/control-plane/empty.env
             - name: PORT
               value: {{ .Values.controlPlane.containerPort | quote }}
             - name: POSTGRES_HOST
@@ -68,8 +72,13 @@ spec:
                 secretKeyRef:
                   name: {{ include "fredlab-infra.secretName" . }}
                   key: POSTGRES_FRED_PASSWORD
+            - name: FRED_POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fredlab-infra.secretName" . }}
+                  key: POSTGRES_FRED_PASSWORD
             - name: DATABASE_URL
-              value: "postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@{{ include "fredlab-infra.postgresName" . }}:{{ .Values.postgresql.service.port }}/$(POSTGRES_DB)?sslmode=disable"
+              value: "postgresql+asyncpg://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@{{ include "fredlab-infra.postgresName" . }}:{{ .Values.postgresql.service.port }}/$(POSTGRES_DB)"
             - name: KEYCLOAK_BASE_URL
               value: {{ .Values.controlPlane.config.keycloakInternalUrl | quote }}
             - name: KEYCLOAK_REALM
@@ -126,4 +135,12 @@ spec:
             capabilities:
               drop:
                 - ALL
+          volumeMounts:
+            - name: control-plane-config
+              mountPath: /etc/fred/control-plane
+              readOnly: true
+      volumes:
+        - name: control-plane-config
+          configMap:
+            name: {{ include "fredlab-infra.controlPlaneConfigName" . }}
 {{- end }}

@@ -161,6 +161,7 @@ adminAccess:
 controlPlane:
   enabled: false
   fullnameOverride: control-plane-backend
+  configMapName: control-plane-config
   replicaCount: 1
   image:
     # Example Artifact Registry image:
@@ -172,7 +173,7 @@ controlPlane:
     port: 8080
   containerPort: 8222
   health:
-    path: /healthz
+    path: /control-plane/v1/healthz
   migration:
     enabled: false
     backoffLimit: 3
@@ -194,6 +195,11 @@ controlPlane:
     limits:
       memory: 1Gi
   config:
+    appBaseUrl: /control-plane/v1
+    logLevel: info
+    gcuVersion: v1
+    defaultTeamMaxResourcesStorageSize: 5368709120
+    personalMaxResourcesStorageSize: 5368709120
     keycloakRealm: app
     keycloakInternalUrl: http://keycloak:8080
     keycloakIssuerUrl: https://keycloak.playground.fredlab.dev/realms/app
@@ -201,6 +207,57 @@ controlPlane:
     openfgaUrl: http://openfga:8080
     openfgaStoreName: fred
     temporalAddress: temporal:7233
+    scheduler:
+      enabled: true
+      backend: temporal
+      temporalNamespace: default
+      temporalTaskQueue: control-plane-lifecycle
+      temporalWorkflowIdPrefix: control-plane
+      temporalConnectTimeoutSeconds: 5
+    security:
+      m2m:
+        enabled: true
+      user:
+        enabled: true
+        clientId: app
+      authorizedOrigins:
+        - https://keycloak.playground.fredlab.dev
+        - https://fred.playground.fredlab.dev
+        - https://control-plane.playground.fredlab.dev
+      rebac:
+        enabled: true
+    observability:
+      log:
+        enabled: true
+      prometheus:
+        enabled: false
+        address: 0.0.0.0
+        port: 9222
+      processMetricsIntervalSec: 0
+    contentStorage:
+      localRootPath: /tmp/control-plane-content
+    frontend:
+      featureFlags:
+        enableK8Features: false
+        enableElecWarfare: false
+      uiSettings:
+        siteDisplayName: Fredlab
+        agentsNicknameSingular: agent
+        agentsNicknamePlural: agents
+    knowledgeFlowBaseUrl: http://knowledge-flow-backend:8080/knowledge-flow/v1
+    runtimeCatalogSources:
+      - runtimeId: fred-agents
+        baseUrl: http://fred-agents:8080/fred/agents/v2
+        enabled: true
+        ingressPrefix: /fred/agents/v2
+      - runtimeId: rags-agents
+        baseUrl: http://rags-agents:8080/rags/agents/v2
+        enabled: true
+        ingressPrefix: /rags/agents/v2
+      - runtimeId: dt-agents
+        baseUrl: http://dt-agents:8080/dt/agents/v2
+        enabled: true
+        ingressPrefix: /dt/agents/v2
   extraEnv: {}
 
 ingress:
