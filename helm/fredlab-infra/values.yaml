@@ -276,8 +276,11 @@ fredFrontend:
   containerPort: 8080
   upstreams:
     controlPlane: http://control-plane-backend:8080
-    fredAgents: http://fred-agents:8080
-    knowledgeFlow: http://knowledge-flow-backend:8080
+    # Temporary bootstrap targets: these services are not deployed yet, and
+    # nginx resolves upstream DNS names at startup. Point to an existing service
+    # until fred-agents and knowledge-flow-backend are added to the cluster.
+    fredAgents: http://control-plane-backend:8080
+    knowledgeFlow: http://control-plane-backend:8080
   clientMaxBodySize: 150m
   health:
     path: /config.json

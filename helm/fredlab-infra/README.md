@@ -130,4 +130,6 @@ bin/fredlab-frontend-deploy.sh start 0.2
 
 This deploys the public `fred-frontend` service at `https://fred.playground.fredlab.dev`. The frontend stays thin: Nginx serves the static UI and proxies `/control-plane/...` to `control-plane-backend:8080`. The login configuration still comes from Control Plane through `/control-plane/v1/frontend/config`.
 
+During the first bootstrap, `fred-agents` and `knowledge-flow-backend` are not deployed yet. Their frontend upstreams intentionally point to `control-plane-backend` so Nginx can start; they must be switched to their real services when those components are deployed.
+
 The deploy scripts preserve existing Helm release values when the release already exists, while also loading new chart defaults. That allows enabling frontend after Control Plane without accidentally disabling the components that are already running.

@@ -249,6 +249,8 @@ Expected: HTTP `200` or the app-specific healthy response.
 
 The frontend image is already built by `bin/fredlab-build frontend 0.2`. Starting it only updates the Helm release. The script keeps already-enabled components and also loads new chart defaults, so adding frontend does not disable Control Plane.
 
+At this stage only Control Plane is deployed. The frontend chart therefore points the not-yet-deployed `fred-agents` and `knowledge-flow-backend` upstreams to `control-plane-backend` temporarily, because Nginx fails at startup when an upstream DNS name does not exist. Switch those values to the real services when those components are deployed.
+
 ```bash
 bin/fredlab-frontend-deploy.sh start 0.2
 ```
@@ -273,6 +275,14 @@ Expected:
 
 DNS must point `fred.playground.fredlab.dev` to the reserved IP `8.233.26.38`.
 After adding a new domain, the Google managed certificate can temporarily return to a provisioning state before becoming `Active` again.
+
+If the frontend pod enters `CrashLoopBackOff`, inspect logs first:
+
+```bash
+kubectl logs -l app.kubernetes.io/component=fred-frontend --tail=80
+```
+
+If logs contain `host not found in upstream`, the frontend is pointing to a Kubernetes service that has not been deployed yet.
 
 ## 12. Probe Frontend And Auth Bootstrap
 
