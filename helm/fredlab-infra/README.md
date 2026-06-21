@@ -53,6 +53,18 @@ PostgreSQL provisioning and application schema migrations are intentionally sepa
 
 For Swift, the current Fred repository contains multiple Alembic revisions. Fredlab applies the repository contract as-is with `alembic upgrade head`. Before a first production Swift release, decide separately whether to keep this history or squash it into a single bootstrap migration.
 
+## Identity State
+
+Deploying Keycloak only starts the identity server. Fred still needs a provisioned realm and clients:
+
+- realm `app`
+- public frontend client `app`
+- confidential machine client `control-plane`
+- matching `keycloak.clients.controlPlane.secret`
+- users and team/group mapping for the Fred Swift identity model
+
+The control-plane reads the machine client secret from the exact env var `KEYCLOAK_CONTROL_PLANE_CLIENT_SECRET`.
+
 ## Private Values
 
 Create one complete local secret file from:

@@ -320,6 +320,23 @@ https://fred.playground.fredlab.dev
 
 If the page redirects to Keycloak, the public route, frontend proxy, Control Plane frontend config, and Keycloak issuer are connected. Team/group provisioning is validated after login, because it depends on the actual Fred user/team data model and Keycloak realm content.
 
+Keycloak state to verify next:
+
+- service is running: `keycloak:8080`
+- realm exists: `app`
+- public frontend client exists: `app`
+- confidential machine client exists: `control-plane`
+- the `control-plane` client secret matches `keycloak.clients.controlPlane.secret`
+- operator users and Fred teams/groups are provisioned according to the Fred Swift identity model
+
+If `/control-plane/v1/frontend/config` returns HTTP `500`, inspect Control Plane logs:
+
+```bash
+kubectl logs deploy/control-plane-backend --tail=200
+```
+
+If logs mention `KEYCLOAK_CONTROL_PLANE_CLIENT_SECRET is not set`, the control-plane pod is missing the exact env var named by `security.m2m.secret_env_var`.
+
 ## Troubleshooting
 
 ### Helm Command Run From The Wrong Directory

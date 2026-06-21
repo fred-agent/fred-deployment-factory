@@ -87,6 +87,11 @@ spec:
               value: {{ .Values.controlPlane.config.keycloakIssuerUrl | quote }}
             - name: KEYCLOAK_CLIENT_ID
               value: {{ .Values.controlPlane.config.keycloakClientId | quote }}
+            - name: KEYCLOAK_CONTROL_PLANE_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fredlab-infra.secretName" . }}
+                  key: KEYCLOAK_CONTROL_PLANE_CLIENT_SECRET
             - name: KEYCLOAK_CLIENT_SECRET
               valueFrom:
                 secretKeyRef:
