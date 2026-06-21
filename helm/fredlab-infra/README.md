@@ -48,6 +48,7 @@ PostgreSQL provisioning and application schema migrations are intentionally sepa
 | Layer | Responsible object | Creates |
 | --- | --- | --- |
 | Database bootstrap | `postgres-provision` Helm hook | PostgreSQL users, databases, grants |
+| Identity bootstrap | `keycloak-provision` Helm hook | Keycloak realm `app`, clients `app` and `control-plane` |
 | Control Plane schema | `control-plane-migration` Helm hook | Control Plane tables via `alembic upgrade head` |
 | Control Plane runtime | `control-plane-backend` Deployment | HTTP service only |
 
@@ -63,7 +64,9 @@ Deploying Keycloak only starts the identity server. Fred still needs a provision
 - matching `keycloak.clients.controlPlane.secret`
 - users and team/group mapping for the Fred Swift identity model
 
-The control-plane reads the machine client secret from the exact env var `KEYCLOAK_CONTROL_PLANE_CLIENT_SECRET`.
+The chart provisions the realm and clients with the `keycloak-provision` Helm hook. The control-plane reads the machine client secret from the exact env var `KEYCLOAK_CONTROL_PLANE_CLIENT_SECRET`.
+
+User and team/group provisioning remains a separate application-domain step. Do not confuse it with the low-level realm/client bootstrap.
 
 ## Private Values
 

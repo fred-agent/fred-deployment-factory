@@ -1,0 +1,175 @@
+{{- if .Values.keycloak.provision.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: keycloak-provision
+  labels:
+    {{- include "fredlab-infra.labels" . | nindent 4 }}
+    app.kubernetes.io/component: keycloak-provision
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "20"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        {{- include "fredlab-infra.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: keycloak-provision
+    spec:
+      restartPolicy: OnFailure
+      enableServiceLinks: false
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: keycloak-provision
+          image: {{ .Values.images.keycloak | quote }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          env:
+            - name: HOME
+              value: /tmp
+            - name: KEYCLOAK_SERVER_URL
+              value: "http://{{ include "fredlab-infra.keycloakName" . }}:{{ .Values.keycloak.service.port }}"
+            - name: KEYCLOAK_ADMIN_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fredlab-infra.secretName" . }}
+                  key: KC_BOOTSTRAP_ADMIN_USERNAME
+            - name: KEYCLOAK_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fredlab-infra.secretName" . }}
+                  key: KC_BOOTSTRAP_ADMIN_PASSWORD
+            - name: KEYCLOAK_CONTROL_PLANE_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fredlab-infra.secretName" . }}
+                  key: KEYCLOAK_CONTROL_PLANE_CLIENT_SECRET
+            - name: REALM
+              value: {{ .Values.keycloak.provision.realm | quote }}
+            - name: APP_CLIENT_ID
+              value: {{ .Values.keycloak.provision.clients.app.clientId | quote }}
+            - name: APP_REDIRECT_URIS
+              value: {{ .Values.keycloak.provision.clients.app.redirectUris | toJson | quote }}
+            - name: APP_WEB_ORIGINS
+              value: {{ .Values.keycloak.provision.clients.app.webOrigins | toJson | quote }}
+            - name: CONTROL_PLANE_CLIENT_ID
+              value: {{ .Values.keycloak.provision.clients.controlPlane.clientId | quote }}
+            - name: CONTROL_PLANE_REALM_MANAGEMENT_ROLES
+              value: {{ join " " .Values.keycloak.provision.clients.controlPlane.realmManagementRoles | quote }}
+          command:
+            - /bin/sh
+            - -ec
+            - |
+              KCADM="/opt/keycloak/bin/kcadm.sh"
+
+              login() {
+                i=0
+                until "$KCADM" config credentials \
+                  --server "$KEYCLOAK_SERVER_URL" \
+                  --realm master \
+                  --user "$KEYCLOAK_ADMIN_USER" \
+                  --password "$KEYCLOAK_ADMIN_PASSWORD"; do
+                  i=$((i + 1))
+                  if [ "$i" -ge 60 ]; then
+                    echo "Timed out waiting for Keycloak admin login."
+                    return 1
+                  fi
+                  sleep 5
+                done
+              }
+
+              client_id() {
+                "$KCADM" get clients -r "$REALM" -q "clientId=$1" --fields id --format csv --noquotes 2>/dev/null \
+                  | grep -v '^id$' \
+                  | head -n 1 \
+                  || true
+              }
+
+              login
+
+              if "$KCADM" get "realms/$REALM" >/dev/null 2>&1; then
+                echo "Realm '$REALM' already exists; updating baseline settings."
+                "$KCADM" update "realms/$REALM" \
+                  -s enabled=true \
+                  -s loginWithEmailAllowed=true \
+                  -s resetPasswordAllowed=true
+              else
+                echo "Creating realm '$REALM'."
+                "$KCADM" create realms \
+                  -s "realm=$REALM" \
+                  -s enabled=true \
+                  -s loginWithEmailAllowed=true \
+                  -s resetPasswordAllowed=true
+              fi
+
+              APP_ID="$(client_id "$APP_CLIENT_ID")"
+              if [ -n "$APP_ID" ]; then
+                echo "Updating public client '$APP_CLIENT_ID'."
+                "$KCADM" update "clients/$APP_ID" -r "$REALM" \
+                  -s "clientId=$APP_CLIENT_ID" \
+                  -s enabled=true \
+                  -s publicClient=true \
+                  -s standardFlowEnabled=true \
+                  -s implicitFlowEnabled=false \
+                  -s directAccessGrantsEnabled=false \
+                  -s "redirectUris=$APP_REDIRECT_URIS" \
+                  -s "webOrigins=$APP_WEB_ORIGINS"
+              else
+                echo "Creating public client '$APP_CLIENT_ID'."
+                "$KCADM" create clients -r "$REALM" \
+                  -s "clientId=$APP_CLIENT_ID" \
+                  -s enabled=true \
+                  -s publicClient=true \
+                  -s standardFlowEnabled=true \
+                  -s implicitFlowEnabled=false \
+                  -s directAccessGrantsEnabled=false \
+                  -s "redirectUris=$APP_REDIRECT_URIS" \
+                  -s "webOrigins=$APP_WEB_ORIGINS"
+              fi
+
+              CP_ID="$(client_id "$CONTROL_PLANE_CLIENT_ID")"
+              if [ -n "$CP_ID" ]; then
+                echo "Updating confidential client '$CONTROL_PLANE_CLIENT_ID'."
+                "$KCADM" update "clients/$CP_ID" -r "$REALM" \
+                  -s "clientId=$CONTROL_PLANE_CLIENT_ID" \
+                  -s enabled=true \
+                  -s publicClient=false \
+                  -s serviceAccountsEnabled=true \
+                  -s standardFlowEnabled=false \
+                  -s directAccessGrantsEnabled=false \
+                  -s "secret=$KEYCLOAK_CONTROL_PLANE_CLIENT_SECRET"
+              else
+                echo "Creating confidential client '$CONTROL_PLANE_CLIENT_ID'."
+                "$KCADM" create clients -r "$REALM" \
+                  -s "clientId=$CONTROL_PLANE_CLIENT_ID" \
+                  -s enabled=true \
+                  -s publicClient=false \
+                  -s serviceAccountsEnabled=true \
+                  -s standardFlowEnabled=false \
+                  -s directAccessGrantsEnabled=false \
+                  -s "secret=$KEYCLOAK_CONTROL_PLANE_CLIENT_SECRET"
+              fi
+
+              for role in $CONTROL_PLANE_REALM_MANAGEMENT_ROLES; do
+                echo "Granting realm-management/$role to service-account-$CONTROL_PLANE_CLIENT_ID."
+                "$KCADM" add-roles -r "$REALM" \
+                  --uusername "service-account-$CONTROL_PLANE_CLIENT_ID" \
+                  --cclientid realm-management \
+                  --rolename "$role" || true
+              done
+
+              echo "Keycloak provisioning complete."
+          resources:
+            {{- toYaml .Values.keycloak.provision.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+{{- end }}

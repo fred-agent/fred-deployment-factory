@@ -69,6 +69,15 @@ Validate:
 ```bash
 kubectl get pods,svc,ingress,backendconfig,managedcertificate
 kubectl get job postgres-provision
+kubectl exec deploy/keycloak -- \
+  /opt/keycloak/bin/kcadm.sh config credentials \
+  --server http://localhost:8080 \
+  --realm master \
+  --user admin \
+  --password "$(kubectl get secret fredlab-infra-secrets -o jsonpath='{.data.KC_BOOTSTRAP_ADMIN_PASSWORD}' | base64 -d)"
+kubectl exec deploy/keycloak -- /opt/keycloak/bin/kcadm.sh get realms/app
+kubectl exec deploy/keycloak -- /opt/keycloak/bin/kcadm.sh get clients -r app -q clientId=app
+kubectl exec deploy/keycloak -- /opt/keycloak/bin/kcadm.sh get clients -r app -q clientId=control-plane
 ```
 
 Expected:
@@ -76,11 +85,14 @@ Expected:
 - core pods are `Running`
 - `postgres-provision` is `Complete`
 - services include `postgres`, `keycloak`, `openfga`, `temporal`, `temporal-ui`
+- Keycloak realm `app` exists
+- Keycloak clients `app` and `control-plane` exist
 
 Responsibility:
 
 - `postgres-provision` creates PostgreSQL users, databases, and grants.
-- It does not create application tables.
+- `keycloak-provision` creates/updates the Fred realm and clients.
+- This step does not create application tables.
 
 ## 4. Confirm Fred Database
 
@@ -328,6 +340,8 @@ Keycloak state to verify next:
 - confidential machine client exists: `control-plane`
 - the `control-plane` client secret matches `keycloak.clients.controlPlane.secret`
 - operator users and Fred teams/groups are provisioned according to the Fred Swift identity model
+
+The chart bootstraps realm/client state through the `keycloak-provision` Helm hook. It does not yet invent operator users or Fred teams. Those must be created from the agreed Swift identity model.
 
 If `/control-plane/v1/frontend/config` returns HTTP `500`, inspect Control Plane logs:
 

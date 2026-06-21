@@ -70,6 +70,28 @@ keycloak:
   clients:
     controlPlane:
       secret: ""
+  provision:
+    enabled: true
+    realm: app
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        memory: 512Mi
+    clients:
+      app:
+        clientId: app
+        redirectUris:
+          - https://fred.playground.fredlab.dev/*
+        webOrigins:
+          - https://fred.playground.fredlab.dev
+      controlPlane:
+        clientId: control-plane
+        realmManagementRoles:
+          - manage-users
+          - view-users
+          - query-users
   resources:
     requests:
       cpu: 500m
