@@ -12,9 +12,11 @@ Helm chart for Fredlab Playground on GKE Autopilot.
 | Temporal | Private | `temporal:7233` | none |
 | Temporal UI | Protected admin UI | `temporal-ui:8080` | `temporal.playground.fredlab.dev` |
 | Control Plane backend | Private | `control-plane-backend:8080` | none |
-| Fred frontend | Public | `fred-frontend:8080` | `fred.playground.fredlab.dev` |
+| Fred frontend | Public | `fred-frontend:8080` | `studio.playground.fredlab.dev` |
 
 All services use `ClusterIP`. Public routing is handled by the GKE `gce` Ingress named `fredlab-infra-ingress`.
+
+Public hostnames must exist in DNS outside Helm and point to the reserved GCP global IP `8.233.26.38`.
 
 ## Naming Rules
 
@@ -67,6 +69,8 @@ Deploying Keycloak only starts the identity server. Fred still needs a provision
 The chart provisions the realm and clients with the `keycloak-provision` Helm hook. The control-plane reads the machine client secret from the exact env var `KEYCLOAK_CONTROL_PLANE_CLIENT_SECRET`.
 
 User and team/group provisioning remains a separate application-domain step. Do not confuse it with the low-level realm/client bootstrap.
+
+When validating Keycloak clients, always use `kcadm.sh --fields ...`. The full representation of the confidential `control-plane` client includes its secret.
 
 ## Private Values
 
@@ -143,7 +147,7 @@ Frontend runtime:
 bin/fredlab-frontend-deploy.sh start 0.2
 ```
 
-This deploys the public `fred-frontend` service at `https://fred.playground.fredlab.dev`. The frontend stays thin: Nginx serves the static UI and proxies `/control-plane/...` to `control-plane-backend:8080`. The login configuration still comes from Control Plane through `/control-plane/v1/frontend/config`.
+This deploys the public `fred-frontend` service at `https://studio.playground.fredlab.dev`. The frontend stays thin: Nginx serves the static UI and proxies `/control-plane/...` to `control-plane-backend:8080`. The login configuration still comes from Control Plane through `/control-plane/v1/frontend/config`.
 
 During the first bootstrap, `fred-agents` and `knowledge-flow-backend` are not deployed yet. Their frontend upstreams intentionally point to `control-plane-backend` so Nginx can start; they must be switched to their real services when those components are deployed.
 

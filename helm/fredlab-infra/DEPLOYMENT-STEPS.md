@@ -75,9 +75,14 @@ kubectl exec deploy/keycloak -- \
   --realm master \
   --user admin \
   --password "$(kubectl get secret fredlab-infra-secrets -o jsonpath='{.data.KC_BOOTSTRAP_ADMIN_PASSWORD}' | base64 -d)"
-kubectl exec deploy/keycloak -- /opt/keycloak/bin/kcadm.sh get realms/app
-kubectl exec deploy/keycloak -- /opt/keycloak/bin/kcadm.sh get clients -r app -q clientId=app
-kubectl exec deploy/keycloak -- /opt/keycloak/bin/kcadm.sh get clients -r app -q clientId=control-plane
+kubectl exec deploy/keycloak -- \
+  /opt/keycloak/bin/kcadm.sh get realms/app --fields realm,enabled
+kubectl exec deploy/keycloak -- \
+  /opt/keycloak/bin/kcadm.sh get clients -r app -q clientId=app \
+  --fields clientId,enabled,publicClient,redirectUris,webOrigins
+kubectl exec deploy/keycloak -- \
+  /opt/keycloak/bin/kcadm.sh get clients -r app -q clientId=control-plane \
+  --fields clientId,enabled,publicClient,serviceAccountsEnabled
 ```
 
 Expected:
@@ -282,11 +287,37 @@ Expected:
 - rollout completes
 - pod is `Running`
 - service `fred-frontend` exists on port `8080`
-- Ingress contains host `fred.playground.fredlab.dev`
-- ManagedCertificate contains `keycloak.playground.fredlab.dev`, `temporal.playground.fredlab.dev`, and `fred.playground.fredlab.dev`
+- Ingress contains host `studio.playground.fredlab.dev`
+- ManagedCertificate contains `keycloak.playground.fredlab.dev`, `temporal.playground.fredlab.dev`, and `studio.playground.fredlab.dev`
 
-DNS must point `fred.playground.fredlab.dev` to the reserved IP `8.233.26.38`.
+DNS must point `studio.playground.fredlab.dev` to the reserved IP `8.233.26.38`.
 After adding a new domain, the Google managed certificate can temporarily return to a provisioning state before becoming `Active` again.
+
+If the browser returns `DNS_PROBE_FINISHED_NXDOMAIN`, the DNS record does not exist yet. In Squarespace/Square DNS, create this explicit custom record:
+
+```text
+Type: A
+Name: studio.playground
+Data: 8.233.26.38
+```
+
+If the DNS zone is managed by Cloud DNS instead, create the same A record there:
+
+```bash
+gcloud dns managed-zones list
+
+DNS_ZONE="<zone-name-from-the-list>"
+
+gcloud dns record-sets create studio.playground.fredlab.dev. \
+  --zone="${DNS_ZONE}" \
+  --type=A \
+  --ttl=300 \
+  --rrdatas=8.233.26.38
+
+dig +short studio.playground.fredlab.dev
+```
+
+Expected: `dig` eventually returns `8.233.26.38`. If the DNS zone is not managed in this GCP project, create the same A record at the external DNS provider instead.
 
 If the frontend pod enters `CrashLoopBackOff`, inspect logs first:
 
@@ -327,7 +358,7 @@ Expected: HTTP `200`, with frontend auth fields referencing realm `app`, client 
 At this point the browser test is:
 
 ```text
-https://fred.playground.fredlab.dev
+https://studio.playground.fredlab.dev
 ```
 
 If the page redirects to Keycloak, the public route, frontend proxy, Control Plane frontend config, and Keycloak issuer are connected. Team/group provisioning is validated after login, because it depends on the actual Fred user/team data model and Keycloak realm content.
@@ -342,6 +373,8 @@ Keycloak state to verify next:
 - operator users and Fred teams/groups are provisioned according to the Fred Swift identity model
 
 The chart bootstraps realm/client state through the `keycloak-provision` Helm hook. It does not yet invent operator users or Fred teams. Those must be created from the agreed Swift identity model.
+
+Avoid `kcadm.sh get clients -r app -q clientId=control-plane` without `--fields`: the full Keycloak client representation includes the confidential client secret.
 
 If `/control-plane/v1/frontend/config` returns HTTP `500`, inspect Control Plane logs:
 
