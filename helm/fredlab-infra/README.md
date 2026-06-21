@@ -130,6 +130,16 @@ bin/fredlab-build fred-agents 0.2
 
 The catalog assumes source repositories exist in Cloud Shell at paths such as `~/fred`, `~/dt-agents`, or `~/fred-samples`, and that each image has a Dockerfile path declared from that repository root.
 
+GCS preparation:
+
+Knowledge Flow and agentic components should use Google Cloud Storage on GKE, not an in-cluster MinIO replacement. The current chart only prepares GCP for this future Swift capability; it does not yet wire Knowledge Flow to GCS.
+
+```bash
+bin/fredlab-gcp-gcs-prereqs.sh
+```
+
+This creates the future Knowledge Flow bucket, a Google service account, and Workload Identity bindings for the expected Kubernetes service accounts. No JSON key, HMAC key, or secret file is created.
+
 Control Plane runtime:
 
 ```bash

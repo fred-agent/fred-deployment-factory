@@ -128,7 +128,41 @@ gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
   --role="roles/artifactregistry.reader"
 ```
 
-## 6. Build And Push Images
+## 6. Prepare GCS For Future Knowledge Flow
+
+Fredlab on GKE should use Google Cloud Storage for future Knowledge Flow and agentic file storage, not an in-cluster MinIO replacement.
+
+Run once per project:
+
+```bash
+bin/fredlab-gcp-gcs-prereqs.sh
+```
+
+Default resources created:
+
+- bucket: `gs://<project-id>-knowledge-flow`
+- Google service account: `fredlab-knowledge-flow-gcs@<project-id>.iam.gserviceaccount.com`
+- bucket role: `roles/storage.objectUser`
+- Workload Identity bindings for future Kubernetes service accounts `knowledge-flow-backend` and `knowledge-flow-worker`
+
+This step prepares GCP only. It does not create a Kubernetes Deployment, does not create a MinIO-compatible HMAC key, and does not store any cloud credential in Git or Helm secrets.
+
+When Swift adds native GCS support, the future Knowledge Flow chart must:
+
+- create/use a Kubernetes service account annotated with `iam.gke.io/gcp-service-account`
+- set the storage backend to `gcs`
+- set the bucket name returned by the script
+- use Application Default Credentials through Workload Identity
+
+Useful overrides:
+
+```bash
+BUCKET=fredlab-playground-knowledge-flow \
+KSA_NAMES="knowledge-flow-backend knowledge-flow-worker" \
+bin/fredlab-gcp-gcs-prereqs.sh
+```
+
+## 7. Build And Push Images
 
 Use Cloud Build as the official build path. This avoids depending on Cloud Shell Docker push connectivity and keeps builds reproducible from source repositories. The build script enables Docker BuildKit, which is required by modern Dockerfile features such as `COPY --chmod`.
 
@@ -190,7 +224,7 @@ Control Plane image contract:
 - runs the FastAPI server on container port `8222`
 - exposes `/control-plane/v1/healthz`
 
-## 7. Run Control Plane Migrations
+## 8. Run Control Plane Migrations
 
 `migrate` means "bring the Control Plane PostgreSQL schema to the version expected by this image". It runs a temporary Kubernetes Job executing `alembic upgrade head`. On a fresh database, this creates the initial tables; on an existing database, it applies pending schema changes.
 
@@ -217,7 +251,7 @@ Responsibility:
 - creates and updates Control Plane application tables in database `fred`
 - does not create the database itself
 
-## 8. Confirm Alembic State
+## 9. Confirm Alembic State
 
 ```bash
 kubectl run pg-check-alembic --rm -i --restart=Never \
@@ -228,7 +262,7 @@ kubectl run pg-check-alembic --rm -i --restart=Never \
 
 Expected: at least one Alembic revision is present.
 
-## 9. Start Control Plane Backend
+## 10. Start Control Plane Backend
 
 ```bash
 bin/fredlab-control-plane-deploy.sh start 0.2
@@ -248,7 +282,7 @@ Expected:
 - pod is `Running`
 - service `control-plane-backend` exists on port `8080`
 
-## 10. Probe Control Plane Internally
+## 11. Probe Control Plane Internally
 
 ```bash
 kubectl run control-plane-curl --restart=Never \
@@ -262,7 +296,7 @@ kubectl delete pod control-plane-curl --ignore-not-found
 
 Expected: HTTP `200` or the app-specific healthy response.
 
-## 11. Start Fred Frontend
+## 12. Start Fred Frontend
 
 The frontend image is already built by `bin/fredlab-build frontend 0.2`. Starting it only updates the Helm release. The script keeps already-enabled components and also loads new chart defaults, so adding frontend does not disable Control Plane.
 
@@ -327,7 +361,7 @@ kubectl logs -l app.kubernetes.io/component=fred-frontend --tail=80
 
 If logs contain `host not found in upstream`, the frontend is pointing to a Kubernetes service that has not been deployed yet.
 
-## 12. Probe Frontend And Auth Bootstrap
+## 13. Probe Frontend And Auth Bootstrap
 
 First check that Nginx serves the static app:
 
