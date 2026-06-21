@@ -39,6 +39,7 @@ if [[ ! -f "${SECRET_VALUES_FILE}" ]]; then
 fi
 
 helm_upgrade() {
+  local current_values_file=""
   local args=(
     upgrade --install fredlab-infra "${CHART_DIR}"
     --namespace "${NAMESPACE}"
@@ -46,10 +47,25 @@ helm_upgrade() {
   )
 
   if helm status fredlab-infra --namespace "${NAMESPACE}" >/dev/null 2>&1; then
-    args+=(--reuse-values)
+    if helm upgrade --help | grep -q -- "--reset-then-reuse-values"; then
+      args+=(--reset-then-reuse-values)
+    else
+      current_values_file="$(mktemp)"
+      helm get values fredlab-infra --namespace "${NAMESPACE}" -o yaml > "${current_values_file}"
+      args+=(-f "${current_values_file}")
+    fi
   fi
 
+  set +e
   helm "${args[@]}" "$@"
+  local status=$?
+  set -e
+
+  if [[ -n "${current_values_file}" ]]; then
+    rm -f "${current_values_file}"
+  fi
+
+  return "${status}"
 }
 
 case "${ACTION}" in

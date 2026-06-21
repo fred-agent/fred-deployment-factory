@@ -247,7 +247,7 @@ Expected: HTTP `200` or the app-specific healthy response.
 
 ## 11. Start Fred Frontend
 
-The frontend image is already built by `bin/fredlab-build frontend 0.2`. Starting it only updates the Helm release and keeps already-enabled components through Helm `--reuse-values`.
+The frontend image is already built by `bin/fredlab-build frontend 0.2`. Starting it only updates the Helm release. The script keeps already-enabled components and also loads new chart defaults, so adding frontend does not disable Control Plane.
 
 ```bash
 bin/fredlab-frontend-deploy.sh start 0.2
