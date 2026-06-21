@@ -19,6 +19,13 @@ External Keycloak host:
 Temporal UI host:
   https://{{ .Values.temporal.ui.hostname }}
 
+Fred frontend host:
+  {{- if .Values.fredFrontend.enabled }}
+  https://{{ .Values.fredFrontend.hostname }}
+  {{- else }}
+  disabled (set fredFrontend.enabled=true and provide fredFrontend.image.repository/tag)
+  {{- end }}
+
 Control Plane backend:
   {{- if .Values.controlPlane.enabled }}
   {{ include "fredlab-infra.controlPlaneBackendName" . }}:{{ .Values.controlPlane.service.port }}

@@ -260,13 +260,53 @@ controlPlane:
         ingressPrefix: /dt/agents/v2
   extraEnv: {}
 
+fredFrontend:
+  enabled: false
+  fullnameOverride: fred-frontend
+  replicaCount: 1
+  hostname: fred.playground.fredlab.dev
+  image:
+    # Example Artifact Registry image:
+    # europe-west1-docker.pkg.dev/<project-id>/fredlab-repo/fred-frontend
+    repository: ""
+    tag: ""
+  service:
+    type: ClusterIP
+    port: 8080
+  containerPort: 8080
+  upstreams:
+    controlPlane: http://control-plane-backend:8080
+    fredAgents: http://fred-agents:8080
+    knowledgeFlow: http://knowledge-flow-backend:8080
+  clientMaxBodySize: 150m
+  health:
+    path: /config.json
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      memory: 256Mi
+  backendConfig:
+    name: fredlab-frontend-backendconfig
+    healthCheck:
+      requestPath: /config.json
+      port: 8080
+      type: HTTP
+      checkIntervalSec: 15
+      timeoutSec: 5
+      healthyThreshold: 1
+      unhealthyThreshold: 3
+
 ingress:
   enabled: true
   name: fredlab-infra-ingress
   className: gce
-  # Domain rendered in the GKE ManagedCertificate.
+  # Historical single-domain value. The ManagedCertificate template now renders
+  # all public hosts from keycloak, Temporal UI, frontend, and this extra list.
   domain: keycloak.playground.fredlab.dev
   keycloakHost: keycloak.playground.fredlab.dev
+  extraManagedCertificateDomains: []
   # The reserved public IP address is documented here for operators.
   # GKE Ingress requires the GCP address resource name in the annotation below, not the literal IP.
   staticIpAddress: 8.233.26.38

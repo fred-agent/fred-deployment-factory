@@ -4,9 +4,8 @@ set -Eeuo pipefail
 usage() {
   cat <<'EOF'
 Usage:
-  bin/fredlab-control-plane-deploy.sh migrate <tag>
-  bin/fredlab-control-plane-deploy.sh start <tag>
-  bin/fredlab-control-plane-deploy.sh disable
+  bin/fredlab-frontend-deploy.sh start <tag>
+  bin/fredlab-frontend-deploy.sh disable
 
 Environment overrides:
   PROJECT_ID, REGION, REPOSITORY, IMAGE, NAMESPACE, SECRET_VALUES_FILE
@@ -30,7 +29,7 @@ NAMESPACE="${NAMESPACE:-default}"
 PROJECT_ID="${PROJECT_ID:-$(gcloud config get-value project 2>/dev/null)}"
 REGION="${REGION:-europe-west1}"
 REPOSITORY="${REPOSITORY:-fredlab-repo}"
-IMAGE="${IMAGE:-control-plane-backend}"
+IMAGE="${IMAGE:-fred-frontend}"
 IMAGE_REPOSITORY="${IMAGE_REPOSITORY:-${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/${IMAGE}}"
 
 if [[ ! -f "${SECRET_VALUES_FILE}" ]]; then
@@ -53,18 +52,6 @@ helm_upgrade() {
 }
 
 case "${ACTION}" in
-  migrate)
-    if [[ -z "${TAG}" ]]; then
-      echo "Missing image tag for migrate."
-      usage
-      exit 1
-    fi
-    helm_upgrade \
-      --set controlPlane.migration.enabled=true \
-      --set controlPlane.enabled=false \
-      --set controlPlane.image.repository="${IMAGE_REPOSITORY}" \
-      --set controlPlane.image.tag="${TAG}"
-    ;;
   start)
     if [[ -z "${TAG}" ]]; then
       echo "Missing image tag for start."
@@ -72,15 +59,13 @@ case "${ACTION}" in
       exit 1
     fi
     helm_upgrade \
-      --set controlPlane.migration.enabled=false \
-      --set controlPlane.enabled=true \
-      --set controlPlane.image.repository="${IMAGE_REPOSITORY}" \
-      --set controlPlane.image.tag="${TAG}"
+      --set fredFrontend.enabled=true \
+      --set fredFrontend.image.repository="${IMAGE_REPOSITORY}" \
+      --set fredFrontend.image.tag="${TAG}"
     ;;
   disable)
     helm_upgrade \
-      --set controlPlane.migration.enabled=false \
-      --set controlPlane.enabled=false
+      --set fredFrontend.enabled=false
     ;;
   *)
     echo "Unknown action: ${ACTION}"

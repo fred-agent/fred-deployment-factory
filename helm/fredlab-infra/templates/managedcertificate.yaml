@@ -1,4 +1,14 @@
 {{- if .Values.ingress.enabled }}
+{{- $domains := list .Values.ingress.keycloakHost -}}
+{{- if and .Values.temporal.enabled .Values.temporal.ui.enabled -}}
+{{- $domains = append $domains .Values.temporal.ui.hostname -}}
+{{- end -}}
+{{- if .Values.fredFrontend.enabled -}}
+{{- $domains = append $domains .Values.fredFrontend.hostname -}}
+{{- end -}}
+{{- range .Values.ingress.extraManagedCertificateDomains -}}
+{{- $domains = append $domains . -}}
+{{- end -}}
 apiVersion: networking.gke.io/v1
 kind: ManagedCertificate
 metadata:
@@ -7,5 +17,7 @@ metadata:
     {{- include "fredlab-infra.labels" . | nindent 4 }}
 spec:
   domains:
-    - {{ .Values.ingress.domain | quote }}
+{{- range ($domains | compact | uniq) }}
+    - {{ . | quote }}
+{{- end }}
 {{- end }}

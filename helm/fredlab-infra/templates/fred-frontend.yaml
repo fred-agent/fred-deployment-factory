@@ -1,0 +1,79 @@
+{{- if .Values.fredFrontend.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "fredlab-infra.fredFrontendName" . }}
+  labels:
+    {{- include "fredlab-infra.labels" . | nindent 4 }}
+    app.kubernetes.io/component: fred-frontend
+  annotations:
+    cloud.google.com/neg: '{"ingress": true}'
+    cloud.google.com/backend-config: '{"ports": {"http":"{{ .Values.fredFrontend.backendConfig.name }}"}}'
+spec:
+  type: {{ .Values.fredFrontend.service.type }}
+  ports:
+    - name: http
+      port: {{ .Values.fredFrontend.service.port }}
+      targetPort: http
+  selector:
+    app.kubernetes.io/component: fred-frontend
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "fredlab-infra.fredFrontendName" . }}
+  labels:
+    {{- include "fredlab-infra.labels" . | nindent 4 }}
+    app.kubernetes.io/component: fred-frontend
+spec:
+  replicas: {{ .Values.fredFrontend.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: fred-frontend
+  template:
+    metadata:
+      labels:
+        {{- include "fredlab-infra.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: fred-frontend
+    spec:
+      securityContext:
+        runAsUser: 101
+        runAsGroup: 101
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: fred-frontend
+          image: {{ printf "%s:%s" (required "fredFrontend.image.repository is required when fredFrontend.enabled=true." .Values.fredFrontend.image.repository) (required "fredFrontend.image.tag is required when fredFrontend.enabled=true." .Values.fredFrontend.image.tag) | quote }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          env:
+            - name: FRONTEND_CONTROL_PLANE_UPSTREAM
+              value: {{ .Values.fredFrontend.upstreams.controlPlane | quote }}
+            - name: FRONTEND_AGENTIC_UPSTREAM
+              value: {{ .Values.fredFrontend.upstreams.fredAgents | quote }}
+            - name: FRONTEND_KNOWLEDGE_FLOW_UPSTREAM
+              value: {{ .Values.fredFrontend.upstreams.knowledgeFlow | quote }}
+            - name: FRONTEND_CLIENT_MAX_BODY_SIZE
+              value: {{ .Values.fredFrontend.clientMaxBodySize | quote }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.fredFrontend.containerPort }}
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.fredFrontend.health.path | quote }}
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.fredFrontend.health.path | quote }}
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.fredFrontend.resources | nindent 12 }}
+{{- end }}

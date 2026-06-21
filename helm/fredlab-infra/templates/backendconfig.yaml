@@ -34,4 +34,22 @@ spec:
     healthyThreshold: {{ .Values.temporal.ui.backendConfig.healthCheck.healthyThreshold }}
     unhealthyThreshold: {{ .Values.temporal.ui.backendConfig.healthCheck.unhealthyThreshold }}
 {{- end }}
+{{- if .Values.fredFrontend.enabled }}
+---
+apiVersion: cloud.google.com/v1
+kind: BackendConfig
+metadata:
+  name: {{ .Values.fredFrontend.backendConfig.name }}
+  labels:
+    {{- include "fredlab-infra.labels" . | nindent 4 }}
+spec:
+  healthCheck:
+    requestPath: {{ .Values.fredFrontend.backendConfig.healthCheck.requestPath | quote }}
+    port: {{ .Values.fredFrontend.backendConfig.healthCheck.port }}
+    type: {{ .Values.fredFrontend.backendConfig.healthCheck.type }}
+    checkIntervalSec: {{ .Values.fredFrontend.backendConfig.healthCheck.checkIntervalSec }}
+    timeoutSec: {{ .Values.fredFrontend.backendConfig.healthCheck.timeoutSec }}
+    healthyThreshold: {{ .Values.fredFrontend.backendConfig.healthCheck.healthyThreshold }}
+    unhealthyThreshold: {{ .Values.fredFrontend.backendConfig.healthCheck.unhealthyThreshold }}
+{{- end }}
 {{- end }}

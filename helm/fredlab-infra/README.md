@@ -12,6 +12,7 @@ Helm chart for Fredlab Playground on GKE Autopilot.
 | Temporal | Private | `temporal:7233` | none |
 | Temporal UI | Protected admin UI | `temporal-ui:8080` | `temporal.playground.fredlab.dev` |
 | Control Plane backend | Private | `control-plane-backend:8080` | none |
+| Fred frontend | Public | `fred-frontend:8080` | `fred.playground.fredlab.dev` |
 
 All services use `ClusterIP`. Public routing is handled by the GKE `gce` Ingress named `fredlab-infra-ingress`.
 
@@ -120,3 +121,13 @@ bin/fredlab-control-plane-deploy.sh start 0.2
 The deployment phase stays explicit: `migrate` runs Alembic database migrations first, then `start` launches the HTTP backend. On a fresh database, migrations create the initial Control Plane tables.
 
 Control Plane does not use the image's bundled `configuration_prod.yaml` directly. The chart renders a Fredlab-specific `control-plane-config` ConfigMap and sets `CONFIG_FILE=/etc/fred/control-plane/configuration.yaml`, so cluster DNS names, Keycloak issuer, OpenFGA, Temporal, and the health path are owned by Helm values.
+
+Frontend runtime:
+
+```bash
+bin/fredlab-frontend-deploy.sh start 0.2
+```
+
+This deploys the public `fred-frontend` service at `https://fred.playground.fredlab.dev`. The frontend stays thin: Nginx serves the static UI and proxies `/control-plane/...` to `control-plane-backend:8080`. The login configuration still comes from Control Plane through `/control-plane/v1/frontend/config`.
+
+The deploy scripts preserve existing Helm release values when the release already exists. That allows enabling frontend after Control Plane without accidentally disabling the components that are already running.

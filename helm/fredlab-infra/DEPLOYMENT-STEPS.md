@@ -206,7 +206,7 @@ Responsibility:
 kubectl run pg-check-alembic --rm -i --restart=Never \
   --image=mirror.gcr.io/postgres:15.12-alpine3.20 \
   --env=PGPASSWORD="$(kubectl get secret fredlab-infra-secrets -o jsonpath='{.data.POSTGRES_FRED_PASSWORD}' | base64 -d)" \
-  -- psql -h postgres -U fred -d fred -c "select * from alembic_version;"
+  -- psql -h postgres -U fred -d fred -c "select * from alembic_version_control_plane;"
 ```
 
 Expected: at least one Alembic revision is present.
@@ -234,12 +234,81 @@ Expected:
 ## 10. Probe Control Plane Internally
 
 ```bash
-kubectl run control-plane-curl --rm -i --restart=Never \
+kubectl run control-plane-curl --restart=Never \
   --image=curlimages/curl:8.10.1 \
   -- curl -sS -i http://control-plane-backend:8080/control-plane/v1/healthz
+
+kubectl wait --for=jsonpath='{.status.phase}'=Succeeded pod/control-plane-curl --timeout=60s || true
+kubectl logs control-plane-curl
+kubectl delete pod control-plane-curl --ignore-not-found
 ```
 
 Expected: HTTP `200` or the app-specific healthy response.
+
+## 11. Start Fred Frontend
+
+The frontend image is already built by `bin/fredlab-build frontend 0.2`. Starting it only updates the Helm release and keeps already-enabled components through Helm `--reuse-values`.
+
+```bash
+bin/fredlab-frontend-deploy.sh start 0.2
+```
+
+Validate:
+
+```bash
+kubectl rollout status deploy/fred-frontend
+kubectl get pod -l app.kubernetes.io/component=fred-frontend
+kubectl get svc fred-frontend
+kubectl get ingress fredlab-infra-ingress
+kubectl get managedcertificate fredlab-infra-cert
+```
+
+Expected:
+
+- rollout completes
+- pod is `Running`
+- service `fred-frontend` exists on port `8080`
+- Ingress contains host `fred.playground.fredlab.dev`
+- ManagedCertificate contains `keycloak.playground.fredlab.dev`, `temporal.playground.fredlab.dev`, and `fred.playground.fredlab.dev`
+
+DNS must point `fred.playground.fredlab.dev` to the reserved IP `8.233.26.38`.
+After adding a new domain, the Google managed certificate can temporarily return to a provisioning state before becoming `Active` again.
+
+## 12. Probe Frontend And Auth Bootstrap
+
+First check that Nginx serves the static app:
+
+```bash
+kubectl run frontend-config --restart=Never \
+  --image=curlimages/curl:8.10.1 \
+  -- curl -sS -i http://fred-frontend:8080/config.json
+
+kubectl wait --for=jsonpath='{.status.phase}'=Succeeded pod/frontend-config --timeout=60s || true
+kubectl logs frontend-config
+kubectl delete pod frontend-config --ignore-not-found
+```
+
+Then check that frontend proxying reaches Control Plane and returns the Keycloak-facing public config:
+
+```bash
+kubectl run frontend-auth-config --restart=Never \
+  --image=curlimages/curl:8.10.1 \
+  -- curl -sS -i http://fred-frontend:8080/control-plane/v1/frontend/config
+
+kubectl wait --for=jsonpath='{.status.phase}'=Succeeded pod/frontend-auth-config --timeout=60s || true
+kubectl logs frontend-auth-config
+kubectl delete pod frontend-auth-config --ignore-not-found
+```
+
+Expected: HTTP `200`, with frontend auth fields referencing realm `app`, client `app`, and issuer `https://keycloak.playground.fredlab.dev/realms/app`.
+
+At this point the browser test is:
+
+```text
+https://fred.playground.fredlab.dev
+```
+
+If the page redirects to Keycloak, the public route, frontend proxy, Control Plane frontend config, and Keycloak issuer are connected. Team/group provisioning is validated after login, because it depends on the actual Fred user/team data model and Keycloak realm content.
 
 ## Troubleshooting
 
