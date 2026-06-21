@@ -117,4 +117,4 @@ bin/fredlab-control-plane-deploy.sh migrate 0.2
 bin/fredlab-control-plane-deploy.sh start 0.2
 ```
 
-The deployment phase stays explicit: migrations run first, then the HTTP backend starts.
+The deployment phase stays explicit: `migrate` runs Alembic database migrations first, then `start` launches the HTTP backend. On a fresh database, migrations create the initial Control Plane tables.

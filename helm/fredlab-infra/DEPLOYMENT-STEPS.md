@@ -167,10 +167,13 @@ Control Plane image contract:
 
 - contains `alembic`, `alembic.ini`, and `alembic/versions`
 - supports `alembic upgrade head`
+- runs as UID/GID `1000`, matching the chart `runAsUser`/`runAsGroup`
 - runs the FastAPI server on container port `8222`
 - exposes `/healthz`
 
 ## 7. Run Control Plane Migrations
+
+`migrate` means "bring the Control Plane PostgreSQL schema to the version expected by this image". It runs a temporary Kubernetes Job executing `alembic upgrade head`. On a fresh database, this creates the initial tables; on an existing database, it applies pending schema changes.
 
 ```bash
 bin/fredlab-control-plane-deploy.sh migrate 0.2
