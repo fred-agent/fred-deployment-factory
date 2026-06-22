@@ -1,4 +1,14 @@
 {{- if .Values.ingress.enabled }}
+{{- $managedCertificates := list .Values.ingress.managedCertificateName -}}
+{{- if and .Values.temporal.enabled .Values.temporal.ui.enabled -}}
+{{- $managedCertificates = append $managedCertificates .Values.temporal.ui.managedCertificateName -}}
+{{- end -}}
+{{- if .Values.fredFrontend.enabled -}}
+{{- $managedCertificates = append $managedCertificates .Values.fredFrontend.managedCertificateName -}}
+{{- end -}}
+{{- range .Values.ingress.extraManagedCertificates -}}
+{{- $managedCertificates = append $managedCertificates .name -}}
+{{- end }}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -8,7 +18,7 @@ metadata:
   annotations:
     kubernetes.io/ingress.class: {{ .Values.ingress.className | quote }}
     kubernetes.io/ingress.allow-http: {{ .Values.ingress.allowHttp | quote }}
-    networking.gke.io/managed-certificates: {{ .Values.ingress.managedCertificateName | quote }}
+    networking.gke.io/managed-certificates: {{ join "," ($managedCertificates | compact | uniq) | quote }}
     {{- if .Values.ingress.staticIpName }}
     kubernetes.io/ingress.global-static-ip-name: {{ .Values.ingress.staticIpName | quote }}
     {{- end }}

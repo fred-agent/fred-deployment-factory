@@ -313,7 +313,7 @@ kubectl rollout status deploy/fred-frontend
 kubectl get pod -l app.kubernetes.io/component=fred-frontend
 kubectl get svc fred-frontend
 kubectl get ingress fredlab-infra-ingress
-kubectl get managedcertificate fredlab-infra-cert
+kubectl get managedcertificate
 ```
 
 Expected:
@@ -322,10 +322,13 @@ Expected:
 - pod is `Running`
 - service `fred-frontend` exists on port `8080`
 - Ingress contains host `studio.playground.fredlab.dev`
-- ManagedCertificate contains `keycloak.playground.fredlab.dev`, `temporal.playground.fredlab.dev`, and `studio.playground.fredlab.dev`
+- ManagedCertificates exist for the public hosts:
+  - `fredlab-infra-cert` for `keycloak.playground.fredlab.dev`
+  - `fredlab-temporal-cert` for `temporal.playground.fredlab.dev`
+  - `fredlab-studio-cert` for `studio.playground.fredlab.dev`
 
 DNS must point `studio.playground.fredlab.dev` to the reserved IP `8.233.26.38`.
-After adding a new domain, the Google managed certificate can temporarily return to a provisioning state before becoming `Active` again.
+After adding a new domain, its Google managed certificate can stay in provisioning before becoming `Active`.
 
 If the browser returns `DNS_PROBE_FINISHED_NXDOMAIN`, the DNS record does not exist yet. In Squarespace/Square DNS, create this explicit custom record:
 

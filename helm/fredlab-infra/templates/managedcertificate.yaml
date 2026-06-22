@@ -1,23 +1,28 @@
 {{- if .Values.ingress.enabled }}
-{{- $domains := list .Values.ingress.keycloakHost -}}
+{{- $certificates := list (dict "name" .Values.ingress.managedCertificateName "domains" (list .Values.ingress.keycloakHost)) -}}
 {{- if and .Values.temporal.enabled .Values.temporal.ui.enabled -}}
-{{- $domains = append $domains .Values.temporal.ui.hostname -}}
+{{- $certificates = append $certificates (dict "name" .Values.temporal.ui.managedCertificateName "domains" (list .Values.temporal.ui.hostname)) -}}
 {{- end -}}
 {{- if .Values.fredFrontend.enabled -}}
-{{- $domains = append $domains .Values.fredFrontend.hostname -}}
+{{- $certificates = append $certificates (dict "name" .Values.fredFrontend.managedCertificateName "domains" (list .Values.fredFrontend.hostname)) -}}
 {{- end -}}
-{{- range .Values.ingress.extraManagedCertificateDomains -}}
-{{- $domains = append $domains . -}}
-{{- end -}}
+{{- range .Values.ingress.extraManagedCertificates -}}
+{{- $certificates = append $certificates . -}}
+{{- end }}
+{{- range $certificate := $certificates }}
+{{- if and $certificate.name $certificate.domains }}
+---
 apiVersion: networking.gke.io/v1
 kind: ManagedCertificate
 metadata:
-  name: {{ .Values.ingress.managedCertificateName | quote }}
+  name: {{ $certificate.name | quote }}
   labels:
-    {{- include "fredlab-infra.labels" . | nindent 4 }}
+    {{- include "fredlab-infra.labels" $ | nindent 4 }}
 spec:
   domains:
-{{- range ($domains | compact | uniq) }}
+{{- range ($certificate.domains | compact | uniq) }}
     - {{ . | quote }}
+{{- end }}
+{{- end }}
 {{- end }}
 {{- end }}

@@ -152,6 +152,7 @@ temporal:
     enabled: true
     fullnameOverride: temporal-ui
     hostname: temporal.playground.fredlab.dev
+    managedCertificateName: fredlab-temporal-cert
     service:
       type: ClusterIP
       port: 8080
@@ -287,6 +288,7 @@ fredFrontend:
   fullnameOverride: fred-frontend
   replicaCount: 1
   hostname: studio.playground.fredlab.dev
+  managedCertificateName: fredlab-studio-cert
   image:
     # Example Artifact Registry image:
     # europe-west1-docker.pkg.dev/<project-id>/fredlab-repo/fred-frontend
@@ -327,11 +329,10 @@ ingress:
   enabled: true
   name: fredlab-infra-ingress
   className: gce
-  # Historical single-domain value. The ManagedCertificate template now renders
-  # all public hosts from keycloak, Temporal UI, frontend, and this extra list.
+  # Historical single-domain value kept for compatibility.
   domain: keycloak.playground.fredlab.dev
   keycloakHost: keycloak.playground.fredlab.dev
-  extraManagedCertificateDomains: []
+  extraManagedCertificates: []
   # The reserved public IP address is documented here for operators.
   # GKE Ingress requires the GCP address resource name in the annotation below, not the literal IP.
   staticIpAddress: 8.233.26.38
