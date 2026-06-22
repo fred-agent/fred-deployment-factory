@@ -71,6 +71,8 @@ keycloak:
   clients:
     controlPlane:
       secret: ""
+    knowledgeFlow:
+      secret: ""
   provision:
     enabled: true
     realm: app
@@ -98,6 +100,13 @@ keycloak:
           - query-groups
         accountRoles:
           - view-groups
+      knowledgeFlow:
+        # Confidential M2M client for knowledge-flow-backend. Needs the service_agent
+        # app role so its M2M token is accepted by other Fred resource servers. It
+        # does not manage users, so no realm-management/account roles.
+        clientId: knowledge-flow
+        appRoles:
+          - service_agent
   resources:
     requests:
       cpu: 500m

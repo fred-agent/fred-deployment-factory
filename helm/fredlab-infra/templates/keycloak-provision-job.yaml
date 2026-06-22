@@ -50,6 +50,11 @@ spec:
                 secretKeyRef:
                   name: {{ include "fredlab-infra.secretName" . }}
                   key: KEYCLOAK_CONTROL_PLANE_CLIENT_SECRET
+            - name: KEYCLOAK_KNOWLEDGE_FLOW_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fredlab-infra.secretName" . }}
+                  key: KEYCLOAK_KNOWLEDGE_FLOW_CLIENT_SECRET
             - name: REALM
               value: {{ .Values.keycloak.provision.realm | quote }}
             - name: APP_CLIENT_ID
@@ -66,6 +71,10 @@ spec:
               value: {{ join " " .Values.keycloak.provision.clients.controlPlane.realmManagementRoles | quote }}
             - name: CONTROL_PLANE_ACCOUNT_ROLES
               value: {{ join " " .Values.keycloak.provision.clients.controlPlane.accountRoles | quote }}
+            - name: KNOWLEDGE_FLOW_CLIENT_ID
+              value: {{ .Values.keycloak.provision.clients.knowledgeFlow.clientId | quote }}
+            - name: KNOWLEDGE_FLOW_APP_ROLES
+              value: {{ join " " .Values.keycloak.provision.clients.knowledgeFlow.appRoles | quote }}
           command:
             - /bin/sh
             - -ec
@@ -200,6 +209,38 @@ spec:
                 echo "Granting $APP_CLIENT_ID/$role to service-account-$CONTROL_PLANE_CLIENT_ID."
                 "$KCADM" add-roles -r "$REALM" \
                   --uusername "service-account-$CONTROL_PLANE_CLIENT_ID" \
+                  --cclientid "$APP_CLIENT_ID" \
+                  --rolename "$role" || true
+              done
+
+              KF_ID="$(client_id "$KNOWLEDGE_FLOW_CLIENT_ID")"
+              if [ -n "$KF_ID" ]; then
+                echo "Updating confidential client '$KNOWLEDGE_FLOW_CLIENT_ID'."
+                "$KCADM" update "clients/$KF_ID" -r "$REALM" \
+                  -s "clientId=$KNOWLEDGE_FLOW_CLIENT_ID" \
+                  -s enabled=true \
+                  -s publicClient=false \
+                  -s serviceAccountsEnabled=true \
+                  -s standardFlowEnabled=false \
+                  -s directAccessGrantsEnabled=false \
+                  -s "secret=$KEYCLOAK_KNOWLEDGE_FLOW_CLIENT_SECRET"
+              else
+                echo "Creating confidential client '$KNOWLEDGE_FLOW_CLIENT_ID'."
+                "$KCADM" create clients -r "$REALM" \
+                  -s "clientId=$KNOWLEDGE_FLOW_CLIENT_ID" \
+                  -s enabled=true \
+                  -s publicClient=false \
+                  -s serviceAccountsEnabled=true \
+                  -s standardFlowEnabled=false \
+                  -s directAccessGrantsEnabled=false \
+                  -s "secret=$KEYCLOAK_KNOWLEDGE_FLOW_CLIENT_SECRET"
+              fi
+
+              for role in $KNOWLEDGE_FLOW_APP_ROLES; do
+                ensure_client_role "$APP_CLIENT_ID" "$role" "Fred service account role"
+                echo "Granting $APP_CLIENT_ID/$role to service-account-$KNOWLEDGE_FLOW_CLIENT_ID."
+                "$KCADM" add-roles -r "$REALM" \
+                  --uusername "service-account-$KNOWLEDGE_FLOW_CLIENT_ID" \
                   --cclientid "$APP_CLIENT_ID" \
                   --rolename "$role" || true
               done
