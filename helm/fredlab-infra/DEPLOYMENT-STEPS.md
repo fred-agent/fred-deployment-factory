@@ -59,10 +59,10 @@ Expected:
 ## 3. Install Or Upgrade Infrastructure
 
 ```bash
-helm upgrade --install fredlab-infra ./helm/fredlab-infra \
-  --namespace default \
-  -f helm/fredlab-infra/fredlab-secrets.values.yaml
+bin/fredlab-infra-deploy.sh
 ```
+
+This is the safe foundation command. On an existing release it preserves currently enabled application components such as Control Plane and Studio. Avoid using a raw `helm upgrade --install ...` for routine upgrades after apps have been enabled, because chart defaults keep application components disabled.
 
 Validate:
 
@@ -98,6 +98,18 @@ Responsibility:
 - `postgres-provision` creates PostgreSQL users, databases, and grants.
 - `keycloak-provision` creates/updates the Fred realm and clients.
 - This step does not create application tables.
+
+For a deeper Control Plane service-client check:
+
+```bash
+kubectl exec deploy/keycloak -- \
+  /opt/keycloak/bin/kcadm.sh get clients -r app -q clientId=control-plane \
+  --fields clientId,enabled,publicClient,serviceAccountsEnabled
+```
+
+Expected:
+
+- `control-plane` is confidential: `publicClient=false`, `serviceAccountsEnabled=true`
 
 ## 4. Confirm Fred Database
 
@@ -398,7 +410,7 @@ At this point the browser test is:
 https://studio.playground.fredlab.dev
 ```
 
-If the page redirects to Keycloak, the public route, frontend proxy, Control Plane frontend config, and Keycloak issuer are connected. Team/group provisioning is validated after login, because it depends on the actual Fred user/team data model and Keycloak realm content.
+If the page redirects to Keycloak, the public route, frontend proxy, Control Plane frontend config, and Keycloak issuer are connected. Login requires the user provisioning step below.
 
 Keycloak state to verify next:
 
@@ -440,11 +452,18 @@ config/fredlab-keycloak-identity.json
 
 Suggested first Fredlab teams:
 
-- `Innovation`
-- `Engineering`
-- `Enterprise`
+- `fredlab` for initial platform validation
+- `Innovation`, `Engineering`, `Enterprise` for demo/customer onboarding
 
 The file can also define initial operators and team members. Use app role `admin` for global Fredlab administrators, and `viewer` or `editor` for normal team users.
+
+For first login tests, a user can include:
+
+```json
+"temporaryPassword": "change-me-with-a-real-temporary-password"
+```
+
+Remove the temporary password from the local file after the first successful login.
 
 Apply it:
 
@@ -460,6 +479,10 @@ kubectl exec deploy/keycloak -- \
 
 kubectl exec deploy/keycloak -- \
   /opt/keycloak/bin/kcadm.sh get users -r app --fields username,email,enabled
+
+kubectl exec deploy/keycloak -- \
+  /opt/keycloak/bin/kcadm.sh get clients -r app -q clientId=app \
+  --fields clientId,defaultClientScopes
 ```
 
 Responsibility:
@@ -471,6 +494,14 @@ Responsibility:
 - configures the `groups` OIDC claim on the public app client
 
 Important boundary: Keycloak groups prepare identity and login claims. Team ownership and application permissions inside Fred/OpenFGA remain a separate application-domain provisioning step until Swift exposes the official team bootstrap path.
+
+Final browser validation:
+
+```text
+https://studio.playground.fredlab.dev
+```
+
+Expected: redirect to Keycloak, login with a provisioned user, then return to Studio.
 
 ## Troubleshooting
 
@@ -495,9 +526,7 @@ recreate only the StatefulSet controller and keep the existing pod/PVC:
 ```bash
 kubectl delete statefulset postgres --cascade=orphan
 
-helm upgrade --install fredlab-infra ./helm/fredlab-infra \
-  --namespace default \
-  -f helm/fredlab-infra/fredlab-secrets.values.yaml
+bin/fredlab-infra-deploy.sh
 ```
 
 Use only for immutable StatefulSet spec drift.
@@ -507,3 +536,20 @@ Use only for immutable StatefulSet spec drift.
 ```bash
 bin/fredlab-control-plane-deploy.sh disable
 ```
+
+### Studio TLS Certificate Is Not Ready
+
+If DNS resolves but HTTPS fails with a certificate name mismatch:
+
+```bash
+dig +short studio.playground.fredlab.dev
+kubectl get managedcertificate
+kubectl describe managedcertificate fredlab-studio-cert
+```
+
+Expected:
+
+- DNS returns `8.233.26.38`
+- `fredlab-studio-cert` eventually becomes `Active`
+
+Use `curl -k -I https://studio.playground.fredlab.dev` only to confirm routing while the certificate is still provisioning.

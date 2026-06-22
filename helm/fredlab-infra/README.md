@@ -18,6 +18,14 @@ All services use `ClusterIP`. Public routing is handled by the GKE `gce` Ingress
 
 Public hostnames must exist in DNS outside Helm and point to the reserved GCP global IP `8.233.26.38`.
 
+Each public hostname has its own GKE `ManagedCertificate`, all attached to the same Ingress:
+
+- `fredlab-infra-cert` for Keycloak
+- `fredlab-temporal-cert` for Temporal UI
+- `fredlab-studio-cert` for Studio
+
+This avoids mutating an already-attached Google-managed certificate when new public hosts are added.
+
 ## Naming Rules
 
 The chart avoids Helm release-name prefixes for service DNS:
@@ -64,6 +72,7 @@ Deploying Keycloak only starts the identity server. Fred still needs a provision
 - public frontend client `app`
 - confidential machine client `control-plane`
 - matching `keycloak.clients.controlPlane.secret`
+- service-account roles required by Control Plane: `realm-management` user/group read/write basics, `account:view-groups`, and `app:service_agent`
 - users and team/group mapping for the Fred Swift identity model
 
 The chart provisions the realm and clients with the `keycloak-provision` Helm hook. The control-plane reads the machine client secret from the exact env var `KEYCLOAK_CONTROL_PLANE_CLIENT_SECRET`.
@@ -122,10 +131,10 @@ Use [DEPLOYMENT-STEPS.md](./DEPLOYMENT-STEPS.md) for the canonical GKE deploymen
 Foundation:
 
 ```bash
-helm upgrade --install fredlab-infra ./helm/fredlab-infra \
-  --namespace default \
-  -f helm/fredlab-infra/fredlab-secrets.values.yaml
+bin/fredlab-infra-deploy.sh
 ```
+
+Use this script instead of a raw `helm upgrade` after application components have been enabled. It preserves the current Helm release values, so Control Plane and Studio are not accidentally disabled during a foundation upgrade.
 
 Images:
 
