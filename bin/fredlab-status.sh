@@ -8,21 +8,36 @@ set -Eeuo pipefail
 # prints a single ✅/❌ dashboard. Exit code is 0 when stable, 1 otherwise — so
 # it composes in scripts and CI.
 #
+# It also checks the GCP-side GCS prerequisites (bucket region + lockdown, the
+# Knowledge Flow service account, and its Workload Identity bindings) and folds
+# them into the same verdict. The GCS checks degrade to a yellow "skipped" (never
+# red) when gcloud is unavailable or unauthenticated, so the command stays useful
+# without GCP access.
+#
 # Usage:
 #   bin/fredlab-status.sh            # wait until stable or timeout, then report
 #   bin/fredlab-status.sh --once     # single snapshot, no waiting
+#   bin/fredlab-status.sh --no-gcs   # skip the GCS/GCP checks
 #
 # Environment overrides:
 #   NAMESPACE (default: default)
 #   TIMEOUT   max seconds to wait for stable      (default: 300)
 #   INTERVAL  seconds between polls while waiting  (default: 5)
+#   CHECK_GCS 1 to check GCS prereqs, 0 to skip    (default: 1)
+#   BUCKET / REGION / GSA_EMAIL / KSA_NAMES        (default to the GCS prereq script's values)
 
 NAMESPACE="${NAMESPACE:-default}"
 TIMEOUT="${TIMEOUT:-300}"
 INTERVAL="${INTERVAL:-5}"
+CHECK_GCS="${CHECK_GCS:-1}"
 MODE="wait"
-[[ "${1:-}" == "--once" ]] && MODE="once"
-[[ "${1:-}" == "-h" || "${1:-}" == "--help" ]] && { sed -n '3,17p' "$0" | sed 's/^# \{0,1\}//'; exit 0; }
+for arg in "$@"; do
+  case "$arg" in
+    --once)   MODE="once" ;;
+    --no-gcs) CHECK_GCS=0 ;;
+    -h|--help) sed -n '3,26p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+  esac
+done
 
 for bin in kubectl jq; do
   command -v "$bin" >/dev/null 2>&1 || { echo "Missing required tool: $bin" >&2; exit 2; }
@@ -83,7 +98,83 @@ render() {
   fi
 }
 
-STABLE=1
+# One pass/fail line. Sets GCS_OK=0 on failure.
+gcs_check() {
+  local label="$1" ok="$2" detail="${3:-}"
+  if [[ "$ok" == "1" ]]; then
+    printf "  %s✓%s %-38s %s%s%s\n" "$G" "$N" "$label" "$D" "$detail" "$N"
+  else
+    printf "  %s✗%s %-38s %s%s%s\n" "$R" "$N" "$label" "$R" "${detail:-FAIL}" "$N"
+    GCS_OK=0
+  fi
+}
+
+# Verify the GCS prerequisites. Sets GCS_OK=0/1 and GCS_SKIPPED=0/1. Prints a section.
+render_gcs() {
+  GCS_OK=1; GCS_SKIPPED=0
+  local skip_reason=""
+  if [[ "$CHECK_GCS" != "1" ]]; then skip_reason="--no-gcs"; fi
+  if [[ -z "$skip_reason" ]] && ! command -v gcloud >/dev/null 2>&1; then skip_reason="gcloud not installed"; fi
+
+  local project=""
+  if [[ -z "$skip_reason" ]]; then
+    project="${PROJECT_ID:-$(gcloud config get-value project 2>/dev/null)}"
+    [[ -z "$project" ]] && skip_reason="no active gcloud project"
+  fi
+
+  if [[ -n "$skip_reason" ]]; then
+    GCS_SKIPPED=1
+    printf "%s┌─ GCS prerequisites ──────────────────────────────────%s\n" "$D" "$N"
+    printf "  %s⚪ skipped%s — %s\n" "$Y" "$N" "$skip_reason"
+    printf "%s└──────────────────────────────────────────────────────%s\n" "$D" "$N"
+    return
+  fi
+
+  local region="${REGION:-europe-west9}"
+  local bucket="${BUCKET:-${project}-knowledge-flow}"
+  local gsa_email="${GSA_EMAIL:-${GSA_NAME:-fredlab-knowledge-flow-gcs}@${project}.iam.gserviceaccount.com}"
+  local ksa_names="${KSA_NAMES:-knowledge-flow-backend knowledge-flow-worker}"
+
+  printf "%s┌─ GCS prerequisites ─ project=%s ──────────────────────%s\n" "$B" "$project" "$N"
+
+  # Bucket: existence + region + lockdown. Tolerant to gcloud-storage (snake_case)
+  # and JSON-API (camelCase iamConfiguration) shapes.
+  local desc
+  if desc="$(gcloud storage buckets describe "gs://${bucket}" --format=json 2>/dev/null)"; then
+    local loc pap ubla
+    loc="$(jq -r '(.location // "") ' <<< "$desc")"; loc="${loc,,}"
+    pap="$(jq -r '(.public_access_prevention // .iamConfiguration.publicAccessPrevention // "unknown")' <<< "$desc")"
+    ubla="$(jq -r '((.uniform_bucket_level_access | if type=="object" then .enabled else . end) // .iamConfiguration.uniformBucketLevelAccess.enabled // false) | tostring' <<< "$desc")"
+    gcs_check "bucket gs://${bucket}" 1 "exists"
+    gcs_check "location = ${region}" "$([[ "$loc" == "${region,,}" ]] && echo 1 || echo 0)" "$loc"
+    gcs_check "public access prevention = enforced" "$([[ "$pap" == "enforced" ]] && echo 1 || echo 0)" "$pap"
+    gcs_check "uniform bucket-level access = on" "$([[ "$ubla" == "true" ]] && echo 1 || echo 0)" "$ubla"
+  else
+    gcs_check "bucket gs://${bucket}" 0 "missing"
+  fi
+
+  # Service account + Workload Identity bindings.
+  if gcloud iam service-accounts describe "$gsa_email" --project="$project" >/dev/null 2>&1; then
+    gcs_check "service account" 1 "$gsa_email"
+    local policy ksa member has
+    policy="$(gcloud iam service-accounts get-iam-policy "$gsa_email" --project="$project" --format=json 2>/dev/null || echo '{}')"
+    for ksa in $ksa_names; do
+      member="serviceAccount:${project}.svc.id.goog[${NAMESPACE}/${ksa}]"
+      has="$(jq -r --arg m "$member" '[.bindings[]? | select(.role=="roles/iam.workloadIdentityUser") | .members[]? | select(.==$m)] | length' <<< "$policy")"
+      gcs_check "workloadIdentityUser: ${NAMESPACE}/${ksa}" "$([[ "${has:-0}" -ge 1 ]] && echo 1 || echo 0)" ""
+    done
+  else
+    gcs_check "service account ${gsa_email}" 0 "missing"
+  fi
+
+  if [[ "$GCS_OK" == "1" ]]; then
+    printf "%s└──────────────────────────────────────────────────────%s\n" "$D" "$N"
+  else
+    printf "%s└─ run bin/fredlab-gcp-gcs-prereqs.sh to repair ───────%s\n" "$R" "$N"
+  fi
+}
+
+STABLE=1; GCS_OK=1; GCS_SKIPPED=0
 start="$(date +%s)"
 while :; do
   now="$(date +%s)"; elapsed="$(( now - start ))"
@@ -92,13 +183,23 @@ while :; do
   if [[ "$MODE" == "wait" && -t 1 ]]; then printf '\033[2J\033[H'; fi
   render "$elapsed"
 
-  if [[ "$STABLE" == "1" ]]; then
-    printf "\n%s✅ PLATFORM STABLE%s — all workloads ready.\n" "$B$G" "$N"
-    exit 0
-  fi
-  if [[ "$MODE" == "once" || "$elapsed" -ge "$TIMEOUT" ]]; then
-    printf "\n%s❌ NOT STABLE%s — %s\n" "$B$R" "$N" \
-      "$([[ "$MODE" == "once" ]] && echo "snapshot only" || echo "timed out after ${TIMEOUT}s")"
+  # Settle once workloads are stable, or on a one-shot snapshot / timeout. We only
+  # query GCP at that point, so the poll loop stays fast.
+  if [[ "$STABLE" == "1" || "$MODE" == "once" || "$elapsed" -ge "$TIMEOUT" ]]; then
+    render_gcs
+
+    if [[ "$STABLE" == "1" && ( "$GCS_OK" == "1" || "$GCS_SKIPPED" == "1" ) ]]; then
+      printf "\n%s✅ PLATFORM STABLE%s — all workloads ready" "$B$G" "$N"
+      [[ "$GCS_SKIPPED" == "1" ]] && printf " %s(GCS checks skipped)%s" "$Y" "$N" \
+                                  || printf "; GCS prerequisites OK"
+      printf ".\n"
+      exit 0
+    fi
+
+    reasons=()
+    [[ "$STABLE" != "1" ]] && reasons+=("workloads $([[ "$MODE" == "once" ]] && echo "not ready" || echo "timed out after ${TIMEOUT}s")")
+    [[ "$GCS_OK" != "1" && "$GCS_SKIPPED" != "1" ]] && reasons+=("GCS prerequisites failing")
+    printf "\n%s❌ NOT STABLE%s — %s.\n" "$B$R" "$N" "$(IFS='; '; echo "${reasons[*]}")"
     exit 1
   fi
   sleep "$INTERVAL"
