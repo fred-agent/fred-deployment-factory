@@ -64,9 +64,10 @@ spec:
             - -Ehttp.port={{ .Values.opensearch.service.httpPort }}
             - -Etransport.port={{ .Values.opensearch.service.transportPort }}
             - -Enode.store.allow_mmap={{ .Values.opensearch.config.allowMmap }}
-            {{- if .Values.opensearch.config.disableSecurityPlugin }}
-            - -Eplugins.security.disabled=true
-            {{- end }}
+            {{- /* Security is disabled via the DISABLE_SECURITY_PLUGIN env var, which the */}}
+            {{- /* image entrypoint applies by writing plugins.security.disabled to        */}}
+            {{- /* opensearch.yml. Do NOT also pass -Eplugins.security.disabled here:       */}}
+            {{- /* OpenSearch refuses to start when a setting is defined twice.             */}}
           env:
             - name: POD_NAME
               valueFrom:
