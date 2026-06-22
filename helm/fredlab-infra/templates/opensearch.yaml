@@ -1,0 +1,135 @@
+{{- if .Values.opensearch.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "fredlab-infra.opensearchName" . }}
+  labels:
+    {{- include "fredlab-infra.labels" . | nindent 4 }}
+    app.kubernetes.io/component: opensearch
+spec:
+  type: {{ .Values.opensearch.service.type }}
+  ports:
+    - name: http
+      port: {{ .Values.opensearch.service.httpPort }}
+      targetPort: http
+    - name: transport
+      port: {{ .Values.opensearch.service.transportPort }}
+      targetPort: transport
+    - name: metrics
+      port: {{ .Values.opensearch.service.metricsPort }}
+      targetPort: metrics
+  selector:
+    {{- include "fredlab-infra.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: opensearch
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "fredlab-infra.opensearchName" . }}
+  labels:
+    {{- include "fredlab-infra.labels" . | nindent 4 }}
+    app.kubernetes.io/component: opensearch
+spec:
+  serviceName: {{ include "fredlab-infra.opensearchName" . }}
+  replicas: {{ .Values.opensearch.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "fredlab-infra.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: opensearch
+  template:
+    metadata:
+      labels:
+        {{- include "fredlab-infra.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: opensearch
+    spec:
+      enableServiceLinks: false
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        runAsNonRoot: true
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: opensearch
+          image: {{ .Values.images.opensearch | quote }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          args:
+            - -Ecluster.name={{ .Values.opensearch.clusterName }}
+            - -Enode.name=$(POD_NAME)
+            - -Ediscovery.type={{ .Values.opensearch.config.discoveryType }}
+            - -Enetwork.host=0.0.0.0
+            - -Ebootstrap.memory_lock=false
+            - -Ehttp.port={{ .Values.opensearch.service.httpPort }}
+            - -Etransport.port={{ .Values.opensearch.service.transportPort }}
+            - -Enode.store.allow_mmap={{ .Values.opensearch.config.allowMmap }}
+            {{- if .Values.opensearch.config.disableSecurityPlugin }}
+            - -Eplugins.security.disabled=true
+            {{- end }}
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: OPENSEARCH_JAVA_OPTS
+              value: {{ .Values.opensearch.config.javaOpts | quote }}
+            - name: DISABLE_SECURITY_PLUGIN
+              value: {{ .Values.opensearch.config.disableSecurityPlugin | quote }}
+            - name: DISABLE_INSTALL_DEMO_CONFIG
+              value: {{ .Values.opensearch.config.disableInstallDemoConfig | quote }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.opensearch.service.httpPort }}
+            - name: transport
+              containerPort: {{ .Values.opensearch.service.transportPort }}
+            - name: metrics
+              containerPort: {{ .Values.opensearch.service.metricsPort }}
+          startupProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /_cluster/health
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 12
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 60
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 6
+          resources:
+            {{- toYaml .Values.opensearch.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: data
+              mountPath: /usr/share/opensearch/data
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        labels:
+          {{- include "fredlab-infra.labels" . | nindent 10 }}
+          app.kubernetes.io/component: opensearch
+      spec:
+        accessModes:
+          {{- toYaml .Values.opensearch.persistence.accessModes | nindent 10 }}
+        storageClassName: {{ .Values.opensearch.persistence.storageClassName | quote }}
+        resources:
+          requests:
+            storage: {{ .Values.opensearch.persistence.size | quote }}
+{{- end }}

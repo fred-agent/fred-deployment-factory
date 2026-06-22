@@ -9,6 +9,7 @@ Helm chart for Fredlab Playground on GKE Autopilot.
 | PostgreSQL | Private | `postgres:5432` | none |
 | Keycloak | Public | `keycloak:8080` | `keycloak.playground.fredlab.dev` |
 | OpenFGA | Private | `openfga:8080`, `openfga:8081` | none |
+| OpenSearch | Private | `opensearch:9200` | none |
 | Temporal | Private | `temporal:7233` | none |
 | Temporal UI | Protected admin UI | `temporal-ui:8080` | `temporal.playground.fredlab.dev` |
 | Control Plane backend | Private | `control-plane-backend:8080` | none |
@@ -30,7 +31,7 @@ This avoids mutating an already-attached Google-managed certificate when new pub
 
 The chart avoids Helm release-name prefixes for service DNS:
 
-- infrastructure services use fixed short names: `postgres`, `keycloak`, `openfga`, `temporal`
+- infrastructure services use fixed short names: `postgres`, `keycloak`, `openfga`, `opensearch`, `temporal`
 - app backends use `[app-name]-backend`
 - app frontends use `[app-name]-frontend`
 - admin UIs use `[component]-ui`
@@ -44,6 +45,8 @@ The chart is designed for GKE Autopilot:
 - no privileged `chown` init jobs
 - explicit CPU and memory requests
 - real secrets live in `fredlab-secrets.values.yaml`, ignored by Git
+
+OpenSearch runs as an internal single-node StatefulSet for playground search workloads. It deliberately uses `node.store.allow_mmap=false` instead of requiring the forbidden node-level `vm.max_map_count` sysctl. It is not exposed through Ingress.
 
 Temporal UI is protected by the Cloud Armor allowlist policy:
 
@@ -59,6 +62,7 @@ PostgreSQL provisioning and application schema migrations are intentionally sepa
 | --- | --- | --- |
 | Database bootstrap | `postgres-provision` Helm hook | PostgreSQL users, databases, grants |
 | Identity bootstrap | `keycloak-provision` Helm hook | Keycloak realm `app`, clients `app` and `control-plane` |
+| Search engine | `opensearch` StatefulSet | Private OpenSearch HTTP endpoint for hybrid search |
 | Control Plane schema | `control-plane-migration` Helm hook | Control Plane tables via `alembic upgrade head` |
 | Control Plane runtime | `control-plane-backend` Deployment | HTTP service only |
 
@@ -91,6 +95,30 @@ bin/fredlab-keycloak-identity.sh
 The real `config/fredlab-keycloak-identity.json` file is ignored by Git. The script creates Keycloak groups, users, app client roles, group membership, and the `groups` token claim. It does not yet create Fred/OpenFGA team ownership tuples.
 
 When validating Keycloak clients, always use `kcadm.sh --fields ...`. The full representation of the confidential `control-plane` client includes its secret.
+
+## Legal Content
+
+The frontend has two separate configuration phases:
+
+- `/config.json` is read before login and before CGU acceptance.
+- `/control-plane/v1/frontend/bootstrap` is read after authentication and is protected by CGU acceptance when `controlPlane.config.gcuVersion` is set.
+
+Because of that ordering, the chart publishes `properties.gcuVersion` in `/config.json`. This lets the frontend know that CGU are required before calling protected bootstrap routes.
+
+The frontend reads CGU/GDPR Markdown files from its public web root:
+
+- `/gcu.fr.md`, `/gcu.md`
+- `/gdpr.fr.md`, `/gdpr.md`
+
+Fredlab overrides the generic files bundled in the frontend image with a Helm-managed ConfigMap. Edit the public files in:
+
+```text
+helm/fredlab-infra/legal/
+```
+
+These files are not secrets. They should be committed, reviewed, and validated like product-facing documentation. Changing the text does not require rebuilding the frontend image; redeploy the chart or run the frontend deploy script.
+
+If a first login shows `Control plane non accessible`, verify that `/config.json` contains `properties.gcuVersion`. Without that pre-auth value, the UI cannot reliably route the user to CGU before the protected bootstrap call fails.
 
 ## Private Values
 
@@ -178,6 +206,12 @@ bin/fredlab-frontend-deploy.sh start 0.2
 ```
 
 This deploys the public `fred-frontend` service at `https://studio.playground.fredlab.dev`. The frontend stays thin: Nginx serves the static UI and proxies `/control-plane/...` to `control-plane-backend:8080`. The login configuration still comes from Control Plane through `/control-plane/v1/frontend/config`.
+
+The CGU/GDPR pages are served from `helm/fredlab-infra/legal/` through a ConfigMap mounted in the frontend pod. After changing those files:
+
+```bash
+bin/fredlab-frontend-deploy.sh start 0.2
+```
 
 During the first bootstrap, `fred-agents` and `knowledge-flow-backend` are not deployed yet. Their frontend upstreams intentionally point to `control-plane-backend` so Nginx can start; they must be switched to their real services when those components are deployed.
 

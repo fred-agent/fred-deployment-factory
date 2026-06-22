@@ -89,7 +89,7 @@ Expected:
 
 - core pods are `Running`
 - `postgres-provision` is `Complete`
-- services include `postgres`, `keycloak`, `openfga`, `temporal`, `temporal-ui`
+- services include `postgres`, `keycloak`, `openfga`, `opensearch`, `temporal`, `temporal-ui`
 - Keycloak realm `app` exists
 - Keycloak clients `app` and `control-plane` exist
 
@@ -98,6 +98,7 @@ Responsibility:
 - `postgres-provision` creates PostgreSQL users, databases, and grants.
 - `keycloak-provision` creates/updates the Fred realm and clients.
 - This step does not create application tables.
+- `opensearch` is a private single-node search engine for future Knowledge Flow / hybrid search workloads.
 
 For a deeper Control Plane service-client check:
 
@@ -110,6 +111,19 @@ kubectl exec deploy/keycloak -- \
 Expected:
 
 - `control-plane` is confidential: `publicClient=false`, `serviceAccountsEnabled=true`
+
+For an OpenSearch check:
+
+```bash
+kubectl rollout status statefulset/opensearch
+kubectl get pod -l app.kubernetes.io/component=opensearch
+
+kubectl run opensearch-check --rm -i --restart=Never \
+  --image=curlimages/curl:8.10.1 \
+  -- curl -sS http://opensearch:9200/_cluster/health?pretty
+```
+
+Expected: the pod is `Running`, the service answers internally, and the JSON response has a cluster name `fredlab-opensearch`.
 
 ## 4. Confirm Fred Database
 
@@ -208,6 +222,54 @@ The catalog is the contract. For each image it declares:
 - Docker build context, usually `.`
 
 If a build fails immediately with `Cannot find Dockerfile`, fix the catalog entry or clone the missing source repository at the declared path. If the tag is omitted, `bin/fredlab-build` uses the short Git commit SHA from the source repository declared in the catalog.
+
+## 8. Fredlab Legal Content
+
+The frontend needs the CGU version before it can call authenticated control-plane bootstrap routes. Fredlab therefore serves a Helm-managed `/config.json` with:
+
+```json
+{
+  "properties": {
+    "gcuVersion": "v1",
+    "releaseBrand": "fredlab"
+  }
+}
+```
+
+The actual CGU/GDPR text is also mounted by Helm from Markdown files:
+
+```text
+helm/fredlab-infra/legal/gcu.fr.md
+helm/fredlab-infra/legal/gcu.md
+helm/fredlab-infra/legal/gdpr.fr.md
+helm/fredlab-infra/legal/gdpr.md
+```
+
+This content is public, not secret. Update and review it in Git, then redeploy the frontend:
+
+```bash
+bin/fredlab-frontend-deploy.sh start 0.2
+```
+
+Validate from inside the cluster:
+
+```bash
+kubectl run frontend-config-check --restart=Never \
+  --image=curlimages/curl:8.10.1 \
+  -- curl -sS http://fred-frontend:8080/config.json
+
+kubectl wait --for=jsonpath='{.status.phase}'=Succeeded pod/frontend-config-check --timeout=60s || true
+kubectl logs frontend-config-check
+kubectl delete pod frontend-config-check --ignore-not-found
+
+kubectl run frontend-gcu-check --restart=Never \
+  --image=curlimages/curl:8.10.1 \
+  -- curl -sS http://fred-frontend:8080/gcu.fr.md
+
+kubectl wait --for=jsonpath='{.status.phase}'=Succeeded pod/frontend-gcu-check --timeout=60s || true
+kubectl logs frontend-gcu-check
+kubectl delete pod frontend-gcu-check --ignore-not-found
+```
 
 Validate:
 
@@ -553,3 +615,15 @@ Expected:
 - `fredlab-studio-cert` eventually becomes `Active`
 
 Use `curl -k -I https://studio.playground.fredlab.dev` only to confirm routing while the certificate is still provisioning.
+
+### OpenSearch Pod Does Not Start
+
+Check the StatefulSet and logs:
+
+```bash
+kubectl get statefulset,pod,pvc -l app.kubernetes.io/component=opensearch
+kubectl logs statefulset/opensearch --tail=120
+kubectl describe pod -l app.kubernetes.io/component=opensearch
+```
+
+Fredlab runs OpenSearch with `node.store.allow_mmap=false` so GKE Autopilot does not need a forbidden `vm.max_map_count` node sysctl. If logs mention memory pressure or scheduling failures, increase `opensearch.resources` rather than adding privileged init containers.

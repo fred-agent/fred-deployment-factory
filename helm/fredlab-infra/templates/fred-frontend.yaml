@@ -76,4 +76,36 @@ spec:
             failureThreshold: 3
           resources:
             {{- toYaml .Values.fredFrontend.resources | nindent 12 }}
+          volumeMounts:
+            - name: frontend-config
+              mountPath: /usr/share/nginx/html/config.json
+              subPath: config.json
+              readOnly: true
+          {{- if .Values.fredFrontend.legal.enabled }}
+            - name: legal-content
+              mountPath: /usr/share/nginx/html/gcu.fr.md
+              subPath: gcu.fr.md
+              readOnly: true
+            - name: legal-content
+              mountPath: /usr/share/nginx/html/gcu.md
+              subPath: gcu.md
+              readOnly: true
+            - name: legal-content
+              mountPath: /usr/share/nginx/html/gdpr.fr.md
+              subPath: gdpr.fr.md
+              readOnly: true
+            - name: legal-content
+              mountPath: /usr/share/nginx/html/gdpr.md
+              subPath: gdpr.md
+              readOnly: true
+          {{- end }}
+      volumes:
+        - name: frontend-config
+          configMap:
+            name: {{ .Values.fredFrontend.config.configMapName | quote }}
+      {{- if .Values.fredFrontend.legal.enabled }}
+        - name: legal-content
+          configMap:
+            name: {{ .Values.fredFrontend.legal.configMapName | quote }}
+      {{- end }}
 {{- end }}

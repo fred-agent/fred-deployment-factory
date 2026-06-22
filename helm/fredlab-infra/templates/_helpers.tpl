@@ -35,6 +35,10 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- default "openfga" .Values.openfga.fullnameOverride | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 
+{{- define "fredlab-infra.opensearchName" -}}
+{{- default "opensearch" .Values.opensearch.fullnameOverride | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+
 {{- define "fredlab-infra.temporalName" -}}
 {{- default "temporal" .Values.temporal.fullnameOverride | trunc 63 | trimSuffix "-" -}}
 {{- end -}}

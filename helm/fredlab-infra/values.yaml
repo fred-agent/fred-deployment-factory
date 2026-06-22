@@ -13,6 +13,7 @@ images:
   postgresClient: mirror.gcr.io/postgres:15.12-alpine3.20
   keycloak: quay.io/keycloak/keycloak:26.3.0
   openfga: openfga/openfga:v1.11.0
+  opensearch: mirror.gcr.io/opensearchproject/opensearch:2.19.3
   temporalServer: mirror.gcr.io/temporalio/server:1.28.0
   temporalAdminTools: mirror.gcr.io/temporalio/admin-tools:1.28
   temporalUi: mirror.gcr.io/temporalio/ui:2.38.3
@@ -132,6 +133,37 @@ openfga:
       memory: 256Mi
     limits:
       memory: 512Mi
+
+opensearch:
+  enabled: true
+  fullnameOverride: opensearch
+  clusterName: fredlab-opensearch
+  replicaCount: 1
+  service:
+    type: ClusterIP
+    httpPort: 9200
+    transportPort: 9300
+    metricsPort: 9600
+  persistence:
+    storageClassName: standard-rwo
+    size: 20Gi
+    accessModes:
+      - ReadWriteOnce
+  config:
+    # Single-node playground mode avoids cluster bootstrap complexity.
+    discoveryType: single-node
+    # Required on GKE Autopilot because node-level vm.max_map_count sysctl is not allowed.
+    allowMmap: false
+    # Internal-only playground service. Do not expose this service through Ingress.
+    disableSecurityPlugin: true
+    disableInstallDemoConfig: true
+    javaOpts: -Xms1g -Xmx1g
+  resources:
+    requests:
+      cpu: 500m
+      memory: 2Gi
+    limits:
+      memory: 3Gi
 
 temporal:
   enabled: true
@@ -311,6 +343,26 @@ fredFrontend:
     fredAgents: http://control-plane-backend:8080
     knowledgeFlow: http://control-plane-backend:8080
   clientMaxBodySize: 150m
+  config:
+    # Static pre-auth frontend configuration. It is served as /config.json
+    # before the user has accepted CGU, so values needed by guards must live
+    # here and not only in the authenticated control-plane bootstrap.
+    configMapName: fred-frontend-config
+    frontendBasename: /
+    releaseBrand: fredlab
+    featureFlags: {}
+    properties: {}
+  legal:
+    # Public Markdown content served by nginx instead of the generic files
+    # bundled in the frontend image. These files are not secrets and should be
+    # reviewed/versioned with the deployment repository.
+    enabled: true
+    configMapName: fred-frontend-legal
+    files:
+      gcuFr: legal/gcu.fr.md
+      gcuEn: legal/gcu.md
+      gdprFr: legal/gdpr.fr.md
+      gdprEn: legal/gdpr.md
   health:
     path: /config.json
   resources:

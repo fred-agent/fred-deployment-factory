@@ -10,6 +10,13 @@ OpenFGA internal service:
   {{ include "fredlab-infra.openfgaName" . }}:{{ .Values.openfga.service.httpPort }} (HTTP)
   {{ include "fredlab-infra.openfgaName" . }}:{{ .Values.openfga.service.grpcPort }} (gRPC)
 
+OpenSearch internal service:
+  {{ if .Values.opensearch.enabled }}
+  {{ include "fredlab-infra.opensearchName" . }}:{{ .Values.opensearch.service.httpPort }}
+  {{ else }}
+  disabled (set opensearch.enabled=true)
+  {{ end }}
+
 Temporal internal service:
   {{ include "fredlab-infra.temporalName" . }}:{{ .Values.temporal.service.grpcPort }}
 
