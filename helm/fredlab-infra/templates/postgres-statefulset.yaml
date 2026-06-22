@@ -87,7 +87,9 @@ spec:
     - metadata:
         name: data
         labels:
-          {{- include "fredlab-infra.labels" . | nindent 10 }}
+          {{- /* selectorLabels only: volumeClaimTemplates are immutable, so they */}}
+          {{- /* must not carry version-bearing labels that change on chart bumps. */}}
+          {{- include "fredlab-infra.selectorLabels" . | nindent 10 }}
           app.kubernetes.io/component: postgres
       spec:
         accessModes:
