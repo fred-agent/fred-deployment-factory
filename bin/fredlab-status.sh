@@ -109,6 +109,27 @@ gcs_check() {
   fi
 }
 
+# Check one bucket: existence + region + lockdown, summarized on a single line.
+# Tolerant to gcloud-storage (snake_case) and JSON-API (camelCase) shapes.
+gcs_check_bucket() {
+  local bucket="$1" region="$2" desc loc pap ubla problems=()
+  if ! desc="$(gcloud storage buckets describe "gs://${bucket}" --format=json 2>/dev/null)"; then
+    gcs_check "bucket gs://${bucket}" 0 "missing"
+    return
+  fi
+  loc="$(jq -r '(.location // "")' <<< "$desc")"; loc="${loc,,}"
+  pap="$(jq -r '(.public_access_prevention // .iamConfiguration.publicAccessPrevention // "unknown")' <<< "$desc")"
+  ubla="$(jq -r '((.uniform_bucket_level_access | if type=="object" then .enabled else . end) // .iamConfiguration.uniformBucketLevelAccess.enabled // false) | tostring' <<< "$desc")"
+  [[ "$loc" == "${region,,}" ]] || problems+=("location=$loc")
+  [[ "$pap" == "enforced" ]] || problems+=("pap=$pap")
+  [[ "$ubla" == "true" ]] || problems+=("ubla=$ubla")
+  if [[ ${#problems[@]} -eq 0 ]]; then
+    gcs_check "bucket gs://${bucket}" 1 "${loc}, locked down"
+  else
+    gcs_check "bucket gs://${bucket}" 0 "$(IFS=', '; echo "${problems[*]}")"
+  fi
+}
+
 # Verify the GCS prerequisites. Sets GCS_OK=0/1 and GCS_SKIPPED=0/1. Prints a section.
 render_gcs() {
   GCS_OK=1; GCS_SKIPPED=0
@@ -131,27 +152,19 @@ render_gcs() {
   fi
 
   local region="${REGION:-europe-west9}"
-  local bucket="${BUCKET:-${project}-knowledge-flow}"
+  local content_prefix="${CONTENT_PREFIX:-${project}-content}"
+  local fs_bucket="${FS_BUCKET:-${project}-knowledge-flow}"
   local gsa_email="${GSA_EMAIL:-${GSA_NAME:-fredlab-knowledge-flow-gcs}@${project}.iam.gserviceaccount.com}"
   local ksa_names="${KSA_NAMES:-knowledge-flow-backend knowledge-flow-worker}"
+  local buckets=("${content_prefix}-documents" "${content_prefix}-objects" "${content_prefix}-files" "${fs_bucket}")
 
   printf "%s┌─ GCS prerequisites ─ project=%s ──────────────────────%s\n" "$B" "$project" "$N"
 
-  # Bucket: existence + region + lockdown. Tolerant to gcloud-storage (snake_case)
-  # and JSON-API (camelCase iamConfiguration) shapes.
-  local desc
-  if desc="$(gcloud storage buckets describe "gs://${bucket}" --format=json 2>/dev/null)"; then
-    local loc pap ubla
-    loc="$(jq -r '(.location // "") ' <<< "$desc")"; loc="${loc,,}"
-    pap="$(jq -r '(.public_access_prevention // .iamConfiguration.publicAccessPrevention // "unknown")' <<< "$desc")"
-    ubla="$(jq -r '((.uniform_bucket_level_access | if type=="object" then .enabled else . end) // .iamConfiguration.uniformBucketLevelAccess.enabled // false) | tostring' <<< "$desc")"
-    gcs_check "bucket gs://${bucket}" 1 "exists"
-    gcs_check "location = ${region}" "$([[ "$loc" == "${region,,}" ]] && echo 1 || echo 0)" "$loc"
-    gcs_check "public access prevention = enforced" "$([[ "$pap" == "enforced" ]] && echo 1 || echo 0)" "$pap"
-    gcs_check "uniform bucket-level access = on" "$([[ "$ubla" == "true" ]] && echo 1 || echo 0)" "$ubla"
-  else
-    gcs_check "bucket gs://${bucket}" 0 "missing"
-  fi
+  # All four Knowledge Flow buckets: content store trio + virtual filesystem.
+  local bucket
+  for bucket in "${buckets[@]}"; do
+    gcs_check_bucket "$bucket" "$region"
+  done
 
   # Service account + Workload Identity bindings.
   if gcloud iam service-accounts describe "$gsa_email" --project="$project" >/dev/null 2>&1; then

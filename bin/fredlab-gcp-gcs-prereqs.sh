@@ -46,6 +46,7 @@ echo "Kubernetes service accounts: ${KSA_NAMES}"
 gcloud services enable \
   storage.googleapis.com \
   iamcredentials.googleapis.com \
+  aiplatform.googleapis.com \
   --project="${PROJECT_ID}"
 
 for bucket in "${BUCKETS[@]}"; do
@@ -102,6 +103,12 @@ retry gcloud iam service-accounts add-iam-policy-binding "${GSA_EMAIL}" \
   --project="${PROJECT_ID}" \
   --member="serviceAccount:${GSA_EMAIL}" \
   --role="roles/iam.serviceAccountTokenCreator" >/dev/null
+
+# Vertex AI access for Knowledge Flow embedding/chat/vision models (ADC).
+# Project-level roles/aiplatform.user lets the workload call Vertex AI.
+retry gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
+  --member="serviceAccount:${GSA_EMAIL}" \
+  --role="roles/aiplatform.user" >/dev/null
 
 for ksa_name in ${KSA_NAMES}; do
   retry gcloud iam service-accounts add-iam-policy-binding "${GSA_EMAIL}" \
