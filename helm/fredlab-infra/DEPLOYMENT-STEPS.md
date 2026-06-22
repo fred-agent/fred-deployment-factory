@@ -565,6 +565,103 @@ https://studio.playground.fredlab.dev
 
 Expected: redirect to Keycloak, login with a provisioned user, then return to Studio.
 
+## 15. Deploy Knowledge Flow With Native GCS
+
+Knowledge Flow is the only component that uses object storage. On GKE it uses
+native Google Cloud Storage through Workload Identity / ADC — no service-account
+JSON key. It plugs into two storage layers: the content store (buckets
+`<prefix>-documents` / `-objects` / `-files`) and the virtual filesystem (one
+bucket). See `docs/swift/platform/DEPLOYMENT_GUIDE_GKE.md` in the Fred repo.
+
+### 15.1 GCP prerequisites (buckets + IAM + Vertex)
+
+```bash
+bin/fredlab-gcp-gcs-prereqs.sh
+```
+
+This is idempotent and replayable. It creates the four buckets
+(`<project>-content-documents/-objects/-files` and `<project>-knowledge-flow`),
+grants the Google service account `roles/storage.objectAdmin` on them, enables
+Vertex AI and grants `roles/aiplatform.user`, and prepares Workload Identity
+bindings for the `knowledge-flow-backend` / `knowledge-flow-worker` Kubernetes
+service accounts. Override `CONTENT_PREFIX` / `FS_BUCKET` / `REGION` if needed.
+
+### 15.2 Set the Keycloak knowledge-flow client secret
+
+Add to `helm/fredlab-infra/fredlab-secrets.values.yaml`:
+
+```yaml
+keycloak:
+  clients:
+    knowledgeFlow:
+      secret: "<a-strong-secret>"
+```
+
+This is now required by the chart. Re-run the foundation deploy so the
+`keycloak-provision` hook creates the confidential `knowledge-flow` client and
+stores the secret:
+
+```bash
+bin/fredlab-infra-deploy.sh
+```
+
+Validate the client exists:
+
+```bash
+kubectl exec deploy/keycloak -- \
+  /opt/keycloak/bin/kcadm.sh get clients -r app -q clientId=knowledge-flow \
+  --fields clientId,enabled,publicClient,serviceAccountsEnabled
+```
+
+Expected: `publicClient=false`, `serviceAccountsEnabled=true`.
+
+### 15.3 Build the image
+
+```bash
+bin/fredlab-build knowledge-flow-backend 0.2
+```
+
+### 15.4 Start Knowledge Flow
+
+```bash
+bin/fredlab-knowledge-flow-deploy.sh start 0.2
+```
+
+The script enables `knowledgeFlow`, sets the Artifact Registry image, annotates
+the Kubernetes service account for Workload Identity
+(`fredlab-knowledge-flow-gcs@<project>.iam.gserviceaccount.com`), and injects the
+Vertex AI project. The chart points the frontend `knowledgeFlow` upstream at
+`knowledge-flow-backend:8080` automatically.
+
+Validate:
+
+```bash
+bin/fredlab-status.sh        # KF workload + all four GCS buckets must be green
+```
+
+### 15.5 Confirm health and GCS via Workload Identity
+
+```bash
+kubectl run kf-health --rm -i --restart=Never \
+  --image=curlimages/curl:8.10.1 \
+  -- curl -sS -i http://knowledge-flow-backend:8080/knowledge-flow/v1/healthz
+
+# Prove the pod can write to GCS purely via Workload Identity (no key):
+kubectl exec deploy/knowledge-flow-backend -- \
+  python -c "from google.cloud import storage; storage.Client().bucket('$(gcloud config get-value project)-knowledge-flow').blob('healthz').upload_from_string('ok')"
+```
+
+Expected: HTTP `200` from healthz; the GCS write succeeds with no credential
+error. An ingestion smoke test (upload a document, confirm objects under
+`gs://<project>-content-documents/<document_uid>/`) exercises Vertex AI
+embeddings end to end.
+
+### 15.6 Redeploy the frontend (so it proxies to the real Knowledge Flow)
+
+```bash
+bin/fredlab-frontend-deploy.sh start 0.2
+```
+
 ## Troubleshooting
 
 ### Helm Command Run From The Wrong Directory
@@ -627,3 +724,19 @@ kubectl describe pod -l app.kubernetes.io/component=opensearch
 ```
 
 Fredlab runs OpenSearch with `node.store.allow_mmap=false` so GKE Autopilot does not need a forbidden `vm.max_map_count` node sysctl. If logs mention memory pressure or scheduling failures, increase `opensearch.resources` rather than adding privileged init containers.
+
+### Knowledge Flow Storage / Auth Failures
+
+```bash
+kubectl logs deploy/knowledge-flow-backend --tail=120
+```
+
+| Symptom | Likely cause / fix |
+| --- | --- |
+| `DefaultCredentialsError` at startup | Workload Identity not wired: the KSA annotation or the GSA binding is missing. Re-run `bin/fredlab-gcp-gcs-prereqs.sh` and confirm `knowledgeFlow.serviceAccount.gcpServiceAccount` is set (the deploy script sets it). |
+| `403 ... does not have storage.objects.* access` | GSA missing `roles/storage.objectAdmin` on a bucket. Re-run the prereq script. |
+| `404 ... bucket does not exist` | A bucket is missing or `content_storage.bucket_name` / `filesystem.bucket_name` is wrong. Remember the content store suffixes `-documents/-objects/-files`. |
+| `FRED_POSTGRES_PASSWORD is required` | The deployment env is not wired to the infra secret — should come from `POSTGRES_FRED_PASSWORD`. |
+| `KEYCLOAK_KNOWLEDGE_FLOW_CLIENT_SECRET is not set` | Set `keycloak.clients.knowledgeFlow.secret` in the secrets file and re-run the foundation deploy. |
+| Vertex AI / `PermissionDenied` during ingestion | GSA missing `roles/aiplatform.user`, or the model `location` is not a valid Vertex region. Re-run the prereq script; adjust `knowledgeFlow.config.models.location`. |
+| Tabular SQL preview errors with `NotImplementedError` | Expected on pure Workload Identity — GCS presigned URLs need an SA key or `signBlob`. |
