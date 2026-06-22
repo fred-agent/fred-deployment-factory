@@ -3,7 +3,11 @@ set -Eeuo pipefail
 
 PROJECT_ID="${PROJECT_ID:-$(gcloud config get-value project 2>/dev/null)}"
 PROJECT_NUMBER="${PROJECT_NUMBER:-$(gcloud projects describe "${PROJECT_ID}" --format="value(projectNumber)")}"
-REGION="${REGION:-europe-west1}"
+# Bucket region. Must match the GKE cluster region (fredlab-playground-gke is in
+# europe-west9) so Knowledge Flow object I/O stays in-region — a bucket's location
+# is immutable, so getting this right up front matters. Override REGION for other
+# targets.
+REGION="${REGION:-europe-west9}"
 NAMESPACE="${NAMESPACE:-default}"
 BUCKET="${BUCKET:-${PROJECT_ID}-knowledge-flow}"
 GSA_NAME="${GSA_NAME:-fredlab-knowledge-flow-gcs}"
