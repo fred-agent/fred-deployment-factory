@@ -88,10 +88,15 @@ keycloak:
           - https://studio.playground.fredlab.dev
       controlPlane:
         clientId: control-plane
+        appRoles:
+          - service_agent
         realmManagementRoles:
           - manage-users
           - view-users
           - query-users
+          - query-groups
+        accountRoles:
+          - view-groups
   resources:
     requests:
       cpu: 500m

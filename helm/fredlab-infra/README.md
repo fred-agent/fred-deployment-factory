@@ -70,6 +70,8 @@ The chart provisions the realm and clients with the `keycloak-provision` Helm ho
 
 User and team/group provisioning remains a separate application-domain step. Do not confuse it with the low-level realm/client bootstrap.
 
+For the current Fredlab phase, only the `control-plane` service client is provisioned. Future deployments of `knowledge-flow-backend` and `fred-agents` must add their own confidential clients and secrets (`knowledge-flow` / `KEYCLOAK_KNOWLEDGE_FLOW_CLIENT_SECRET`, `agentic` / `KEYCLOAK_AGENTIC_CLIENT_SECRET`) before those services are enabled.
+
 Initial Keycloak users and groups can be provisioned from a local identity file:
 
 ```bash

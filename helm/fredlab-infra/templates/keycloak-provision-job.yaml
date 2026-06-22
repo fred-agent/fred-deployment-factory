@@ -60,8 +60,12 @@ spec:
               value: {{ .Values.keycloak.provision.clients.app.webOrigins | toJson | quote }}
             - name: CONTROL_PLANE_CLIENT_ID
               value: {{ .Values.keycloak.provision.clients.controlPlane.clientId | quote }}
+            - name: CONTROL_PLANE_APP_ROLES
+              value: {{ join " " .Values.keycloak.provision.clients.controlPlane.appRoles | quote }}
             - name: CONTROL_PLANE_REALM_MANAGEMENT_ROLES
               value: {{ join " " .Values.keycloak.provision.clients.controlPlane.realmManagementRoles | quote }}
+            - name: CONTROL_PLANE_ACCOUNT_ROLES
+              value: {{ join " " .Values.keycloak.provision.clients.controlPlane.accountRoles | quote }}
           command:
             - /bin/sh
             - -ec
@@ -89,6 +93,25 @@ spec:
                   | grep -v '^id$' \
                   | head -n 1 \
                   || true
+              }
+
+              ensure_client_role() {
+                client="$1"
+                role="$2"
+                description="$3"
+                client_uuid="$(client_id "$client")"
+                if [ -z "$client_uuid" ]; then
+                  echo "Cannot ensure role '$client/$role': client not found."
+                  return 1
+                fi
+                if "$KCADM" get "clients/$client_uuid/roles/$role" -r "$REALM" >/dev/null 2>&1; then
+                  echo "Role '$client/$role' already exists."
+                else
+                  echo "Creating role '$client/$role'."
+                  "$KCADM" create "clients/$client_uuid/roles" -r "$REALM" \
+                    -s "name=$role" \
+                    -s "description=$description"
+                fi
               }
 
               login
@@ -161,6 +184,23 @@ spec:
                 "$KCADM" add-roles -r "$REALM" \
                   --uusername "service-account-$CONTROL_PLANE_CLIENT_ID" \
                   --cclientid realm-management \
+                  --rolename "$role" || true
+              done
+
+              for role in $CONTROL_PLANE_ACCOUNT_ROLES; do
+                echo "Granting account/$role to service-account-$CONTROL_PLANE_CLIENT_ID."
+                "$KCADM" add-roles -r "$REALM" \
+                  --uusername "service-account-$CONTROL_PLANE_CLIENT_ID" \
+                  --cclientid account \
+                  --rolename "$role" || true
+              done
+
+              for role in $CONTROL_PLANE_APP_ROLES; do
+                ensure_client_role "$APP_CLIENT_ID" "$role" "Fred service account role"
+                echo "Granting $APP_CLIENT_ID/$role to service-account-$CONTROL_PLANE_CLIENT_ID."
+                "$KCADM" add-roles -r "$REALM" \
+                  --uusername "service-account-$CONTROL_PLANE_CLIENT_ID" \
+                  --cclientid "$APP_CLIENT_ID" \
                   --rolename "$role" || true
               done
 
