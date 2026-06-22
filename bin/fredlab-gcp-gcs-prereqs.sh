@@ -50,18 +50,35 @@ else
     --display-name="Fredlab Knowledge Flow GCS access"
 fi
 
-gcloud storage buckets add-iam-policy-binding "gs://${BUCKET}" \
+# IAM is eventually consistent: a service account created moments ago may not yet
+# be visible to policy-binding APIs, which then fail with "... does not exist".
+# Retry binding operations until the account has propagated, so a fresh first run
+# completes without needing a manual second run.
+retry() {
+  local attempt=1 max="${RETRY_MAX:-30}"
+  until "$@"; do
+    if (( attempt >= max )); then
+      echo "Giving up after ${max} attempts: $*" >&2
+      return 1
+    fi
+    echo "  ...attempt ${attempt}/${max} failed, retrying in 3s (IAM propagation)" >&2
+    attempt=$((attempt + 1))
+    sleep 3
+  done
+}
+
+retry gcloud storage buckets add-iam-policy-binding "gs://${BUCKET}" \
   --member="serviceAccount:${GSA_EMAIL}" \
   --role="roles/storage.objectUser" >/dev/null
 
 # Required if the application later generates signed URLs with Application Default Credentials.
-gcloud iam service-accounts add-iam-policy-binding "${GSA_EMAIL}" \
+retry gcloud iam service-accounts add-iam-policy-binding "${GSA_EMAIL}" \
   --project="${PROJECT_ID}" \
   --member="serviceAccount:${GSA_EMAIL}" \
   --role="roles/iam.serviceAccountTokenCreator" >/dev/null
 
 for ksa_name in ${KSA_NAMES}; do
-  gcloud iam service-accounts add-iam-policy-binding "${GSA_EMAIL}" \
+  retry gcloud iam service-accounts add-iam-policy-binding "${GSA_EMAIL}" \
     --project="${PROJECT_ID}" \
     --member="serviceAccount:${PROJECT_ID}.svc.id.goog[${NAMESPACE}/${ksa_name}]" \
     --role="roles/iam.workloadIdentityUser" >/dev/null
