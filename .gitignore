@@ -22,6 +22,8 @@ key-prod.txt
 fredlab-secrets.values.yaml
 helm/**/fredlab-secrets.values.yaml
 helm/**/fredlab-secrets.values.yaml.*
+config/fredlab-keycloak-identity.json
+config/fredlab-keycloak-identity.local.json
 
 # Checkpoint snapshots (Docker volume archives — can be large)
 /checkpoints/

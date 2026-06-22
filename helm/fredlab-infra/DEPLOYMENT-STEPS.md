@@ -418,6 +418,57 @@ kubectl logs deploy/control-plane-backend --tail=200
 
 If logs mention `KEYCLOAK_CONTROL_PLANE_CLIENT_SECRET is not set`, the control-plane pod is missing the exact env var named by `security.m2m.secret_env_var`.
 
+## 14. Provision Initial Keycloak Users And Teams
+
+Keycloak identity provisioning is driven by a local JSON file, not by names hard-coded in a script.
+
+Create the local file:
+
+```bash
+cp config/fredlab-keycloak-identity.example.json \
+   config/fredlab-keycloak-identity.json
+```
+
+Edit:
+
+```text
+config/fredlab-keycloak-identity.json
+```
+
+Suggested first Fredlab teams:
+
+- `Innovation`
+- `Engineering`
+- `Enterprise`
+
+The file can also define initial operators and team members. Use app role `admin` for global Fredlab administrators, and `viewer` or `editor` for normal team users.
+
+Apply it:
+
+```bash
+bin/fredlab-keycloak-identity.sh
+```
+
+Validate:
+
+```bash
+kubectl exec deploy/keycloak -- \
+  /opt/keycloak/bin/kcadm.sh get groups -r app --fields name
+
+kubectl exec deploy/keycloak -- \
+  /opt/keycloak/bin/kcadm.sh get users -r app --fields username,email,enabled
+```
+
+Responsibility:
+
+- creates/updates Keycloak users
+- creates Keycloak groups for teams
+- assigns users to groups
+- creates/assigns app client roles such as `admin`, `editor`, `viewer`
+- configures the `groups` OIDC claim on the public app client
+
+Important boundary: Keycloak groups prepare identity and login claims. Team ownership and application permissions inside Fred/OpenFGA remain a separate application-domain provisioning step until Swift exposes the official team bootstrap path.
+
 ## Troubleshooting
 
 ### Helm Command Run From The Wrong Directory

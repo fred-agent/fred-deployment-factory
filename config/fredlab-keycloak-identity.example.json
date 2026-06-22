@@ -1,0 +1,63 @@
+{
+  "realm": "app",
+  "clientId": "app",
+  "appRoles": [
+    "admin",
+    "editor",
+    "viewer"
+  ],
+  "teams": [
+    "Innovation",
+    "Engineering",
+    "Enterprise"
+  ],
+  "users": [
+    {
+      "email": "operator.admin@example.com",
+      "firstName": "Operator",
+      "lastName": "Admin",
+      "enabled": true,
+      "emailVerified": true,
+      "appRoles": [
+        "admin"
+      ],
+      "teams": []
+    },
+    {
+      "email": "innovation.owner@example.com",
+      "firstName": "Innovation",
+      "lastName": "Owner",
+      "enabled": true,
+      "emailVerified": true,
+      "appRoles": [
+        "viewer"
+      ],
+      "teams": [
+        "Innovation"
+      ],
+      "teamRoles": {
+        "owner": [
+          "Innovation"
+        ]
+      }
+    },
+    {
+      "email": "engineering.owner@example.com",
+      "firstName": "Engineering",
+      "lastName": "Owner",
+      "enabled": true,
+      "emailVerified": true,
+      "appRoles": [
+        "viewer"
+      ],
+      "teams": [
+        "Engineering"
+      ],
+      "teamRoles": {
+        "owner": [
+          "Engineering"
+        ]
+      }
+    }
+  ]
+}

@@ -70,6 +70,15 @@ The chart provisions the realm and clients with the `keycloak-provision` Helm ho
 
 User and team/group provisioning remains a separate application-domain step. Do not confuse it with the low-level realm/client bootstrap.
 
+Initial Keycloak users and groups can be provisioned from a local identity file:
+
+```bash
+cp config/fredlab-keycloak-identity.example.json config/fredlab-keycloak-identity.json
+bin/fredlab-keycloak-identity.sh
+```
+
+The real `config/fredlab-keycloak-identity.json` file is ignored by Git. The script creates Keycloak groups, users, app client roles, group membership, and the `groups` token claim. It does not yet create Fred/OpenFGA team ownership tuples.
+
 When validating Keycloak clients, always use `kcadm.sh --fields ...`. The full representation of the confidential `control-plane` client includes its secret.
 
 ## Private Values
