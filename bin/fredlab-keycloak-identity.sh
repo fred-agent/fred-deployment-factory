@@ -27,18 +27,27 @@ kc() {
   kubectl exec -n "$NAMESPACE" "$KEYCLOAK_DEPLOYMENT" -- "$KCADM" "$@"
 }
 
-csv_value() {
-  awk 'NR == 2 { print; exit }'
+first_csv_field() {
+  awk -F, '
+    {
+      gsub(/\r/, "")
+      if ($1 == "" || $1 == "id") {
+        next
+      }
+      print $1
+      exit
+    }
+  '
 }
 
 client_uuid() {
   kc get clients -r "$REALM" -q "clientId=$1" --fields id --format csv --noquotes 2>/dev/null \
-    | csv_value
+    | first_csv_field
 }
 
 user_uuid() {
   kc get users -r "$REALM" -q "username=$1" -q exact=true --fields id --format csv --noquotes 2>/dev/null \
-    | csv_value
+    | first_csv_field
 }
 
 group_path() {
@@ -51,13 +60,13 @@ group_uuid() {
   local encoded_path
   encoded_path="$(group_path "$name")"
   kc get "group-by-path/${encoded_path}" -r "$REALM" --fields id --format csv --noquotes 2>/dev/null \
-    | csv_value
+    | first_csv_field
 }
 
 client_scope_uuid() {
   local name="$1"
   kc get client-scopes -r "$REALM" --fields id,name --format csv --noquotes 2>/dev/null \
-    | awk -F, -v wanted="$name" 'NR > 1 && $2 == wanted { print $1; exit }'
+    | awk -F, -v wanted="$name" '$1 != "id" && $2 == wanted { print $1; exit }'
 }
 
 ensure_login() {
@@ -114,7 +123,7 @@ ensure_groups_scope() {
 
   mapper_exists="$(
     kc get "client-scopes/${scope_uuid}/protocol-mappers/models" -r "$REALM" --fields name --format csv --noquotes 2>/dev/null \
-      | awk 'NR > 1 && $1 == "groups" { print "yes"; exit }'
+      | awk '$1 != "name" && $1 == "groups" { print "yes"; exit }'
   )"
   if [[ "$mapper_exists" != "yes" ]]; then
     echo "Creating groups mapper."
@@ -134,7 +143,7 @@ ensure_groups_scope() {
 
   attached="$(
     kc get "clients/${app_uuid}/default-client-scopes" -r "$REALM" --fields name --format csv --noquotes 2>/dev/null \
-      | awk 'NR > 1 && $1 == "groups-scope" { print "yes"; exit }'
+      | awk '$1 != "name" && $1 == "groups-scope" { print "yes"; exit }'
   )"
   if [[ "$attached" != "yes" ]]; then
     echo "Attaching 'groups-scope' to client '${client_id}'."
