@@ -83,12 +83,14 @@ render() {
   fi
 }
 
+STABLE=1
 start="$(date +%s)"
 while :; do
   now="$(date +%s)"; elapsed="$(( now - start ))"
-  snapshot="$(render "$elapsed")"
+  # Render directly (not via $(...)): a command-substitution subshell would
+  # discard the STABLE flag render() sets.
   if [[ "$MODE" == "wait" && -t 1 ]]; then printf '\033[2J\033[H'; fi
-  printf '%s\n' "$snapshot"
+  render "$elapsed"
 
   if [[ "$STABLE" == "1" ]]; then
     printf "\n%s✅ PLATFORM STABLE%s — all workloads ready.\n" "$B$G" "$N"
