@@ -80,7 +80,7 @@ case "${ACTION}" in
       --set fredFrontend.image.repository="${IMAGE_REPOSITORY}" \
       --set fredFrontend.image.tag="${TAG}" \
       --set fredFrontend.upstreams.fredAgents="http://control-plane-backend:8080" \
-      --set fredFrontend.upstreams.knowledgeFlow="http://control-plane-backend:8080"
+      --set fredFrontend.upstreams.knowledgeFlow="http://knowledge-flow-backend:8080"
     ;;
   disable)
     helm_upgrade \
