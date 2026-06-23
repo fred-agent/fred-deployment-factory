@@ -66,13 +66,17 @@ via Ingress.
 | Index | Created by | Contents |
 | --- | --- | --- |
 | `knowledge-flow-vectors` | Knowledge Flow vector store | document chunks + embeddings; powers semantic/hybrid search |
+| `kpi-index` | fred-core KPI writer | platform KPI events (fred-core default index) |
+| `.opensearch-observability`, `.plugins-ml-config`, `top_queries-*` | OpenSearch itself | internal/system indices — not application data |
 
-- Configured by `knowledgeFlow.config.opensearch.vectorIndex` (values.yaml).
-- **Embedding-model-bound:** the index dimensions match the embedding model
+- `knowledge-flow-vectors` is configured by `knowledgeFlow.config.opensearch.vectorIndex`
+  (values.yaml). **Embedding-model-bound:** its dimensions match the embedding model
   (`text-embedding-005`). If you change the embedding model, create a **new** index
   name — do not reuse this one.
-- No KPI/log indices are created (KF KPI→prometheus only, `log_store: in_memory`,
-  `opensearch_ops_enabled: false`).
+- **Single-node note:** application indices show `yellow` because they default to
+  `number_of_replicas: 1` and there is only one OpenSearch node, so the replica
+  cannot be allocated. This is expected and harmless on the playground. To make them
+  `green`, set replicas to 0 (e.g. an index template) — optional.
 
 List the live indices anytime:
 ```bash
