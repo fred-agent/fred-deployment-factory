@@ -621,7 +621,27 @@ Expected: `publicClient=false`, `serviceAccountsEnabled=true`.
 bin/fredlab-build knowledge-flow-backend 0.2
 ```
 
-### 15.4 Start Knowledge Flow
+### 15.4 Run Knowledge Flow migrations
+
+KF stores its metadata/tag/resource tables in PostgreSQL (`fred` database) and
+creates them with Alembic (version table `alembic_version_knowledge_flow`, separate
+from control-plane's). Run this once before starting KF, or after any schema change:
+
+```bash
+bin/fredlab-knowledge-flow-deploy.sh migrate 0.2
+```
+
+Validate:
+
+```bash
+kubectl logs job/knowledge-flow-migration --tail=20   # Alembic reached head
+```
+
+Without this, KF starts but API calls that read those tables fail with
+`relation "tag" does not exist` (HTTP 500), and the UI shows
+"Service de connaissance non démarré".
+
+### 15.5 Start Knowledge Flow
 
 ```bash
 bin/fredlab-knowledge-flow-deploy.sh start 0.2

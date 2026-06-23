@@ -352,6 +352,22 @@ knowledgeFlow:
   metricsPort: 9111
   health:
     path: /knowledge-flow/v1/healthz
+  migration:
+    # Runs `alembic upgrade head` (KF version table alembic_version_knowledge_flow)
+    # to create the metadata/tag/resource tables in the fred database.
+    enabled: false
+    backoffLimit: 3
+    command:
+      - alembic
+    args:
+      - upgrade
+      - head
+    resources:
+      requests:
+        cpu: 250m
+        memory: 256Mi
+      limits:
+        memory: 512Mi
   resources:
     requests:
       cpu: 500m

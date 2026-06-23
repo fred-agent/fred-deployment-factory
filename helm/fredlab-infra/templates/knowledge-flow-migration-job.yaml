@@ -1,0 +1,94 @@
+{{- if .Values.knowledgeFlow.migration.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: knowledge-flow-migration
+  labels:
+    {{- include "fredlab-infra.labels" . | nindent 4 }}
+    app.kubernetes.io/component: knowledge-flow-migration
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-weight: "31"
+    helm.sh/hook-delete-policy: before-hook-creation
+spec:
+  backoffLimit: {{ .Values.knowledgeFlow.migration.backoffLimit }}
+  template:
+    metadata:
+      labels:
+        {{- include "fredlab-infra.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: knowledge-flow-migration
+    spec:
+      enableServiceLinks: false
+      restartPolicy: Never
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: knowledge-flow-migration
+          image: {{ printf "%s:%s" (required "knowledgeFlow.image.repository is required when knowledgeFlow.migration.enabled=true." .Values.knowledgeFlow.image.repository) (required "knowledgeFlow.image.tag is required when knowledgeFlow.migration.enabled=true." .Values.knowledgeFlow.image.tag) | quote }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          command:
+            {{- toYaml .Values.knowledgeFlow.migration.command | nindent 12 }}
+          args:
+            {{- toYaml .Values.knowledgeFlow.migration.args | nindent 12 }}
+          env:
+            - name: CONFIG_FILE
+              value: /etc/fred/knowledge-flow/configuration.yaml
+            - name: ENV_FILE
+              value: /etc/fred/knowledge-flow/empty.env
+            # KF's alembic env builds the engine from the config + FRED_POSTGRES_PASSWORD.
+            - name: FRED_POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fredlab-infra.secretName" . }}
+                  key: POSTGRES_FRED_PASSWORD
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fredlab-infra.secretName" . }}
+                  key: POSTGRES_FRED_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fredlab-infra.secretName" . }}
+                  key: POSTGRES_FRED_PASSWORD
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fredlab-infra.secretName" . }}
+                  key: POSTGRES_FRED_DB
+            - name: DATABASE_URL
+              value: "postgresql+asyncpg://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@{{ include "fredlab-infra.postgresName" . }}:{{ .Values.postgresql.service.port }}/$(POSTGRES_DB)"
+            # Config-load reads these; alembic does not use them, but they must be
+            # present so configuration parsing does not fail.
+            - name: OPENSEARCH_PASSWORD
+              value: {{ .Values.knowledgeFlow.config.opensearch.password | quote }}
+            - name: KEYCLOAK_KNOWLEDGE_FLOW_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fredlab-infra.secretName" . }}
+                  key: KEYCLOAK_KNOWLEDGE_FLOW_CLIENT_SECRET
+            - name: OPENFGA_API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fredlab-infra.secretName" . }}
+                  key: OPENFGA_API_TOKEN
+          resources:
+            {{- toYaml .Values.knowledgeFlow.migration.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: knowledge-flow-config
+              mountPath: /etc/fred/knowledge-flow
+              readOnly: true
+      volumes:
+        - name: knowledge-flow-config
+          configMap:
+            name: {{ include "fredlab-infra.knowledgeFlowConfigName" . }}
+{{- end }}

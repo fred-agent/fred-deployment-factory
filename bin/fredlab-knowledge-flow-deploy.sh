@@ -4,6 +4,7 @@ set -Eeuo pipefail
 usage() {
   cat <<'EOF'
 Usage:
+  bin/fredlab-knowledge-flow-deploy.sh migrate <tag>
   bin/fredlab-knowledge-flow-deploy.sh start <tag>
   bin/fredlab-knowledge-flow-deploy.sh disable
 
@@ -73,6 +74,18 @@ helm_upgrade() {
 }
 
 case "${ACTION}" in
+  migrate)
+    if [[ -z "${TAG}" ]]; then
+      echo "Missing image tag for migrate."
+      usage
+      exit 1
+    fi
+    helm_upgrade \
+      --set knowledgeFlow.migration.enabled=true \
+      --set knowledgeFlow.enabled=false \
+      --set knowledgeFlow.image.repository="${IMAGE_REPOSITORY}" \
+      --set knowledgeFlow.image.tag="${TAG}"
+    ;;
   start)
     if [[ -z "${TAG}" ]]; then
       echo "Missing image tag for start."
@@ -80,6 +93,7 @@ case "${ACTION}" in
       exit 1
     fi
     helm_upgrade \
+      --set knowledgeFlow.migration.enabled=false \
       --set knowledgeFlow.enabled=true \
       --set knowledgeFlow.image.repository="${IMAGE_REPOSITORY}" \
       --set knowledgeFlow.image.tag="${TAG}" \
