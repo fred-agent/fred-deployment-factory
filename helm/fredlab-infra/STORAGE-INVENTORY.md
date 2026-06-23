@@ -26,12 +26,20 @@ Databases, users, and grants are created by the `postgres-provision` Helm hook
 
 ### `fred` database — table owners
 
-Two services share the `fred` database (different tables, same DB):
+Two services share the `fred` database. Each owns distinct tables and its OWN
+Alembic version table, so they never collide:
 
-| Producer | How tables are created | Tables |
+| App | Alembic version table | Tables owned |
 | --- | --- | --- |
-| Control Plane | Alembic (`alembic upgrade head` migration job) | control-plane schema + `alembic_version_control_plane` |
-| Knowledge Flow | SQLModel auto-create at startup | metadata store, tag store, resource store tables |
+| Control Plane | `alembic_version_control_plane` | `users`, `session`, `session_attachments`, `session_context_prompts`, `session_metadata`, `session_purge_queue`, `prompt`, `default_prompt_usage`, `agent_instance`, `teammetadata`, `task_run`, `task_event_log` |
+| Knowledge Flow | `alembic_version_knowledge_flow` | `metadata`, `tag`, `resource`, `sched_workflow_tasks` |
+
+**Both apps create their tables with `alembic upgrade head`** (their migration
+jobs). KF also auto-creates a few shared tables on app startup, so the order
+**must be migrate → start**: migrate creates everything, then the app startup
+auto-create is a no-op. Starting before migrating leaves a partial schema and a
+"relation already exists" error on the next migrate (recover by dropping KF's
+four tables + `alembic_version_knowledge_flow`, then re-migrating).
 
 Knowledge Flow store → backend:
 
