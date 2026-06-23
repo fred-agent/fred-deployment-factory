@@ -169,6 +169,14 @@ data:
         pool_timeout: 30
         pool_recycle: 1800
         pool_pre_ping: true
+      # In-cluster OpenSearch (security plugin disabled → plain HTTP, no real auth).
+      # username/password are sent but ignored by the server; OPENSEARCH_PASSWORD env
+      # must still be non-empty because the client config requires it.
+      opensearch:
+        host: {{ .Values.knowledgeFlow.config.opensearch.host | quote }}
+        secure: {{ .Values.knowledgeFlow.config.opensearch.secure }}
+        verify_certs: {{ .Values.knowledgeFlow.config.opensearch.verifyCerts }}
+        username: {{ .Values.knowledgeFlow.config.opensearch.username | quote }}
       resource_store:
         type: "postgres"
       tag_store:
@@ -190,8 +198,9 @@ data:
           default_max_rows: 200
           max_rows: 1000
       vector_store:
-        type: pgvector
-        collection_name: fred_chunks
+        type: opensearch
+        index: {{ .Values.knowledgeFlow.config.opensearch.vectorIndex | quote }}
+        bulk_size: {{ .Values.knowledgeFlow.config.opensearch.vectorBulkSize }}
 
     mcp:
       reports_enabled: true

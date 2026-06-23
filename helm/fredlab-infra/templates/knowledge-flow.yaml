@@ -81,6 +81,11 @@ spec:
                 secretKeyRef:
                   name: {{ include "fredlab-infra.secretName" . }}
                   key: OPENFGA_API_TOKEN
+            # In-cluster OpenSearch has the security plugin disabled, so this value
+            # is sent but ignored by the server. It must be non-empty because the
+            # OpenSearch store config requires OPENSEARCH_PASSWORD to be set.
+            - name: OPENSEARCH_PASSWORD
+              value: {{ .Values.knowledgeFlow.config.opensearch.password | quote }}
           ports:
             - name: http
               containerPort: {{ .Values.knowledgeFlow.containerPort }}

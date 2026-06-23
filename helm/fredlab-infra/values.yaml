@@ -380,6 +380,19 @@ knowledgeFlow:
       filesystemPrefix: ""
       # Empty → inferred from ADC / Workload Identity.
       projectId: ""
+    # OpenSearch is the vector store (hybrid/semantic search). The in-cluster
+    # OpenSearch runs with the security plugin disabled → plain HTTP, no real auth.
+    opensearch:
+      host: http://opensearch:9200
+      secure: false
+      verifyCerts: false
+      username: admin
+      # Ignored by the security-disabled server, but must be non-empty.
+      password: admin
+      # The vector index. Tied to the embedding model's dimensions — if you change
+      # the embedding model, use a new index name. Tracked in STORAGE-INVENTORY.md.
+      vectorIndex: knowledge-flow-vectors
+      vectorBulkSize: 1000
     # Vertex AI models (authenticate via ADC). Needs roles/aiplatform.user on the GSA.
     models:
       # Empty project → resolved from ADC. Location must be a Vertex AI region.
