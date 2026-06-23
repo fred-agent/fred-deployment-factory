@@ -44,6 +44,7 @@ helm_upgrade() {
     upgrade --install fredlab-infra "${CHART_DIR}"
     --namespace "${NAMESPACE}"
     -f "${SECRET_VALUES_FILE}"
+    --timeout 10m
   )
 
   if helm status fredlab-infra --namespace "${NAMESPACE}" >/dev/null 2>&1; then
