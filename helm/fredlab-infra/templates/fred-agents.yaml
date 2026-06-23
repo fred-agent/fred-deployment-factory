@@ -1,0 +1,126 @@
+{{- if .Values.fredAgents.enabled }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ .Values.fredAgents.serviceAccount.name }}
+  labels:
+    {{- include "fredlab-infra.labels" . | nindent 4 }}
+    app.kubernetes.io/component: fred-agents
+  annotations:
+    iam.gke.io/gcp-service-account: {{ required "fredAgents.serviceAccount.gcpServiceAccount is required when fredAgents.enabled=true (Workload Identity for Vertex AI)." .Values.fredAgents.serviceAccount.gcpServiceAccount | quote }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "fredlab-infra.agentsName" . }}
+  labels:
+    {{- include "fredlab-infra.labels" . | nindent 4 }}
+    app.kubernetes.io/component: fred-agents
+spec:
+  type: {{ .Values.fredAgents.service.type }}
+  ports:
+    - name: http
+      port: {{ .Values.fredAgents.service.port }}
+      targetPort: http
+  selector:
+    {{- include "fredlab-infra.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: fred-agents
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "fredlab-infra.agentsName" . }}
+  labels:
+    {{- include "fredlab-infra.labels" . | nindent 4 }}
+    app.kubernetes.io/component: fred-agents
+spec:
+  replicas: {{ .Values.fredAgents.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "fredlab-infra.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: fred-agents
+  template:
+    metadata:
+      labels:
+        {{- include "fredlab-infra.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: fred-agents
+    spec:
+      serviceAccountName: {{ .Values.fredAgents.serviceAccount.name }}
+      enableServiceLinks: false
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        runAsNonRoot: true
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: fred-agents
+          image: {{ printf "%s:%s" (required "fredAgents.image.repository is required when fredAgents.enabled=true." .Values.fredAgents.image.repository) (required "fredAgents.image.tag is required when fredAgents.enabled=true." .Values.fredAgents.image.tag) | quote }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          env:
+            - name: CONFIG_FILE
+              value: /etc/fred/fred-agents/configuration.yaml
+            - name: ENV_FILE
+              value: /etc/fred/fred-agents/empty.env
+            # Writable home for the sqlite runtime store + any model/cache writes.
+            - name: HOME
+              value: /var/fred
+            - name: KEYCLOAK_AGENTIC_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fredlab-infra.secretName" . }}
+                  key: KEYCLOAK_AGENTIC_CLIENT_SECRET
+            - name: OPENFGA_API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fredlab-infra.secretName" . }}
+                  key: OPENFGA_API_TOKEN
+            # In-cluster OpenSearch has the security plugin disabled; value is ignored
+            # by the server but must be non-empty for the client config.
+            - name: OPENSEARCH_PASSWORD
+              value: {{ .Values.fredAgents.config.opensearch.password | quote }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.fredAgents.containerPort }}
+          # The agents runtime exposes no /healthz, so probe the TCP port: it confirms
+          # uvicorn is listening without needing an unauthenticated HTTP route.
+          startupProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            tcpSocket:
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          livenessProbe:
+            tcpSocket:
+              port: http
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 6
+          resources:
+            {{- toYaml .Values.fredAgents.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: fred-agents-config
+              mountPath: /etc/fred/fred-agents
+              readOnly: true
+            - name: runtime-state
+              mountPath: /var/fred
+      volumes:
+        - name: fred-agents-config
+          configMap:
+            name: {{ include "fredlab-infra.agentsConfigName" . }}
+        - name: runtime-state
+          emptyDir: {}
+{{- end }}

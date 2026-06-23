@@ -4,11 +4,12 @@ set -Eeuo pipefail
 usage() {
   cat <<'EOF'
 Usage:
-  bin/fredlab-frontend-deploy.sh start <tag>
-  bin/fredlab-frontend-deploy.sh disable
+  bin/fredlab-agents-deploy.sh start <tag>
+  bin/fredlab-agents-deploy.sh disable
 
 Environment overrides:
   PROJECT_ID, REGION, REPOSITORY, IMAGE, NAMESPACE, SECRET_VALUES_FILE
+  GCP_SERVICE_ACCOUNT   (default: fredlab-knowledge-flow-gcs@<project>.iam.gserviceaccount.com)
 EOF
 }
 
@@ -29,8 +30,9 @@ NAMESPACE="${NAMESPACE:-default}"
 PROJECT_ID="${PROJECT_ID:-$(gcloud config get-value project 2>/dev/null)}"
 REGION="${REGION:-europe-west1}"
 REPOSITORY="${REPOSITORY:-fredlab-repo}"
-IMAGE="${IMAGE:-fred-frontend}"
+IMAGE="${IMAGE:-fred-agents}"
 IMAGE_REPOSITORY="${IMAGE_REPOSITORY:-${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/${IMAGE}}"
+GCP_SERVICE_ACCOUNT="${GCP_SERVICE_ACCOUNT:-fredlab-knowledge-flow-gcs@${PROJECT_ID}.iam.gserviceaccount.com}"
 
 if [[ ! -f "${SECRET_VALUES_FILE}" ]]; then
   echo "Missing secret values file: ${SECRET_VALUES_FILE}"
@@ -76,15 +78,13 @@ case "${ACTION}" in
       exit 1
     fi
     helm_upgrade \
-      --set fredFrontend.enabled=true \
-      --set fredFrontend.image.repository="${IMAGE_REPOSITORY}" \
-      --set fredFrontend.image.tag="${TAG}" \
-      --set fredFrontend.upstreams.fredAgents="http://fred-agents:8080" \
-      --set fredFrontend.upstreams.knowledgeFlow="http://knowledge-flow-backend:8080"
+      --set fredAgents.enabled=true \
+      --set fredAgents.image.repository="${IMAGE_REPOSITORY}" \
+      --set fredAgents.image.tag="${TAG}" \
+      --set fredAgents.serviceAccount.gcpServiceAccount="${GCP_SERVICE_ACCOUNT}"
     ;;
   disable)
-    helm_upgrade \
-      --set fredFrontend.enabled=false
+    helm_upgrade --set fredAgents.enabled=false
     ;;
   *)
     echo "Unknown action: ${ACTION}"

@@ -67,6 +67,14 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- default "knowledge-flow-config" .Values.knowledgeFlow.configMapName | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 
+{{- define "fredlab-infra.agentsName" -}}
+{{- default "fred-agents" .Values.fredAgents.fullnameOverride | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+
+{{- define "fredlab-infra.agentsConfigName" -}}
+{{- default "fred-agents-config" .Values.fredAgents.configMapName | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+
 {{- define "fredlab-infra.secretName" -}}
 {{- default "fredlab-infra-secrets" .Values.secret.fullnameOverride | trunc 63 | trimSuffix "-" -}}
 {{- end -}}

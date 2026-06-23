@@ -448,6 +448,58 @@ knowledgeFlow:
         provider: vertex-ai
         name: gemini-2.5-flash
 
+# fred-agents: a Fred agent runtime serving agents at /fred/agents/v2. The control
+# plane discovers it via runtimeCatalogSources (baseUrl http://fred-agents:8080/...).
+# Models/MCP come from the image-bundled catalogs (FRED_MODELS_CATALOG_FILE default).
+fredAgents:
+  enabled: false
+  fullnameOverride: fred-agents
+  configMapName: fred-agents-config
+  replicaCount: 1
+  serviceAccount:
+    name: fred-agents
+    # Reuses the GSA that already has roles/aiplatform.user (Vertex via Workload
+    # Identity). fred-agents object/GCS access is not required.
+    gcpServiceAccount: ""
+  image:
+    # europe-west1-docker.pkg.dev/<project-id>/fredlab-repo/fred-agents
+    repository: ""
+    tag: ""
+  service:
+    type: ClusterIP
+    port: 8080
+  containerPort: 8000
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      memory: 1Gi
+  config:
+    appBaseUrl: /fred/agents/v2
+    logLevel: info
+    openaiCompat: true
+    keycloakIssuerUrl: https://keycloak.playground.fredlab.dev/realms/app
+    keycloakClientId: agentic
+    userClientId: app
+    authorizedOrigins:
+      - https://studio.playground.fredlab.dev
+    openfgaUrl: http://openfga:8080
+    openfgaStoreName: fred
+    knowledgeFlowUrl: http://knowledge-flow-backend:8080/knowledge-flow/v1
+    controlPlaneUrl: http://control-plane-backend:8080/control-plane/v1
+    # Runtime task/checkpoint store. sqlite on an emptyDir (ephemeral, no migration);
+    # the file lives directly in the mounted dir so no subdir needs creating.
+    sqlitePath: /var/fred/runtime.sqlite3
+    opensearch:
+      host: http://opensearch:9200
+      secure: false
+      verifyCerts: false
+      username: admin
+      password: admin
+    # No Langfuse in fredlab — use plain logging tracer.
+    tracer: logging
+
 fredFrontend:
   enabled: false
   fullnameOverride: fred-frontend
@@ -466,10 +518,9 @@ fredFrontend:
   upstreams:
     controlPlane: http://control-plane-backend:8080
     # nginx resolves upstream DNS names at startup, so each target must be a
-    # service that already exists. knowledge-flow-backend is now deployed by this
-    # chart (knowledgeFlow.enabled), so the frontend points at it directly.
-    # fred-agents is still a bootstrap placeholder until that component is added.
-    fredAgents: http://control-plane-backend:8080
+    # service that already exists. Both knowledge-flow-backend and fred-agents are
+    # now deployed by this chart, so the frontend points at them directly.
+    fredAgents: http://fred-agents:8080
     knowledgeFlow: http://knowledge-flow-backend:8080
   clientMaxBodySize: 150m
   config:
