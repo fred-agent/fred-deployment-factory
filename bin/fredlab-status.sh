@@ -14,30 +14,45 @@ set -Eeuo pipefail
 # red) when gcloud is unavailable or unauthenticated, so the command stays useful
 # without GCP access.
 #
+# It also probes each app's dependency-aware /ready endpoint (Knowledge Flow today)
+# in-cluster, so the dashboard shows app-level dependency health (postgres, opensearch,
+# openfga, gcs) — not just whether the pod is 1/1. This closes the "green pod but
+# broken feature" blind spot.
+#
 # Usage:
 #   bin/fredlab-status.sh            # wait until stable or timeout, then report
 #   bin/fredlab-status.sh --once     # single snapshot, no waiting
 #   bin/fredlab-status.sh --no-gcs   # skip the GCS/GCP checks
+#   bin/fredlab-status.sh --no-apps  # skip the per-app /ready probes
 #
 # Environment overrides:
 #   NAMESPACE (default: default)
 #   TIMEOUT   max seconds to wait for stable      (default: 300)
 #   INTERVAL  seconds between polls while waiting  (default: 5)
-#   CHECK_GCS 1 to check GCS prereqs, 0 to skip    (default: 1)
+#   CHECK_GCS  1 to check GCS prereqs, 0 to skip   (default: 1)
+#   CHECK_APPS 1 to probe app /ready, 0 to skip    (default: 1)
 #   BUCKET / REGION / GSA_EMAIL / KSA_NAMES        (default to the GCS prereq script's values)
 
 NAMESPACE="${NAMESPACE:-default}"
 TIMEOUT="${TIMEOUT:-300}"
 INTERVAL="${INTERVAL:-5}"
 CHECK_GCS="${CHECK_GCS:-1}"
+CHECK_APPS="${CHECK_APPS:-1}"
 MODE="wait"
 for arg in "$@"; do
   case "$arg" in
-    --once)   MODE="once" ;;
-    --no-gcs) CHECK_GCS=0 ;;
+    --once)    MODE="once" ;;
+    --no-gcs)  CHECK_GCS=0 ;;
+    --no-apps) CHECK_APPS=0 ;;
     -h|--help) sed -n '3,26p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
   esac
 done
+
+# Apps exposing a dependency-aware /ready endpoint, probed in-cluster.
+# Format: "label|deployment|service-url". Add a line per app as they gain /ready.
+APP_READINESS_TARGETS=(
+  "knowledge-flow|knowledge-flow-backend|http://knowledge-flow-backend:8080/knowledge-flow/v1/ready"
+)
 
 for bin in kubectl jq; do
   command -v "$bin" >/dev/null 2>&1 || { echo "Missing required tool: $bin" >&2; exit 2; }
@@ -187,7 +202,70 @@ render_gcs() {
   fi
 }
 
-STABLE=1; GCS_OK=1; GCS_SKIPPED=0
+# Probe each app's dependency-aware /ready endpoint in-cluster (one short-lived curl
+# pod per app). Renders per-dependency rows from the /ready JSON. Sets APPS_OK=0/1 and
+# APPS_SKIPPED=0/1. This surfaces app-level health (the pod can be 1/1 while a backend
+# dependency is down).
+render_app_readiness() {
+  APPS_OK=1
+  APPS_SKIPPED=0
+  if [[ "$CHECK_APPS" != "1" ]]; then APPS_SKIPPED=1; return; fi
+
+  printf "%s┌─ App readiness (/ready) ──────────────────────────────%s\n" "$B" "$N"
+  local probed=0 entry label deploy url out body code overall
+  for entry in "${APP_READINESS_TARGETS[@]}"; do
+    IFS='|' read -r label deploy url <<< "$entry"
+    if ! kubectl get deploy "$deploy" -n "$NAMESPACE" >/dev/null 2>&1; then
+      printf "  %s⚪ %-20s not deployed%s\n" "$D" "$label" "$N"
+      continue
+    fi
+    probed=1
+    # curl writes the body then a HTTPSTATUS:<code> marker, so a trailing kubectl
+    # "pod deleted" line can't be mistaken for the status code.
+    out="$(kubectl run "ready-${label}-${RANDOM}" --rm -i --restart=Never -n "$NAMESPACE" \
+      --image=curlimages/curl:8.10.1 \
+      -- curl -sS -m 12 -w 'HTTPSTATUS:%{http_code}' "$url" 2>/dev/null || true)"
+    body="${out%%HTTPSTATUS:*}"
+    local rest="${out#*HTTPSTATUS:}"
+    code="${rest%%[^0-9]*}"
+
+    if [[ -z "$code" ]]; then
+      printf "  %s✗ %-20s unreachable%s\n" "$R" "$label" "$N"
+      APPS_OK=0
+      continue
+    fi
+    overall="$(printf '%s' "$body" | jq -r '.status // "unknown"' 2>/dev/null || echo unknown)"
+    if [[ "$code" == "200" && "$overall" == "ready" ]]; then
+      printf "  %s✓ %-20s ready%s %s(HTTP %s)%s\n" "$G" "$label" "$N" "$D" "$code" "$N"
+    else
+      printf "  %s✗ %-20s %s (HTTP %s)%s\n" "$R" "$label" "$overall" "$code" "$N"
+      APPS_OK=0
+    fi
+    # Per-dependency rows from the /ready JSON (shape-agnostic).
+    printf '%s' "$body" | jq -r '
+      (.checks // {}) | to_entries[] |
+      (if .value.ok then "ok" else "DOWN" end) + "\t" + .key + "\t" +
+      (if .value.skipped then "skipped"
+       elif .value.ok then ((.value.elapsed_ms // 0) | tostring) + "ms"
+       else (.value.error // "error") end)' 2>/dev/null \
+      | while IFS=$'\t' read -r st dep detail; do
+          if [[ "$st" == "ok" ]]; then printf "      %s✓ %-22s %s%s\n" "$D" "$dep" "$detail" "$N"
+          else printf "      %s✗ %-22s %s%s\n" "$R" "$dep" "$detail" "$N"; fi
+        done
+  done
+
+  if [[ "$probed" == "0" ]]; then
+    APPS_SKIPPED=1
+    printf "  %sno apps with /ready deployed%s\n" "$D" "$N"
+  fi
+  if [[ "$APPS_OK" == "1" ]]; then
+    printf "%s└──────────────────────────────────────────────────────%s\n" "$D" "$N"
+  else
+    printf "%s└─ an app dependency is down (see ✗ above) ─────────────%s\n" "$R" "$N"
+  fi
+}
+
+STABLE=1; GCS_OK=1; GCS_SKIPPED=0; APPS_OK=1; APPS_SKIPPED=0
 start="$(date +%s)"
 while :; do
   now="$(date +%s)"; elapsed="$(( now - start ))"
@@ -200,11 +278,15 @@ while :; do
   # query GCP at that point, so the poll loop stays fast.
   if [[ "$STABLE" == "1" || "$MODE" == "once" || "$elapsed" -ge "$TIMEOUT" ]]; then
     render_gcs
+    render_app_readiness
 
-    if [[ "$STABLE" == "1" && ( "$GCS_OK" == "1" || "$GCS_SKIPPED" == "1" ) ]]; then
+    if [[ "$STABLE" == "1" \
+          && ( "$GCS_OK" == "1" || "$GCS_SKIPPED" == "1" ) \
+          && ( "$APPS_OK" == "1" || "$APPS_SKIPPED" == "1" ) ]]; then
       printf "\n%s✅ PLATFORM STABLE%s — all workloads ready" "$B$G" "$N"
       [[ "$GCS_SKIPPED" == "1" ]] && printf " %s(GCS checks skipped)%s" "$Y" "$N" \
                                   || printf "; GCS prerequisites OK"
+      [[ "$APPS_SKIPPED" != "1" ]] && printf "; app dependencies OK"
       printf ".\n"
       exit 0
     fi
@@ -212,6 +294,7 @@ while :; do
     reasons=()
     [[ "$STABLE" != "1" ]] && reasons+=("workloads $([[ "$MODE" == "once" ]] && echo "not ready" || echo "timed out after ${TIMEOUT}s")")
     [[ "$GCS_OK" != "1" && "$GCS_SKIPPED" != "1" ]] && reasons+=("GCS prerequisites failing")
+    [[ "$APPS_OK" != "1" && "$APPS_SKIPPED" != "1" ]] && reasons+=("app dependency down")
     printf "\n%s❌ NOT STABLE%s — %s.\n" "$B$R" "$N" "$(IFS='; '; echo "${reasons[*]}")"
     exit 1
   fi
