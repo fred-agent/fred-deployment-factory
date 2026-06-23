@@ -170,7 +170,7 @@ ensure_group() {
 
 ensure_user() {
   local user_json="$1"
-  local email first_name last_name enabled email_verified user_id password
+  local email first_name last_name enabled email_verified user_id password reset_password created
 
   email="$(jq -r '.email' <<<"$user_json")"
   first_name="$(jq -r '.firstName // ""' <<<"$user_json")"
@@ -178,6 +178,8 @@ ensure_user() {
   enabled="$(jq -r '.enabled // true' <<<"$user_json")"
   email_verified="$(jq -r '.emailVerified // true' <<<"$user_json")"
   password="$(jq -r '.temporaryPassword // ""' <<<"$user_json")"
+  reset_password="$(jq -r '.resetPassword // false' <<<"$user_json")"
+  created=false
 
   if [[ -z "$email" || "$email" == "null" ]]; then
     echo "User without email in ${CONFIG_FILE}." >&2
@@ -204,11 +206,19 @@ ensure_user() {
       -s "enabled=${enabled}" \
       -s "emailVerified=${email_verified}" >/dev/null
     user_id="$(user_uuid "$email")"
+    created=true
   fi
 
   if [[ -n "$password" && "$password" != "null" ]]; then
-    echo "Setting temporary password for '${email}'."
-    kc set-password -r "$REALM" --userid "$user_id" --new-password "$password" --temporary >/dev/null
+    if [[ "$created" == "true" ]]; then
+      echo "Setting initial temporary password for '${email}'."
+      kc set-password -r "$REALM" --userid "$user_id" --new-password "$password" --temporary >/dev/null
+    elif [[ "$reset_password" == "true" ]]; then
+      echo "Resetting temporary password for existing user '${email}' because resetPassword=true."
+      kc set-password -r "$REALM" --userid "$user_id" --new-password "$password" --temporary >/dev/null
+    else
+      echo "Skipping password reset for existing user '${email}' (set resetPassword=true to force it)."
+    fi
   fi
 
   jq -r '.appRoles[]? // empty' <<<"$user_json" | while IFS= read -r role; do

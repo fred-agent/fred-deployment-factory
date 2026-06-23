@@ -525,7 +525,13 @@ For first login tests, a user can include:
 "temporaryPassword": "change-me-with-a-real-temporary-password"
 ```
 
-Remove the temporary password from the local file after the first successful login.
+The script sets `temporaryPassword` only when the user is created. For an existing user, it does not reset the password unless the user entry also contains:
+
+```json
+"resetPassword": true
+```
+
+Use `resetPassword: true` only for an intentional admin reset, then remove it from the local file.
 
 Apply it:
 

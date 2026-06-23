@@ -94,6 +94,8 @@ bin/fredlab-keycloak-identity.sh
 
 The real `config/fredlab-keycloak-identity.json` file is ignored by Git. The script creates Keycloak groups, users, app client roles, group membership, and the `groups` token claim. It does not yet create Fred/OpenFGA team ownership tuples.
 
+If a user entry contains `temporaryPassword`, the script applies it only when creating that user. Existing users keep their current password unless the entry also has `resetPassword: true`.
+
 When validating Keycloak clients, always use `kcadm.sh --fields ...`. The full representation of the confidential `control-plane` client includes its secret.
 
 ## Legal Content
