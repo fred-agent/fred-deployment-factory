@@ -73,6 +73,8 @@ keycloak:
       secret: ""
     knowledgeFlow:
       secret: ""
+    agentic:
+      secret: ""
   provision:
     enabled: true
     realm: app
@@ -107,6 +109,19 @@ keycloak:
         # groups (a_get_group_by_path) when building ReBAC contextual relations.
         # Read-only: no manage-users (KF never modifies identities).
         clientId: knowledge-flow
+        appRoles:
+          - service_agent
+        realmManagementRoles:
+          - view-users
+          - query-users
+          - query-groups
+        accountRoles:
+          - view-groups
+      agentic:
+        # Confidential M2M client for fred-agents. Same shape as knowledge-flow:
+        # service_agent app role + read-only group/user roles for ReBAC contextual
+        # relations (proactively granted to avoid the group-read 403).
+        clientId: agentic
         appRoles:
           - service_agent
         realmManagementRoles:
