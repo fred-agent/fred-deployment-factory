@@ -86,6 +86,13 @@ spec:
             # OpenSearch store config requires OPENSEARCH_PASSWORD to be set.
             - name: OPENSEARCH_PASSWORD
               value: {{ .Values.knowledgeFlow.config.opensearch.password | quote }}
+            # OpenAI-compatible API key (e.g. Mistral) for openai-provider models.
+            # Unused while the model config uses Vertex AI; set when switching to Mistral.
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fredlab-infra.secretName" . }}
+                  key: OPENAI_API_KEY
           ports:
             - name: http
               containerPort: {{ .Values.knowledgeFlow.containerPort }}

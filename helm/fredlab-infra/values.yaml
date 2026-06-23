@@ -21,6 +21,11 @@ images:
 secret:
   fullnameOverride: fredlab-infra-secrets
 
+# OpenAI-compatible LLM API key, shared by fred-agents and knowledge-flow when they
+# use an `openai` provider model (e.g. Mistral's API at https://api.mistral.ai/v1).
+# Optional: set the real token in fredlab-secrets.values.yaml. Empty = not configured.
+openaiApiKey: ""
+
 postgresql:
   fullnameOverride: postgres
   service:

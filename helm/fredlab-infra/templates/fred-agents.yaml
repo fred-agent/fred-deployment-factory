@@ -80,6 +80,13 @@ spec:
             # by the server but must be non-empty for the client config.
             - name: OPENSEARCH_PASSWORD
               value: {{ .Values.fredAgents.config.opensearch.password | quote }}
+            # OpenAI-compatible API key (e.g. Mistral) for the agents' chat/language
+            # models. The model + base_url come from the image's models_catalog.yaml.
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fredlab-infra.secretName" . }}
+                  key: OPENAI_API_KEY
           ports:
             - name: http
               containerPort: {{ .Values.fredAgents.containerPort }}
