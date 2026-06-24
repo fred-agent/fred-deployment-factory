@@ -81,6 +81,7 @@ spec:
               provision_db "$POSTGRES_TEMPORAL_DB" "$POSTGRES_TEMPORAL_USER" "$POSTGRES_TEMPORAL_PASSWORD"
               provision_db "$POSTGRES_TEMPORAL_VISIBILITY_DB" "$POSTGRES_TEMPORAL_USER" "$POSTGRES_TEMPORAL_PASSWORD"
               provision_db "$POSTGRES_FRED_DB" "$POSTGRES_FRED_USER" "$POSTGRES_FRED_PASSWORD"
+              provision_db "$POSTGRES_EVALUATION_DB" "$POSTGRES_EVALUATION_USER" "$POSTGRES_EVALUATION_PASSWORD"
 
               # Knowledge Flow's pgvector store needs the "vector" extension. It is an
               # untrusted extension, so only a superuser can create it — the fred app

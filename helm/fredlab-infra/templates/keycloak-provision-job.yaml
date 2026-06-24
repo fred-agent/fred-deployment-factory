@@ -92,6 +92,19 @@ spec:
               value: {{ join " " (.Values.keycloak.provision.clients.agentic.realmManagementRoles | default list) | quote }}
             - name: AGENTIC_ACCOUNT_ROLES
               value: {{ join " " (.Values.keycloak.provision.clients.agentic.accountRoles | default list) | quote }}
+            - name: KEYCLOAK_EVALUATION_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fredlab-infra.secretName" . }}
+                  key: KEYCLOAK_EVALUATION_CLIENT_SECRET
+            - name: EVALUATION_CLIENT_ID
+              value: {{ .Values.keycloak.provision.clients.evaluation.clientId | quote }}
+            - name: EVALUATION_APP_ROLES
+              value: {{ join " " .Values.keycloak.provision.clients.evaluation.appRoles | quote }}
+            - name: EVALUATION_REALM_MANAGEMENT_ROLES
+              value: {{ join " " (.Values.keycloak.provision.clients.evaluation.realmManagementRoles | default list) | quote }}
+            - name: EVALUATION_ACCOUNT_ROLES
+              value: {{ join " " (.Values.keycloak.provision.clients.evaluation.accountRoles | default list) | quote }}
           command:
             - /bin/sh
             - -ec
@@ -322,6 +335,54 @@ spec:
                 echo "Granting $APP_CLIENT_ID/$role to service-account-$AGENTIC_CLIENT_ID."
                 "$KCADM" add-roles -r "$REALM" \
                   --uusername "service-account-$AGENTIC_CLIENT_ID" \
+                  --cclientid "$APP_CLIENT_ID" \
+                  --rolename "$role" || true
+              done
+
+              EVALUATION_ID="$(client_id "$EVALUATION_CLIENT_ID")"
+              if [ -n "$EVALUATION_ID" ]; then
+                echo "Updating confidential client '$EVALUATION_CLIENT_ID'."
+                "$KCADM" update "clients/$EVALUATION_ID" -r "$REALM" \
+                  -s "clientId=$EVALUATION_CLIENT_ID" \
+                  -s enabled=true \
+                  -s publicClient=false \
+                  -s serviceAccountsEnabled=true \
+                  -s standardFlowEnabled=false \
+                  -s directAccessGrantsEnabled=false \
+                  -s "secret=$KEYCLOAK_EVALUATION_CLIENT_SECRET"
+              else
+                echo "Creating confidential client '$EVALUATION_CLIENT_ID'."
+                "$KCADM" create clients -r "$REALM" \
+                  -s "clientId=$EVALUATION_CLIENT_ID" \
+                  -s enabled=true \
+                  -s publicClient=false \
+                  -s serviceAccountsEnabled=true \
+                  -s standardFlowEnabled=false \
+                  -s directAccessGrantsEnabled=false \
+                  -s "secret=$KEYCLOAK_EVALUATION_CLIENT_SECRET"
+              fi
+
+              for role in $EVALUATION_REALM_MANAGEMENT_ROLES; do
+                echo "Granting realm-management/$role to service-account-$EVALUATION_CLIENT_ID."
+                "$KCADM" add-roles -r "$REALM" \
+                  --uusername "service-account-$EVALUATION_CLIENT_ID" \
+                  --cclientid realm-management \
+                  --rolename "$role" || true
+              done
+
+              for role in $EVALUATION_ACCOUNT_ROLES; do
+                echo "Granting account/$role to service-account-$EVALUATION_CLIENT_ID."
+                "$KCADM" add-roles -r "$REALM" \
+                  --uusername "service-account-$EVALUATION_CLIENT_ID" \
+                  --cclientid account \
+                  --rolename "$role" || true
+              done
+
+              for role in $EVALUATION_APP_ROLES; do
+                ensure_client_role "$APP_CLIENT_ID" "$role" "Fred service account role"
+                echo "Granting $APP_CLIENT_ID/$role to service-account-$EVALUATION_CLIENT_ID."
+                "$KCADM" add-roles -r "$REALM" \
+                  --uusername "service-account-$EVALUATION_CLIENT_ID" \
                   --cclientid "$APP_CLIENT_ID" \
                   --rolename "$role" || true
               done

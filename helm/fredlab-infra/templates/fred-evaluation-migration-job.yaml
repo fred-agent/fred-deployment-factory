@@ -1,0 +1,87 @@
+{{- if .Values.fredEvaluation.migration.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: fred-evaluation-migration
+  labels:
+    {{- include "fredlab-infra.labels" . | nindent 4 }}
+    app.kubernetes.io/component: fred-evaluation-migration
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-weight: "31"
+    helm.sh/hook-delete-policy: before-hook-creation
+spec:
+  backoffLimit: {{ .Values.fredEvaluation.migration.backoffLimit }}
+  template:
+    metadata:
+      labels:
+        {{- include "fredlab-infra.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: fred-evaluation-migration
+    spec:
+      enableServiceLinks: false
+      restartPolicy: Never
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: fred-evaluation-migration
+          # Runs from the API image, which carries alembic + the migration scripts.
+          # The evaluator's alembic env builds its engine from the config file +
+          # FRED_POSTGRES_PASSWORD and uses version table alembic_version_evaluation.
+          image: {{ printf "%s:%s" (required "fredEvaluation.image.repository is required when fredEvaluation.migration.enabled=true." .Values.fredEvaluation.image.repository) (required "fredEvaluation.image.tag is required when fredEvaluation.migration.enabled=true." .Values.fredEvaluation.image.tag) | quote }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          command:
+            {{- toYaml .Values.fredEvaluation.migration.command | nindent 12 }}
+          args:
+            {{- toYaml .Values.fredEvaluation.migration.args | nindent 12 }}
+          env:
+            - name: CONFIG_FILE
+              value: /etc/fred/evaluation/configuration.yaml
+            - name: ENV_FILE
+              value: /etc/fred/evaluation/empty.env
+            - name: FRED_POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fredlab-infra.secretName" . }}
+                  key: POSTGRES_EVALUATION_PASSWORD
+            # Config parsing references these; present so configuration load does not fail
+            # (alembic itself only needs storage.postgres + FRED_POSTGRES_PASSWORD).
+            - name: KEYCLOAK_EVALUATION_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fredlab-infra.secretName" . }}
+                  key: KEYCLOAK_EVALUATION_CLIENT_SECRET
+            - name: MISTRAL_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fredlab-infra.secretName" . }}
+                  key: MISTRAL_API_KEY
+            - name: LANGFUSE_PUBLIC_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fredlab-infra.secretName" . }}
+                  key: LANGFUSE_PUBLIC_KEY
+            - name: LANGFUSE_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fredlab-infra.secretName" . }}
+                  key: LANGFUSE_SECRET_KEY
+          resources:
+            {{- toYaml .Values.fredEvaluation.migration.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: fred-evaluation-config
+              mountPath: /etc/fred/evaluation
+              readOnly: true
+      volumes:
+        - name: fred-evaluation-config
+          configMap:
+            name: {{ include "fredlab-infra.fredEvaluationConfigName" . }}
+{{- end }}

@@ -26,6 +26,17 @@ secret:
 # Optional: set the real token in fredlab-secrets.values.yaml. Empty = not configured.
 openaiApiKey: ""
 
+# Mistral API key used by the fred-agent-evaluator judge models (analysis +
+# worker.judge_profiles). Optional: set in fredlab-secrets.values.yaml. Mistral
+# wiring is still TBD; empty = not configured.
+mistralApiKey: ""
+
+# Langfuse keys for the evaluator, only consumed when fredEvaluation.config.tracer
+# is set to "langfuse" (fredlab defaults to "logging", so these stay empty).
+langfuse:
+  publicKey: ""
+  secretKey: ""
+
 postgresql:
   fullnameOverride: postgres
   service:
@@ -62,6 +73,13 @@ postgresql:
     database: fred
     user: fred
     password: ""
+  # Dedicated database for the fred-agent-evaluator (campaigns, cases, metrics).
+  # Isolated from the shared `fred` database so the evaluator owns its own schema
+  # and Alembic migration history.
+  evaluation:
+    database: evaluation
+    user: evaluation
+    password: ""
 
 keycloak:
   fullnameOverride: keycloak
@@ -79,6 +97,8 @@ keycloak:
     knowledgeFlow:
       secret: ""
     agentic:
+      secret: ""
+    evaluation:
       secret: ""
   provision:
     enabled: true
@@ -135,6 +155,16 @@ keycloak:
           - query-groups
         accountRoles:
           - view-groups
+      evaluation:
+        # Confidential M2M client for the fred-agent-evaluator. Needs the service_agent
+        # app role so its M2M token is accepted by the control plane and agent runtimes
+        # it evaluates. The evaluator does not use ReBAC, so no realm-management/account
+        # group roles are required.
+        clientId: evaluation
+        appRoles:
+          - service_agent
+        realmManagementRoles: []
+        accountRoles: []
   resources:
     requests:
       cpu: 500m
@@ -355,6 +385,10 @@ controlPlane:
         baseUrl: http://dt-agents:8080/dt/agents/v2
         enabled: true
         ingressPrefix: /dt/agents/v2
+      - runtimeId: evaluation
+        baseUrl: http://fred-evaluation-backend:8080/evaluation/v1
+        enabled: true
+        ingressPrefix: /evaluation/v1
   extraEnv: {}
 
 knowledgeFlow:
@@ -488,6 +522,93 @@ knowledgeFlowWorker:
       memory: 1Gi
     limits:
       memory: 3Gi
+
+# fred-agent-evaluator backend: FastAPI/uvicorn serving /evaluation/v1 on port 8336.
+# Submits evaluation campaign workflows onto the `evaluation` Temporal task queue; the
+# fredEvaluationWorker drains them. Uses the dedicated `evaluation` Postgres database
+# and its own Keycloak `evaluation` M2M client. No GCS/Vertex → no Workload Identity.
+fredEvaluation:
+  enabled: false
+  fullnameOverride: fred-evaluation-backend
+  configMapName: fred-evaluation-config
+  replicaCount: 1
+  serviceAccount:
+    name: fred-evaluation-backend
+  image:
+    # europe-west1-docker.pkg.dev/<project-id>/fredlab-repo/fred-evaluation-api
+    repository: ""
+    tag: ""
+  service:
+    type: ClusterIP
+    port: 8080
+  containerPort: 8336
+  health:
+    path: /evaluation/v1/healthz
+  migration:
+    # Runs `alembic upgrade head` (version table alembic_version_evaluation) to create
+    # the campaign/case/metric tables in the dedicated `evaluation` database.
+    enabled: false
+    backoffLimit: 3
+    command:
+      - alembic
+    args:
+      - upgrade
+      - head
+    resources:
+      requests:
+        cpu: 250m
+        memory: 256Mi
+      limits:
+        memory: 512Mi
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      memory: 1Gi
+  config:
+    appBaseUrl: /evaluation/v1
+    logLevel: info
+    keycloakIssuerUrl: https://keycloak.playground.fredlab.dev/realms/app
+    keycloakClientId: evaluation
+    userClientId: app
+    authorizedOrigins:
+      - https://studio.playground.fredlab.dev
+    # In-cluster control plane. runtimeBaseUrl is the agent runtime the evaluator
+    # exercises when running campaigns.
+    controlPlaneBaseUrl: http://control-plane-backend:8080/control-plane/v1
+    runtimeBaseUrl: http://fred-agents:8080
+    temporalAddress: temporal:7233
+    temporalNamespace: default
+    temporalTaskQueue: evaluation
+    # fredlab has no Langfuse deployed; use plain logging like the other components.
+    # Set to "langfuse" and populate langfuse.* secrets to enable tracing.
+    tracer: logging
+    langfuseHost: http://langfuse:3000
+    worker:
+      maxConcurrentCases: 4
+      pollIntervalSeconds: 5
+
+# fred-agent-evaluator worker: the Temporal worker that drains the `evaluation` task
+# queue. Runs the SEPARATE fred-evaluation-worker image (not the API image) with the
+# main_worker entrypoint, and REUSES the fred-evaluation-config ConfigMap so its
+# Temporal/Postgres/judge settings match the backend. No Service/Ingress.
+fredEvaluationWorker:
+  enabled: false
+  fullnameOverride: fred-evaluation-worker
+  replicaCount: 1
+  serviceAccount:
+    name: fred-evaluation-worker
+  image:
+    # europe-west1-docker.pkg.dev/<project-id>/fredlab-repo/fred-evaluation-worker
+    repository: ""
+    tag: ""
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      memory: 1Gi
 
 # fred-agents: a Fred agent runtime serving agents at /fred/agents/v2. The control
 # plane discovers it via runtimeCatalogSources (baseUrl http://fred-agents:8080/...).

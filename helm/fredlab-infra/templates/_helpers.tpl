@@ -71,6 +71,18 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- default "knowledge-flow-worker" .Values.knowledgeFlowWorker.fullnameOverride | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 
+{{- define "fredlab-infra.fredEvaluationName" -}}
+{{- default "fred-evaluation-backend" .Values.fredEvaluation.fullnameOverride | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+
+{{- define "fredlab-infra.fredEvaluationConfigName" -}}
+{{- default "fred-evaluation-config" .Values.fredEvaluation.configMapName | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+
+{{- define "fredlab-infra.fredEvaluationWorkerName" -}}
+{{- default "fred-evaluation-worker" .Values.fredEvaluationWorker.fullnameOverride | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+
 {{- define "fredlab-infra.agentsName" -}}
 {{- default "fred-agents" .Values.fredAgents.fullnameOverride | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
