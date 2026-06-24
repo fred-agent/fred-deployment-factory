@@ -42,13 +42,12 @@ data:
             chunk_overlap: 150
             preserve_tables: true
           pdf:
-            backend: pypdfium2
-            images_scale: 1.0
-            generate_picture_images: false
-            generate_page_images: false
-            generate_table_images: false
-            do_table_structure: false
-            do_ocr: false
+            # PR #1790 rewrote the PDF pipeline: PdfPipelineConfig is now extra="forbid"
+            # and accepts ONLY these two keys. The old docling-era keys (backend,
+            # images_scale, generate_*_images, do_table_structure) were removed and now
+            # crash KF at startup with "Extra inputs are not permitted".
+            extractor: pymupdf   # Literal["docling","pymupdf"], default "pymupdf"
+            do_ocr: false        # bool, default false
           input_processors:
             - suffix: ".pdf"
               class_path: knowledge_flow_backend.core.processors.input.lightweight_markdown_processor.lite_pdf_to_md_processor.LitePdfMarkdownProcessor
