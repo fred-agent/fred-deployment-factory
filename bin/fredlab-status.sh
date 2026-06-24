@@ -54,6 +54,26 @@ APP_READINESS_TARGETS=(
   "knowledge-flow|knowledge-flow-backend|http://knowledge-flow-backend:8080/knowledge-flow/v1/ready"
 )
 
+# Core workloads a complete fredlab platform should always be running. The table lists
+# what EXISTS; this list lets it also flag what's ABSENT. A helm `disable` (or a failed/
+# rolled-back deploy) deletes the Deployment/StatefulSet object entirely, so without this
+# a missing core component just vanishes from the table instead of being called out.
+# Format: "Kind|name". Override the whole set with EXPECTED="Kind|name Kind|name ...".
+EXPECTED_WORKLOADS=(
+  "Deployment|control-plane-backend"
+  "Deployment|knowledge-flow-backend"
+  "Deployment|knowledge-flow-worker"
+  "Deployment|fred-agents"
+  "Deployment|fred-frontend"
+  "Deployment|keycloak"
+  "Deployment|openfga"
+  "Deployment|temporal"
+  "Deployment|temporal-ui"
+  "StatefulSet|opensearch"
+  "StatefulSet|postgres"
+)
+if [[ -n "${EXPECTED:-}" ]]; then read -r -a EXPECTED_WORKLOADS <<< "$EXPECTED"; fi
+
 for bin in kubectl jq; do
   command -v "$bin" >/dev/null 2>&1 || { echo "Missing required tool: $bin" >&2; exit 2; }
 done
@@ -83,7 +103,7 @@ render() {
              // .status.phase ] | @tsv
       end')"
 
-  STABLE=1
+  STABLE=1; MISSING_COUNT=0; WORKLOADS_NOTREADY=0
   printf "%s┌─ Fredlab platform ─ ns=%s ─ %ss elapsed ─────────────%s\n" "$B" "$NAMESPACE" "$elapsed" "$N"
   printf "%s%-12s %-26s %-7s %-22s %s%s\n" "$D" "KIND" "NAME" "READY" "IMAGE TAG" "STATUS" "$N"
 
@@ -101,13 +121,25 @@ render() {
     elif [[ "$ready" == "$desired" ]]; then
       icon="✅"; label="${G}ready${N}"
     else
-      icon="⏳"; label="${Y}progressing${N}"; STABLE=0
+      icon="⏳"; label="${Y}progressing${N}"; STABLE=0; WORKLOADS_NOTREADY=1
     fi
     printf "%-12s %-26s %-7s %s%-22s%s %s %b\n" "$kind" "$name" "${ready}/${desired}" "$D" "$tag" "$N" "$icon" "$label"
   done <<< "$workloads"
 
+  # Flag expected components that are absent entirely (disabled, deleted, mid-rollout, or
+  # never deployed). Their workload object isn't present, so they don't appear above —
+  # list them explicitly as MISSING and fail the verdict.
+  local present_names exp ekind ename
+  present_names="$(cut -f2 <<< "$workloads")"
+  for exp in "${EXPECTED_WORKLOADS[@]}"; do
+    ekind="${exp%%|*}"; ename="${exp##*|}"
+    grep -qxF "$ename" <<< "$present_names" && continue
+    MISSING_COUNT=$(( MISSING_COUNT + 1 )); STABLE=0
+    printf "%-12s %-26s %-7s %s%-22s%s %s %b\n" "$ekind" "$ename" "—" "$D" "<absent>" "$N" "❌" "${R}MISSING${N}"
+  done
+
   if [[ -n "${bad_pods//[$'\t\n ']/}" ]]; then
-    STABLE=0
+    STABLE=0; WORKLOADS_NOTREADY=1
     printf "%s└─ problem pods ───────────────────────────────────────%s\n" "$R" "$N"
     local pname reason
     while IFS=$'\t' read -r pname reason; do
@@ -271,7 +303,7 @@ render_app_readiness() {
   fi
 }
 
-STABLE=1; GCS_OK=1; GCS_SKIPPED=0; APPS_OK=1; APPS_SKIPPED=0
+STABLE=1; GCS_OK=1; GCS_SKIPPED=0; APPS_OK=1; APPS_SKIPPED=0; MISSING_COUNT=0; WORKLOADS_NOTREADY=0
 start="$(date +%s)"
 while :; do
   now="$(date +%s)"; elapsed="$(( now - start ))"
@@ -298,7 +330,8 @@ while :; do
     fi
 
     reasons=()
-    [[ "$STABLE" != "1" ]] && reasons+=("workloads $([[ "$MODE" == "once" ]] && echo "not ready" || echo "timed out after ${TIMEOUT}s")")
+    [[ "${MISSING_COUNT:-0}" -gt 0 ]] && reasons+=("${MISSING_COUNT} expected component(s) missing")
+    [[ "${WORKLOADS_NOTREADY:-0}" != "0" ]] && reasons+=("workloads $([[ "$MODE" == "once" ]] && echo "not ready" || echo "timed out after ${TIMEOUT}s")")
     [[ "$GCS_OK" != "1" && "$GCS_SKIPPED" != "1" ]] && reasons+=("GCS prerequisites failing")
     [[ "$APPS_OK" != "1" && "$APPS_SKIPPED" != "1" ]] && reasons+=("app dependency down")
     printf "\n%s❌ NOT STABLE%s — %s.\n" "$B$R" "$N" "$(IFS='; '; echo "${reasons[*]}")"
