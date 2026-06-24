@@ -594,6 +594,9 @@ fredFrontend:
       memory: 256Mi
   backendConfig:
     name: fredlab-frontend-backendconfig
+    # L7 LB backend request timeout (seconds). Default is 30s, which cuts long SSE
+    # chat streams mid-answer; 600s lets agent responses stream to completion.
+    timeoutSec: 600
     healthCheck:
       requestPath: /config.json
       port: 8080

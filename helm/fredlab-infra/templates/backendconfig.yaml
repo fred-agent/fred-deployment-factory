@@ -43,6 +43,11 @@ metadata:
   labels:
     {{- include "fredlab-infra.labels" . | nindent 4 }}
 spec:
+  {{- if .Values.fredFrontend.backendConfig.timeoutSec }}
+  # Backend request timeout for the L7 LB. The default is 30s, which severs long
+  # SSE chat streams mid-response; raise it so agent answers can stream to completion.
+  timeoutSec: {{ .Values.fredFrontend.backendConfig.timeoutSec }}
+  {{- end }}
   healthCheck:
     requestPath: {{ .Values.fredFrontend.backendConfig.healthCheck.requestPath | quote }}
     port: {{ .Values.fredFrontend.backendConfig.healthCheck.port }}
