@@ -7,14 +7,27 @@ Usage:
   bin/fredlab-agents-deploy.sh start <tag>
   bin/fredlab-agents-deploy.sh disable
 
+Flags:
+  -fast   skip the keycloak-provision hook for a fast app-only redeploy (identity is
+          already provisioned). Same effect as SKIP_PROVISION=1. Position-independent,
+          e.g. `start -fast <tag>` or `start <tag> -fast`.
+
 Environment overrides:
   PROJECT_ID, REGION, REPOSITORY, IMAGE, NAMESPACE, SECRET_VALUES_FILE
   GCP_SERVICE_ACCOUNT   (default: fredlab-knowledge-flow-gcs@<project>.iam.gserviceaccount.com)
 EOF
 }
 
-ACTION="${1:-}"
-TAG="${2:-${TAG:-}}"
+FAST=0
+POSITIONAL=()
+for _arg in "$@"; do
+  case "$_arg" in
+    -fast|--fast) FAST=1 ;;
+    *) POSITIONAL+=("$_arg") ;;
+  esac
+done
+ACTION="${POSITIONAL[0]:-}"
+TAG="${POSITIONAL[1]:-${TAG:-}}"
 
 if [[ -z "${ACTION}" ]]; then
   usage
@@ -48,11 +61,12 @@ helm_upgrade() {
     --timeout 10m
   )
 
-  # SKIP_PROVISION=1 skips the keycloak-provision hook for a fast app-only redeploy: the
-  # realm/clients/temporal-ui auth flow already exist after the first deploy, and helm
-  # blocks on that (now heavy) hook on every upgrade. Unset = re-enable, so a normal
-  # deploy always (re)provisions. Set explicitly either way so a prior skip never sticks.
-  if [[ "${SKIP_PROVISION:-0}" == "1" ]]; then
+  # -fast (or SKIP_PROVISION=1) skips the keycloak-provision hook for a fast app-only
+  # redeploy: the realm/clients/temporal-ui auth flow already exist after the first deploy,
+  # and helm blocks on that (now heavy) hook on every upgrade. Without it the hook is
+  # re-enabled, so a normal deploy always (re)provisions — set explicitly so a prior skip
+  # never sticks via --reset-then-reuse-values.
+  if [[ "${FAST:-0}" == "1" || "${SKIP_PROVISION:-0}" == "1" ]]; then
     args+=(--set keycloak.provision.enabled=false)
   else
     args+=(--set keycloak.provision.enabled=true)

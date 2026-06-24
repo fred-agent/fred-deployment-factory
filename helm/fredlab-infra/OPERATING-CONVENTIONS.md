@@ -72,6 +72,43 @@ bin/fredlab-control-plane-deploy.sh  start   "$TAG"   # migrate first if schema 
 bin/fredlab-frontend-deploy.sh       start   "$TAG"
 ```
 
+## C2.1 — Fast redeploys (`-fast`)
+
+Every `helm upgrade` re-runs the `keycloak-provision` post-upgrade hook, and helm
+**blocks** until it finishes. That hook is now heavy (it builds the temporal-ui
+auth flow via dozens of sequential `kcadm` calls), so re-provisioning on every
+code redeploy wastes minutes for no benefit — the realm, clients, and flow already
+exist after the first deploy.
+
+For an **app-only redeploy** (new image tag, identity unchanged), pass `-fast` to
+skip that hook:
+
+```bash
+bin/fredlab-control-plane-deploy.sh  start -fast "$TAG"
+bin/fredlab-knowledge-flow-deploy.sh start -fast "$TAG"
+bin/fredlab-agents-deploy.sh         start -fast "$TAG"
+bin/fredlab-frontend-deploy.sh       start -fast "$TAG"
+```
+
+`-fast` is position-independent (`start -fast <tag>` or `start <tag> -fast`) and
+accepted by every deploy script; `SKIP_PROVISION=1` is an equivalent env alias.
+
+Rules:
+
+- **Use `-fast` for everyday code redeploys.** Run a normal `start` (no `-fast`)
+  only when you changed identity — added a Keycloak client/role, or it's the first
+  deploy on a fresh cluster — or when a teammate's merge touched the provisioning
+  job (e.g. the temporal-ui auth flow). The default always (re)provisions.
+- **Don't `disable` to "restart".** `start` rolls to the new image on its own.
+  Disabling the frontend also tears down its `ManagedCertificate`, costing a
+  15–60 min cert re-provision (`ERR_CERT_COMMON_NAME_INVALID`) when you bring it back.
+- **Just bouncing pods (same image)?** Skip helm entirely — no hooks, no cert churn:
+
+  ```bash
+  kubectl rollout restart deploy/control-plane-backend deploy/knowledge-flow-backend \
+    deploy/knowledge-flow-worker deploy/fred-agents deploy/fred-frontend
+  ```
+
 ## C3 — Know what is deployed right now
 
 `bin/fredlab-status.sh` prints an **IMAGE TAG** column per workload — the single
@@ -132,5 +169,6 @@ overrides (`KEEP_COUNT`, `LOG_RETENTION_DAYS`, …) rather than editing the scri
 | ---------- | -- | -------------------------------------------- | ----------- | -------- |
 | 2026-06-24 | C1 | Image tagging `YYYYMMDD-<shortsha>`          | Dimitri     | Adopted  |
 | 2026-06-24 | C2 | Deploy every component at the round's tag    | Dimitri     | Adopted  |
+| 2026-06-24 | C2.1 | `-fast` skips keycloak-provision on redeploys | Dimitri   | Adopted  |
 | 2026-06-24 | C3 | `fredlab-status.sh` IMAGE TAG = what's live  | Dimitri     | Adopted  |
 | 2026-06-24 | C4 | Retention & cost control scripts + budget    | Dimitri     | Adopted  |
