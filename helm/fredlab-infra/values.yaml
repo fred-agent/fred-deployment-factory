@@ -80,6 +80,8 @@ keycloak:
       secret: ""
     agentic:
       secret: ""
+    temporalUi:
+      secret: ""
   provision:
     enabled: true
     realm: app
@@ -135,6 +137,16 @@ keycloak:
           - query-groups
         accountRoles:
           - view-groups
+      temporalUi:
+        # Confidential, interactive OIDC client for the Temporal admin UI. Unlike the
+        # M2M clients above it uses the browser authorization-code flow (standard flow),
+        # has no service account and no app roles — it only proves the visitor holds a
+        # valid Keycloak login. Provisioned only when temporal.ui.auth.enabled.
+        clientId: temporal-ui
+        redirectUris:
+          - https://temporal.playground.fredlab.dev/*
+        webOrigins:
+          - https://temporal.playground.fredlab.dev
   resources:
     requests:
       cpu: 500m
@@ -227,6 +239,33 @@ temporal:
     fullnameOverride: temporal-ui
     hostname: temporal.playground.fredlab.dev
     managedCertificateName: fredlab-temporal-cert
+    # OIDC authentication for the Temporal web UI. The UI has no built-in auth, so
+    # without this it is reachable by anyone who can hit the Ingress. We front it with
+    # Keycloak (the same `app` realm the rest of Fred uses) so a Keycloak login is
+    # required before the UI is shown. Cloud-agnostic: no GCP-specific IAP involved.
+    auth:
+      enabled: true
+      # Login button label shown on the Temporal sign-in screen.
+      label: Keycloak
+      # OIDC discovery base = Keycloak realm issuer. go-oidc appends
+      # /.well-known/openid-configuration. Must be the PUBLIC issuer URL so the value
+      # matches the `iss` in tokens the browser receives (Keycloak proxy=edge serves
+      # this hostname). The temporal-ui pod must be able to reach this URL for the
+      # server-side token exchange (egress to the Ingress IP / hairpin).
+      providerUrl: https://keycloak.playground.fredlab.dev/realms/app
+      # Confidential client provisioned in keycloak.provision.clients.temporalUi.
+      clientId: temporal-ui
+      scopes: openid,profile,email
+      # Public URL Keycloak redirects back to after login. Path is fixed by the UI.
+      callbackUrl: https://temporal.playground.fredlab.dev/auth/sso/callback
+      # Authorization: restrict who may log in to the Temporal UI. When set, only users
+      # holding this client role on the `app` client are allowed; everyone else is
+      # denied AT THE KEYCLOAK LOGIN (a browser-flow override bound only to the
+      # temporal-ui client — other clients like Studio are unaffected, and the Fred
+      # services that talk to Temporal over gRPC are untouched). The Temporal UI itself
+      # cannot filter by role, so the gate lives in Keycloak. Empty = any authenticated
+      # realm user may enter.
+      allowedAppRole: admin
     service:
       type: ClusterIP
       port: 8080
@@ -248,12 +287,12 @@ temporal:
         unhealthyThreshold: 3
 
 adminAccess:
-  # Cloud Armor policy created outside this chart and attached through BackendConfig.
-  securityPolicyName: fredlab-admin-ui-allowlist
-  allowedOperatorCidrs:
-    dimitri: ""
-    sebastien: ""
-    simon: ""
+  # Temporal UI is now gated by Keycloak OIDC (see temporal.ui.auth), so no IP
+  # allowlist is required. This is an OPTIONAL extra layer: set it to the name of an
+  # EXISTING Cloud Armor security policy to also restrict the admin UIs by source IP.
+  # Left empty on purpose — a name referencing a policy that was never created makes
+  # the BackendConfig fail to sync, which is exactly how the UI ended up unprotected.
+  securityPolicyName: ""
 
 controlPlane:
   enabled: false

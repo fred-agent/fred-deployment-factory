@@ -203,6 +203,28 @@ spec:
               value: {{ include "fredlab-infra.temporalName" . }}:{{ .Values.temporal.service.grpcPort }}
             - name: TEMPORAL_UI_PORT
               value: {{ .Values.temporal.ui.service.port | quote }}
+            {{- if .Values.temporal.ui.auth.enabled }}
+            # OIDC login (Keycloak). Without these the UI is served with no auth at all.
+            - name: TEMPORAL_AUTH_ENABLED
+              value: "true"
+            - name: TEMPORAL_AUTH_TYPE
+              value: oidc
+            - name: TEMPORAL_AUTH_LABEL
+              value: {{ .Values.temporal.ui.auth.label | quote }}
+            - name: TEMPORAL_AUTH_PROVIDER_URL
+              value: {{ .Values.temporal.ui.auth.providerUrl | quote }}
+            - name: TEMPORAL_AUTH_CLIENT_ID
+              value: {{ .Values.temporal.ui.auth.clientId | quote }}
+            - name: TEMPORAL_AUTH_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fredlab-infra.secretName" . }}
+                  key: KEYCLOAK_TEMPORAL_UI_CLIENT_SECRET
+            - name: TEMPORAL_AUTH_CALLBACK_URL
+              value: {{ .Values.temporal.ui.auth.callbackUrl | quote }}
+            - name: TEMPORAL_AUTH_SCOPES
+              value: {{ .Values.temporal.ui.auth.scopes | quote }}
+            {{- end }}
           ports:
             - name: http
               containerPort: {{ .Values.temporal.ui.service.port }}
