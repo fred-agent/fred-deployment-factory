@@ -453,6 +453,38 @@ knowledgeFlow:
         provider: vertex-ai
         name: gemini-2.5-flash
 
+# knowledge-flow-worker: the Temporal worker that drains the `ingestion` task queue.
+# The knowledge-flow-backend API submits ingestion workflows; this worker executes
+# them (parse → embed → index). It runs the SAME image as knowledgeFlow but with the
+# `main_worker` entrypoint, and REUSES the knowledge-flow-config ConfigMap so the
+# task queue, Temporal address, models, GCS buckets and storage all match the API.
+# It serves no HTTP API — only Prometheus metrics — so it has no Service/Ingress.
+knowledgeFlowWorker:
+  enabled: false
+  fullnameOverride: knowledge-flow-worker
+  replicaCount: 1
+  # Kubernetes service account annotated for Workload Identity. The GSA must hold
+  # roles/storage.objectAdmin on the GCS buckets AND roles/aiplatform.user (the worker
+  # is what calls Vertex AI for embeddings/vision). WI binding for the KSA named here
+  # is created by bin/fredlab-gcp-gcs-prereqs.sh (KSA_NAMES includes knowledge-flow-worker).
+  serviceAccount:
+    name: knowledge-flow-worker
+    # fredlab-knowledge-flow-gcs@<project-id>.iam.gserviceaccount.com (same GSA as the backend)
+    gcpServiceAccount: ""
+  image:
+    # Same image as knowledgeFlow.image (knowledge-flow-backend). Pin to the tag you
+    # want the worker to run — usually identical to the backend tag.
+    repository: ""
+    tag: ""
+  # Worker does the heavy lifting (document parsing + embeddings), so it gets more
+  # headroom than the API pod.
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      memory: 3Gi
+
 # fred-agents: a Fred agent runtime serving agents at /fred/agents/v2. The control
 # plane discovers it via runtimeCatalogSources (baseUrl http://fred-agents:8080/...).
 # Models/MCP come from the image-bundled catalogs (FRED_MODELS_CATALOG_FILE default).

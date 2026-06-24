@@ -6,7 +6,15 @@ usage() {
 Usage:
   bin/fredlab-knowledge-flow-deploy.sh migrate <tag>
   bin/fredlab-knowledge-flow-deploy.sh start <tag>
+  bin/fredlab-knowledge-flow-deploy.sh worker <tag>
   bin/fredlab-knowledge-flow-deploy.sh disable
+
+Actions:
+  migrate  run the alembic migration job (no app pods)
+  start    deploy backend + worker together off <tag>
+  worker   deploy ONLY the worker off <tag>, leaving the running backend untouched
+           (use the backend's current tag to validate the worker in isolation)
+  disable  scale backend + worker down
 
 Environment overrides:
   PROJECT_ID, REGION, REPOSITORY, IMAGE, NAMESPACE, SECRET_VALUES_FILE
@@ -92,16 +100,41 @@ case "${ACTION}" in
       usage
       exit 1
     fi
+    # The backend submits ingestion workflows to the `ingestion` Temporal queue; the
+    # worker drains it. Deploy both together off the SAME image/tag/GSA so ingestion
+    # actually completes — a backend with no worker just queues work forever.
     helm_upgrade \
       --set knowledgeFlow.migration.enabled=false \
       --set knowledgeFlow.enabled=true \
       --set knowledgeFlow.image.repository="${IMAGE_REPOSITORY}" \
       --set knowledgeFlow.image.tag="${TAG}" \
       --set knowledgeFlow.serviceAccount.gcpServiceAccount="${GCP_SERVICE_ACCOUNT}" \
-      --set knowledgeFlow.config.models.project="${VERTEX_PROJECT}"
+      --set knowledgeFlow.config.models.project="${VERTEX_PROJECT}" \
+      --set knowledgeFlowWorker.enabled=true \
+      --set knowledgeFlowWorker.image.repository="${IMAGE_REPOSITORY}" \
+      --set knowledgeFlowWorker.image.tag="${TAG}" \
+      --set knowledgeFlowWorker.serviceAccount.gcpServiceAccount="${GCP_SERVICE_ACCOUNT}"
+    ;;
+  worker)
+    if [[ -z "${TAG}" ]]; then
+      echo "Missing image tag for worker."
+      usage
+      exit 1
+    fi
+    # Enable ONLY the worker. helm_upgrade reuses the existing release values, so the
+    # running backend is left exactly as-is — this just adds the worker Deployment off
+    # <tag> (use the backend's current tag). The worker reuses the knowledge-flow-config
+    # ConfigMap, so its Temporal/GCS/model settings match the backend automatically.
+    helm_upgrade \
+      --set knowledgeFlowWorker.enabled=true \
+      --set knowledgeFlowWorker.image.repository="${IMAGE_REPOSITORY}" \
+      --set knowledgeFlowWorker.image.tag="${TAG}" \
+      --set knowledgeFlowWorker.serviceAccount.gcpServiceAccount="${GCP_SERVICE_ACCOUNT}"
     ;;
   disable)
-    helm_upgrade --set knowledgeFlow.enabled=false
+    helm_upgrade \
+      --set knowledgeFlow.enabled=false \
+      --set knowledgeFlowWorker.enabled=false
     ;;
   *)
     echo "Unknown action: ${ACTION}"
