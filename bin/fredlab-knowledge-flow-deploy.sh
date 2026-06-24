@@ -59,6 +59,16 @@ helm_upgrade() {
     --timeout 10m
   )
 
+  # SKIP_PROVISION=1 skips the keycloak-provision hook for a fast app-only redeploy: the
+  # realm/clients/temporal-ui auth flow already exist after the first deploy, and helm
+  # blocks on that (now heavy) hook on every upgrade. Unset = re-enable, so a normal
+  # deploy always (re)provisions. Set explicitly either way so a prior skip never sticks.
+  if [[ "${SKIP_PROVISION:-0}" == "1" ]]; then
+    args+=(--set keycloak.provision.enabled=false)
+  else
+    args+=(--set keycloak.provision.enabled=true)
+  fi
+
   if helm status fredlab-infra --namespace "${NAMESPACE}" >/dev/null 2>&1; then
     if helm upgrade --help | grep -q -- "--reset-then-reuse-values"; then
       args+=(--reset-then-reuse-values)
