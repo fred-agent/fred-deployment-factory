@@ -48,11 +48,11 @@ The chart is designed for GKE Autopilot:
 
 OpenSearch runs as an internal single-node StatefulSet for playground search workloads. It deliberately uses `node.store.allow_mmap=false` instead of requiring the forbidden node-level `vm.max_map_count` sysctl. It is not exposed through Ingress.
 
-Temporal UI is protected by the Cloud Armor allowlist policy:
-
-```text
-fredlab-admin-ui-allowlist
-```
+Temporal UI has no built-in authentication, so it is gated by **Keycloak OIDC**: the UI
+requires a Keycloak login (realm `app`) before it is shown. This is configured under
+`temporal.ui.auth` and backed by the confidential `temporal-ui` client provisioned by the
+`keycloak-provision` job. An optional Cloud Armor IP allowlist can be layered in front via
+`adminAccess.securityPolicyName` (empty = not used).
 
 ## Data Ownership
 

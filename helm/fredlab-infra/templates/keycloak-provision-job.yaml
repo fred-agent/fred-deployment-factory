@@ -105,6 +105,21 @@ spec:
               value: {{ join " " (.Values.keycloak.provision.clients.evaluation.realmManagementRoles | default list) | quote }}
             - name: EVALUATION_ACCOUNT_ROLES
               value: {{ join " " (.Values.keycloak.provision.clients.evaluation.accountRoles | default list) | quote }}
+            {{- if and .Values.temporal.enabled .Values.temporal.ui.enabled .Values.temporal.ui.auth.enabled }}
+            - name: KEYCLOAK_TEMPORAL_UI_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fredlab-infra.secretName" . }}
+                  key: KEYCLOAK_TEMPORAL_UI_CLIENT_SECRET
+            - name: TEMPORAL_UI_CLIENT_ID
+              value: {{ .Values.keycloak.provision.clients.temporalUi.clientId | quote }}
+            - name: TEMPORAL_UI_REDIRECT_URIS
+              value: {{ .Values.keycloak.provision.clients.temporalUi.redirectUris | toJson | quote }}
+            - name: TEMPORAL_UI_WEB_ORIGINS
+              value: {{ .Values.keycloak.provision.clients.temporalUi.webOrigins | toJson | quote }}
+            - name: TEMPORAL_UI_ALLOWED_APP_ROLE
+              value: {{ .Values.temporal.ui.auth.allowedAppRole | quote }}
+            {{- end }}
           command:
             - /bin/sh
             - -ec
@@ -386,6 +401,162 @@ spec:
                   --cclientid "$APP_CLIENT_ID" \
                   --rolename "$role" || true
               done
+              {{- if and .Values.temporal.enabled .Values.temporal.ui.enabled .Values.temporal.ui.auth.enabled }}
+              TEMPORAL_UI_ID="$(client_id "$TEMPORAL_UI_CLIENT_ID")"
+              if [ -n "$TEMPORAL_UI_ID" ]; then
+                echo "Updating confidential client '$TEMPORAL_UI_CLIENT_ID'."
+                "$KCADM" update "clients/$TEMPORAL_UI_ID" -r "$REALM" \
+                  -s "clientId=$TEMPORAL_UI_CLIENT_ID" \
+                  -s enabled=true \
+                  -s publicClient=false \
+                  -s standardFlowEnabled=true \
+                  -s serviceAccountsEnabled=false \
+                  -s implicitFlowEnabled=false \
+                  -s directAccessGrantsEnabled=false \
+                  -s "redirectUris=$TEMPORAL_UI_REDIRECT_URIS" \
+                  -s "webOrigins=$TEMPORAL_UI_WEB_ORIGINS" \
+                  -s "secret=$KEYCLOAK_TEMPORAL_UI_CLIENT_SECRET"
+              else
+                echo "Creating confidential client '$TEMPORAL_UI_CLIENT_ID'."
+                "$KCADM" create clients -r "$REALM" \
+                  -s "clientId=$TEMPORAL_UI_CLIENT_ID" \
+                  -s enabled=true \
+                  -s publicClient=false \
+                  -s standardFlowEnabled=true \
+                  -s serviceAccountsEnabled=false \
+                  -s implicitFlowEnabled=false \
+                  -s directAccessGrantsEnabled=false \
+                  -s "redirectUris=$TEMPORAL_UI_REDIRECT_URIS" \
+                  -s "webOrigins=$TEMPORAL_UI_WEB_ORIGINS" \
+                  -s "secret=$KEYCLOAK_TEMPORAL_UI_CLIENT_SECRET"
+              fi
+
+              {{- if .Values.temporal.ui.auth.allowedAppRole }}
+              # Authorization gate: only holders of the app/<role> client role may log in
+              # to the Temporal UI. The UI cannot filter by role itself, so non-admins are
+              # denied AT THE KEYCLOAK LOGIN via a custom browser flow bound ONLY to the
+              # temporal-ui client (Studio and the gRPC services are untouched).
+              #
+              # Structure (this exact shape matters — Keycloak forbids mixing
+              # REQUIRED/CONDITIONAL with ALTERNATIVE at the same level; doing so makes it
+              # ignore the password form and lock everyone out):
+              #   temporal-ui-gate
+              #     temporal-ui-gate-auth    (REQUIRED)     wraps the auth alternatives
+              #       Cookie                 (ALTERNATIVE)
+              #       temporal-ui-gate-forms (ALTERNATIVE)
+              #         Username Password Form (REQUIRED)
+              #     temporal-ui-gate-admin   (CONDITIONAL)  runs AFTER auth (identity known)
+              #       Condition - user role  (REQUIRED, app/<role>, negate)
+              #       Deny access            (REQUIRED)
+              # Re-fetch the UUID since the client may have just been created.
+              TEMPORAL_UI_ID="$(client_id "$TEMPORAL_UI_CLIENT_ID")"
+              TEMPORAL_UI_FLOW="temporal-ui-gate"
+
+              # The condition references app/<role>; ensure that role exists first,
+              # otherwise "user lacks the role" is true for everyone and locks all out.
+              ensure_client_role "$APP_CLIENT_ID" "$TEMPORAL_UI_ALLOWED_APP_ROLE" \
+                "Role required to access the Temporal admin UI"
+
+              # NOTE: the Keycloak image ships no `awk`, so all CSV parsing below uses
+              # only grep/head/cut/tr (tr strips any trailing CR from kcadm output).
+              flow_exists() {
+                "$KCADM" get authentication/flows -r "$REALM" \
+                  --fields alias --format csv --noquotes 2>/dev/null \
+                  | tr -d '\r' | grep -qx "$TEMPORAL_UI_FLOW"
+              }
+
+              # id of the flow itself (for the client binding).
+              flow_id() {
+                "$KCADM" get authentication/flows -r "$REALM" \
+                  --fields id,alias --format csv --noquotes 2>/dev/null \
+                  | tr -d '\r' | grep -E ",$TEMPORAL_UI_FLOW\$" | head -n 1 | cut -d, -f1
+              }
+
+              # id of an execution within the flow, matched on a given column value.
+              exec_id() {
+                "$KCADM" get "authentication/flows/$TEMPORAL_UI_FLOW/executions" -r "$REALM" \
+                  --fields "id,$1" --format csv --noquotes 2>/dev/null \
+                  | tr -d '\r' | grep -E ",$2\$" | head -n 1 | cut -d, -f1
+              }
+
+              # Set an execution's requirement. The executions endpoint returns a JSON
+              # ARRAY, so a `-s` merge fails ("ObjectNode from Array"); send a raw body.
+              set_requirement() {
+                "$KCADM" update "authentication/flows/$TEMPORAL_UI_FLOW/executions" -r "$REALM" \
+                  -b "{\"id\":\"$1\",\"requirement\":\"$2\"}"
+              }
+
+              if flow_exists; then
+                # Created on a previous run. If a run ever fails half-way, delete the
+                # flow in Keycloak and re-deploy to rebuild it cleanly.
+                echo "Auth flow '$TEMPORAL_UI_FLOW' already exists; leaving as-is."
+              else
+                echo "Creating restricted login flow '$TEMPORAL_UI_FLOW'."
+                "$KCADM" create authentication/flows -r "$REALM" \
+                  -s "alias=$TEMPORAL_UI_FLOW" -s providerId=basic-flow \
+                  -s topLevel=true -s builtIn=false
+
+                # Auth wrapper (REQUIRED): cookie SSO or the username/password form. Keeping
+                # these alternatives inside their own REQUIRED subflow is what lets the role
+                # gate sit beside them without Keycloak ignoring the password form.
+                "$KCADM" create "authentication/flows/$TEMPORAL_UI_FLOW/executions/flow" -r "$REALM" \
+                  -s alias=temporal-ui-gate-auth -s type=basic-flow
+                "$KCADM" create "authentication/flows/temporal-ui-gate-auth/executions/execution" -r "$REALM" \
+                  -s provider=auth-cookie
+                "$KCADM" create "authentication/flows/temporal-ui-gate-auth/executions/flow" -r "$REALM" \
+                  -s alias=temporal-ui-gate-forms -s type=basic-flow
+                "$KCADM" create "authentication/flows/temporal-ui-gate-forms/executions/execution" -r "$REALM" \
+                  -s provider=auth-username-password-form
+
+                # Role gate (CONDITIONAL): deny when the user lacks app/<role>.
+                "$KCADM" create "authentication/flows/$TEMPORAL_UI_FLOW/executions/flow" -r "$REALM" \
+                  -s alias=temporal-ui-gate-admin -s type=basic-flow
+                "$KCADM" create "authentication/flows/temporal-ui-gate-admin/executions/execution" -r "$REALM" \
+                  -s provider=conditional-user-role
+                "$KCADM" create "authentication/flows/temporal-ui-gate-admin/executions/execution" -r "$REALM" \
+                  -s provider=deny-access-authenticator
+
+                # Requirements (executions endpoint needs a raw body, see set_requirement).
+                set_requirement "$(exec_id displayName temporal-ui-gate-auth)"      REQUIRED
+                set_requirement "$(exec_id providerId auth-cookie)"                 ALTERNATIVE
+                set_requirement "$(exec_id displayName temporal-ui-gate-forms)"     ALTERNATIVE
+                set_requirement "$(exec_id providerId auth-username-password-form)" REQUIRED
+                ADMIN_SUBFLOW_ID="$(exec_id displayName temporal-ui-gate-admin)"
+                set_requirement "$ADMIN_SUBFLOW_ID" CONDITIONAL
+                COND_ID="$(exec_id providerId conditional-user-role)"
+                DENY_ID="$(exec_id providerId deny-access-authenticator)"
+                set_requirement "$COND_ID" REQUIRED
+                set_requirement "$DENY_ID" REQUIRED
+
+                # Deny when the user is NOT app/<role>. condUserRole uses a dot to
+                # separate the client id from the role name. (Condition order within the
+                # subflow does not matter: Keycloak evaluates it as a guard for the subflow.)
+                "$KCADM" create "authentication/executions/$COND_ID/config" -r "$REALM" \
+                  -s alias=temporal-ui-gate-condition \
+                  -s "config.\"condUserRole\"=$APP_CLIENT_ID.$TEMPORAL_UI_ALLOWED_APP_ROLE" \
+                  -s 'config."negate"=true'
+
+                # CRITICAL: a freshly created subflow lands FIRST in the flow. The role gate
+                # MUST run LAST, after authentication — otherwise the condition evaluates with
+                # no authenticated user (everyone "lacks" the role) and Deny Access blocks ALL
+                # logins. Lower its priority once per top-level execution to push it to the
+                # bottom (extra calls once it is last are harmless no-ops).
+                TOP_LEVEL_COUNT="$("$KCADM" get "authentication/flows/$TEMPORAL_UI_FLOW/executions" -r "$REALM" \
+                  --fields level --format csv --noquotes 2>/dev/null | tr -d '\r' | grep -c '^0$')"
+                i=0
+                while [ "$i" -lt "$TOP_LEVEL_COUNT" ]; do
+                  "$KCADM" create "authentication/executions/$ADMIN_SUBFLOW_ID/lower-priority" -r "$REALM" >/dev/null 2>&1 || true
+                  i=$((i + 1))
+                done
+              fi
+
+              # Bind the flow as this client's browser override (idempotent). The dotted
+              # key sets the nested map entry without disturbing other client fields.
+              echo "Binding '$TEMPORAL_UI_FLOW' as browser override on '$TEMPORAL_UI_CLIENT_ID'."
+              "$KCADM" update "clients/$TEMPORAL_UI_ID" -r "$REALM" \
+                -s "authenticationFlowBindingOverrides.browser=$(flow_id)"
+              {{- end }}
+              {{- end }}
 
               echo "Keycloak provisioning complete."
           resources:

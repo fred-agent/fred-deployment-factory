@@ -23,8 +23,14 @@ metadata:
   labels:
     {{- include "fredlab-infra.labels" . | nindent 4 }}
 spec:
+  {{- if .Values.adminAccess.securityPolicyName }}
+  # Optional defense-in-depth: attach a Cloud Armor IP allowlist IN FRONT of the
+  # OIDC login. Only emitted when a non-empty policy name is set, because a name
+  # pointing at a non-existent policy makes the BackendConfig fail to sync (which
+  # previously left the UI with no protection at all). Primary gate is OIDC.
   securityPolicy:
-    name: {{ required "adminAccess.securityPolicyName is required when Temporal UI is exposed." .Values.adminAccess.securityPolicyName | quote }}
+    name: {{ .Values.adminAccess.securityPolicyName | quote }}
+  {{- end }}
   healthCheck:
     requestPath: {{ .Values.temporal.ui.backendConfig.healthCheck.requestPath | quote }}
     port: {{ .Values.temporal.ui.backendConfig.healthCheck.port }}
