@@ -69,7 +69,7 @@ render() {
   local elapsed="$1"
   local workloads pods bad_pods
   workloads="$(kubectl get deploy,statefulset -n "$NAMESPACE" -o json 2>/dev/null \
-    | jq -r '.items[] | [(.kind), (.metadata.name), (.spec.replicas // 0), (.status.readyReplicas // 0)] | @tsv')"
+    | jq -r '.items[] | [(.kind), (.metadata.name), (.spec.replicas // 0), (.status.readyReplicas // 0), (.spec.template.spec.containers[0].image // "")] | @tsv')"
 
   # Pods that are neither fully Running+Ready nor Succeeded (jobs), with a reason.
   bad_pods="$(kubectl get pods -n "$NAMESPACE" -o json 2>/dev/null | jq -r '
@@ -85,11 +85,17 @@ render() {
 
   STABLE=1
   printf "%s┌─ Fredlab platform ─ ns=%s ─ %ss elapsed ─────────────%s\n" "$B" "$NAMESPACE" "$elapsed" "$N"
-  printf "%s%-12s %-26s %-7s %s%s\n" "$D" "KIND" "NAME" "READY" "STATUS" "$N"
+  printf "%s%-12s %-26s %-7s %-22s %s%s\n" "$D" "KIND" "NAME" "READY" "IMAGE TAG" "STATUS" "$N"
 
-  local kind name desired ready icon label
-  while IFS=$'\t' read -r kind name desired ready; do
+  local kind name desired ready image icon label img_ref tag
+  while IFS=$'\t' read -r kind name desired ready image; do
     [[ -z "${name:-}" ]] && continue
+    # Show the deployed image tag (the part after the last colon). Drop any @sha256
+    # digest suffix first; mark untagged images explicitly so a blank never reads as ok.
+    img_ref="${image%@*}"
+    tag="${img_ref##*:}"
+    [[ -z "$image" ]] && tag="<unknown>"
+    [[ "$tag" == "$img_ref" ]] && tag="<none>"
     if [[ "$desired" == "0" ]]; then
       icon="⚪"; label="${D}disabled${N}"
     elif [[ "$ready" == "$desired" ]]; then
@@ -97,7 +103,7 @@ render() {
     else
       icon="⏳"; label="${Y}progressing${N}"; STABLE=0
     fi
-    printf "%-12s %-26s %-7s %s %b\n" "$kind" "$name" "${ready}/${desired}" "$icon" "$label"
+    printf "%-12s %-26s %-7s %s%-22s%s %s %b\n" "$kind" "$name" "${ready}/${desired}" "$D" "$tag" "$N" "$icon" "$label"
   done <<< "$workloads"
 
   if [[ -n "${bad_pods//[$'\t\n ']/}" ]]; then

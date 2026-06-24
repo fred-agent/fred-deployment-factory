@@ -158,6 +158,12 @@ Expected:
 
 Use [DEPLOYMENT-STEPS.md](./DEPLOYMENT-STEPS.md) for the canonical GKE deployment procedure.
 
+Shared team operating agreements — image tagging, deploy round, how to read what
+is live — are in [OPERATING-CONVENTIONS.md](./OPERATING-CONVENTIONS.md). Build and
+deploy with the convention tag `YYYYMMDD-<shortsha>` (e.g. `20260624-9ee83e7`),
+the same tag across every image in a round; the `0.2` examples below are
+illustrative only.
+
 Foundation:
 
 ```bash
