@@ -19,18 +19,25 @@ set -Eeuo pipefail
 # openfga, gcs) — not just whether the pod is 1/1. This closes the "green pod but
 # broken feature" blind spot.
 #
+# It also reports the GKE-managed TLS certificates (ManagedCertificate): a workload can
+# be 1/1 while its HTTPS endpoint is unreachable because the cert is still Provisioning
+# (ERR_CERT_COMMON_NAME_INVALID). Green here means every managed cert is Active too, so a
+# fully-green dashboard means the site actually works end to end.
+#
 # Usage:
 #   bin/fredlab-status.sh            # wait until stable or timeout, then report
 #   bin/fredlab-status.sh --once     # single snapshot, no waiting
 #   bin/fredlab-status.sh --no-gcs   # skip the GCS/GCP checks
 #   bin/fredlab-status.sh --no-apps  # skip the per-app /ready probes
+#   bin/fredlab-status.sh --no-certs # skip the TLS managed-cert checks
 #
 # Environment overrides:
 #   NAMESPACE (default: default)
 #   TIMEOUT   max seconds to wait for stable      (default: 300)
 #   INTERVAL  seconds between polls while waiting  (default: 5)
-#   CHECK_GCS  1 to check GCS prereqs, 0 to skip   (default: 1)
-#   CHECK_APPS 1 to probe app /ready, 0 to skip    (default: 1)
+#   CHECK_GCS   1 to check GCS prereqs, 0 to skip  (default: 1)
+#   CHECK_APPS  1 to probe app /ready, 0 to skip   (default: 1)
+#   CHECK_CERTS 1 to check managed certs, 0 to skip (default: 1)
 #   BUCKET / REGION / GSA_EMAIL / KSA_NAMES        (default to the GCS prereq script's values)
 
 NAMESPACE="${NAMESPACE:-default}"
@@ -38,13 +45,15 @@ TIMEOUT="${TIMEOUT:-300}"
 INTERVAL="${INTERVAL:-5}"
 CHECK_GCS="${CHECK_GCS:-1}"
 CHECK_APPS="${CHECK_APPS:-1}"
+CHECK_CERTS="${CHECK_CERTS:-1}"
 MODE="wait"
 for arg in "$@"; do
   case "$arg" in
-    --once)    MODE="once" ;;
-    --no-gcs)  CHECK_GCS=0 ;;
-    --no-apps) CHECK_APPS=0 ;;
-    -h|--help) sed -n '3,26p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    --once)     MODE="once" ;;
+    --no-gcs)   CHECK_GCS=0 ;;
+    --no-apps)  CHECK_APPS=0 ;;
+    --no-certs) CHECK_CERTS=0 ;;
+    -h|--help)  sed -n '3,32p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
   esac
 done
 
@@ -303,7 +312,56 @@ render_app_readiness() {
   fi
 }
 
+# Report GKE-managed TLS certs (ManagedCertificate). A workload can be 1/1 while its HTTPS
+# endpoint serves the wrong cert during provisioning (ERR_CERT_COMMON_NAME_INVALID), so a
+# cert that is not Active must keep the dashboard out of the green. Sets CERTS_OK/CERTS_SKIPPED.
+# Degrades to yellow "skipped" (never red) when the CRD/kubectl is unavailable.
+render_certs() {
+  CERTS_OK=1; CERTS_SKIPPED=0
+  if [[ "$CHECK_CERTS" != "1" ]]; then CERTS_SKIPPED=1; return; fi
+
+  local json
+  if ! json="$(kubectl get managedcertificate -n "$NAMESPACE" -o json 2>/dev/null)"; then
+    CERTS_SKIPPED=1
+    printf "%s┌─ TLS certificates ───────────────────────────────────%s\n" "$D" "$N"
+    printf "  %s⚪ skipped%s — ManagedCertificate CRD not available\n" "$Y" "$N"
+    printf "%s└──────────────────────────────────────────────────────%s\n" "$D" "$N"
+    return
+  fi
+
+  local rows
+  rows="$(jq -r '.items[]? | [ .metadata.name,
+                               (.status.certificateStatus // "Unknown"),
+                               ((.spec.domains // []) | join(",")) ] | @tsv' <<< "$json")"
+
+  printf "%s┌─ TLS certificates (managed) ──────────────────────────%s\n" "$B" "$N"
+  if [[ -z "${rows//[$'\t\n ']/}" ]]; then
+    CERTS_SKIPPED=1
+    printf "  %sno ManagedCertificates in ns%s\n" "$D" "$N"
+    printf "%s└──────────────────────────────────────────────────────%s\n" "$D" "$N"
+    return
+  fi
+
+  local cname cstatus cdomains icon col
+  while IFS=$'\t' read -r cname cstatus cdomains; do
+    [[ -z "${cname:-}" ]] && continue
+    case "$cstatus" in
+      Active)       icon="✓"; col="$G" ;;
+      Provisioning) icon="⏳"; col="$Y"; CERTS_OK=0 ;;
+      *)            icon="✗"; col="$R"; CERTS_OK=0 ;;
+    esac
+    printf "  %s%s %-26s %-14s%s %s%s%s\n" "$col" "$icon" "$cname" "$cstatus" "$N" "$D" "$cdomains" "$N"
+  done <<< "$rows"
+
+  if [[ "$CERTS_OK" == "1" ]]; then
+    printf "%s└──────────────────────────────────────────────────────%s\n" "$D" "$N"
+  else
+    printf "%s└─ a cert is not Active — HTTPS fails until it provisions ─%s\n" "$R" "$N"
+  fi
+}
+
 STABLE=1; GCS_OK=1; GCS_SKIPPED=0; APPS_OK=1; APPS_SKIPPED=0; MISSING_COUNT=0; WORKLOADS_NOTREADY=0
+CERTS_OK=1; CERTS_SKIPPED=0
 start="$(date +%s)"
 while :; do
   now="$(date +%s)"; elapsed="$(( now - start ))"
@@ -317,14 +375,17 @@ while :; do
   if [[ "$STABLE" == "1" || "$MODE" == "once" || "$elapsed" -ge "$TIMEOUT" ]]; then
     render_gcs
     render_app_readiness
+    render_certs
 
     if [[ "$STABLE" == "1" \
           && ( "$GCS_OK" == "1" || "$GCS_SKIPPED" == "1" ) \
-          && ( "$APPS_OK" == "1" || "$APPS_SKIPPED" == "1" ) ]]; then
+          && ( "$APPS_OK" == "1" || "$APPS_SKIPPED" == "1" ) \
+          && ( "$CERTS_OK" == "1" || "$CERTS_SKIPPED" == "1" ) ]]; then
       printf "\n%s✅ PLATFORM STABLE%s — all workloads ready" "$B$G" "$N"
       [[ "$GCS_SKIPPED" == "1" ]] && printf " %s(GCS checks skipped)%s" "$Y" "$N" \
                                   || printf "; GCS prerequisites OK"
       [[ "$APPS_SKIPPED" != "1" ]] && printf "; app dependencies OK"
+      [[ "$CERTS_SKIPPED" != "1" ]] && printf "; TLS certs Active"
       printf ".\n"
       exit 0
     fi
@@ -334,6 +395,7 @@ while :; do
     [[ "${WORKLOADS_NOTREADY:-0}" != "0" ]] && reasons+=("workloads $([[ "$MODE" == "once" ]] && echo "not ready" || echo "timed out after ${TIMEOUT}s")")
     [[ "$GCS_OK" != "1" && "$GCS_SKIPPED" != "1" ]] && reasons+=("GCS prerequisites failing")
     [[ "$APPS_OK" != "1" && "$APPS_SKIPPED" != "1" ]] && reasons+=("app dependency down")
+    [[ "$CERTS_OK" != "1" && "$CERTS_SKIPPED" != "1" ]] && reasons+=("TLS cert not Active")
     printf "\n%s❌ NOT STABLE%s — %s.\n" "$B$R" "$N" "$(IFS='; '; echo "${reasons[*]}")"
     exit 1
   fi
