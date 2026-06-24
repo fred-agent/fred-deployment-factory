@@ -424,6 +424,10 @@ knowledgeFlow:
       filesystemPrefix: ""
       # Empty → inferred from ADC / Workload Identity.
       projectId: ""
+      # SA email that signs V4 signed URLs for tabular Parquet reads (IAM signBlob
+      # via Workload Identity). Empty → defaults to serviceAccount.gcpServiceAccount,
+      # which the prereq script grants serviceAccountTokenCreator on itself.
+      signingServiceAccountEmail: ""
     # OpenSearch is the vector store (hybrid/semantic search). The in-cluster
     # OpenSearch runs with the security plugin disabled → plain HTTP, no real auth.
     opensearch:

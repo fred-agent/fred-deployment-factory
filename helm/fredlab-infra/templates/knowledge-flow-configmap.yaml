@@ -119,6 +119,10 @@ data:
       type: gcs
       bucket_name: {{ .Values.knowledgeFlow.config.storage.contentBucketName | quote }}
       project_id: {{ .Values.knowledgeFlow.config.storage.projectId | quote }}
+      # SA email used to mint V4 signed URLs (IAM signBlob via Workload Identity, no
+      # JSON key) for tabular Parquet reads. Defaults to the content-store GSA, which
+      # the prereq script already grants serviceAccountTokenCreator on itself.
+      signing_service_account_email: {{ (.Values.knowledgeFlow.config.storage.signingServiceAccountEmail | default .Values.knowledgeFlow.serviceAccount.gcpServiceAccount) | quote }}
 
     document_sources:
       fred:
