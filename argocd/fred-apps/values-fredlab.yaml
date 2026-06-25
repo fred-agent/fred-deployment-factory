@@ -11,6 +11,8 @@ controlPlane:
   enabled: true
   image:
     repository: europe-west1-docker.pkg.dev/fredlab-playground/fredlab-repo/control-plane-backend
-    # Set to the tag currently live (read the IMAGE TAG column from bin/fredlab-status.sh
-    # before the first sync, so the cutover keeps the same image).
-    tag: "REPLACE_WITH_CURRENT_TAG"
+    # Pinned to the tag CURRENTLY LIVE (from bin/fredlab-status.sh) so the GitOps
+    # cutover is image-neutral — ownership moves to ArgoCD, the running image does not
+    # change. Bump to the latest swift only AFTER the handoff is proven, via the
+    # image-bump step. NB: the real tag format is YYYYMMDD-swift-<shortsha>.
+    tag: "20260624-swift-91b49147"

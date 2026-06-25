@@ -67,9 +67,13 @@ else
   echo "no ARGOCD_CHART_VERSION pin — installing latest (pin it after this run for reproducibility)"
 fi
 
+# server.insecure=true: serve the UI/API over plain HTTP behind the port-forward, so
+# Cloud Shell "Web Preview" (HTTP-only) can reach it. Safe because the server is never
+# exposed publicly — access is via `kubectl port-forward` only (see fredlab-argocd-ui.sh).
 helm upgrade --install "${RELEASE}" argo/argo-cd \
   --namespace "${NAMESPACE}" \
   --create-namespace \
+  --set 'configs.params.server\.insecure=true' \
   "${version_args[@]}"
 
 echo "== Resolved version (pin this for next time) =="
