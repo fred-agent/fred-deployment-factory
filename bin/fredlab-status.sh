@@ -24,36 +24,51 @@ set -Eeuo pipefail
 # (ERR_CERT_COMMON_NAME_INVALID). Green here means every managed cert is Active too, so a
 # fully-green dashboard means the site actually works end to end.
 #
+# Finally it runs SEMANTIC-CORRECTNESS probes — the "complete AND correct" checks that
+# presence/liveness cannot see, and the classes of bug that have shipped silently:
+#   - fred-agents runtime store is Postgres, not ephemeral SQLite (conversation durability)
+#   - control-plane KPI store is wired to OpenSearch (else the analytics dashboard 503s)
+#   - each runtime catalog source is backed by a ready Service
+#   - DB migrations have been applied (alembic revision present)
+# A fully-green run means the deployment is complete and correct — this IS the checklist.
+#
 # Usage:
-#   bin/fredlab-status.sh            # wait until stable or timeout, then report
-#   bin/fredlab-status.sh --once     # single snapshot, no waiting
-#   bin/fredlab-status.sh --no-gcs   # skip the GCS/GCP checks
-#   bin/fredlab-status.sh --no-apps  # skip the per-app /ready probes
-#   bin/fredlab-status.sh --no-certs # skip the TLS managed-cert checks
+#   bin/fredlab-status.sh                  # wait until stable or timeout, then report
+#   bin/fredlab-status.sh --once           # single snapshot, no waiting
+#   bin/fredlab-status.sh --no-gcs         # skip the GCS/GCP checks
+#   bin/fredlab-status.sh --no-apps        # skip the per-app /ready probes
+#   bin/fredlab-status.sh --no-certs       # skip the TLS managed-cert checks
+#   bin/fredlab-status.sh --no-correctness # skip the config/schema correctness probes
 #
 # Environment overrides:
-#   NAMESPACE (default: default)
+#   NAMESPACE (default: default)   POSTGRES_POD (default: postgres-0)
 #   TIMEOUT   max seconds to wait for stable      (default: 300)
 #   INTERVAL  seconds between polls while waiting  (default: 5)
-#   CHECK_GCS   1 to check GCS prereqs, 0 to skip  (default: 1)
-#   CHECK_APPS  1 to probe app /ready, 0 to skip   (default: 1)
-#   CHECK_CERTS 1 to check managed certs, 0 to skip (default: 1)
+#   CHECK_GCS         1 to check GCS prereqs, 0 to skip          (default: 1)
+#   CHECK_APPS        1 to probe app /ready, 0 to skip           (default: 1)
+#   CHECK_CERTS       1 to check managed certs, 0 to skip        (default: 1)
+#   CHECK_CORRECTNESS 1 to run config/schema probes, 0 to skip   (default: 1)
+#   SECRET_NAME (default: fredlab-infra-secrets) — for the migration (alembic) probe
 #   BUCKET / REGION / GSA_EMAIL / KSA_NAMES        (default to the GCS prereq script's values)
 
 NAMESPACE="${NAMESPACE:-default}"
+POSTGRES_POD="${POSTGRES_POD:-postgres-0}"
+SECRET_NAME="${SECRET_NAME:-fredlab-infra-secrets}"
 TIMEOUT="${TIMEOUT:-300}"
 INTERVAL="${INTERVAL:-5}"
 CHECK_GCS="${CHECK_GCS:-1}"
 CHECK_APPS="${CHECK_APPS:-1}"
 CHECK_CERTS="${CHECK_CERTS:-1}"
+CHECK_CORRECTNESS="${CHECK_CORRECTNESS:-1}"
 MODE="wait"
 for arg in "$@"; do
   case "$arg" in
-    --once)     MODE="once" ;;
-    --no-gcs)   CHECK_GCS=0 ;;
-    --no-apps)  CHECK_APPS=0 ;;
-    --no-certs) CHECK_CERTS=0 ;;
-    -h|--help)  sed -n '3,32p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    --once)         MODE="once" ;;
+    --no-gcs)       CHECK_GCS=0 ;;
+    --no-apps)      CHECK_APPS=0 ;;
+    --no-certs)     CHECK_CERTS=0 ;;
+    --no-correctness) CHECK_CORRECTNESS=0 ;;
+    -h|--help)      sed -n '3,/^[^#]/p' "$0" | sed '$d; s/^# \{0,1\}//'; exit 0 ;;
   esac
 done
 
@@ -360,8 +375,85 @@ render_certs() {
   fi
 }
 
+# Semantic-correctness probes: config/schema facts that presence + liveness can't see.
+# These are the silent-failure classes we hit (SQLite durability, KPI 503). Read-only.
+# Sets CORRECTNESS_OK / CORRECTNESS_SKIPPED.
+render_correctness() {
+  CORRECTNESS_OK=1; CORRECTNESS_SKIPPED=0
+  if [[ "$CHECK_CORRECTNESS" != "1" ]]; then CORRECTNESS_SKIPPED=1; return; fi
+
+  printf "%s┌─ Correctness (config & schema) ───────────────────────%s\n" "$B" "$N"
+  local acfg="" ccfg="" probed=0
+
+  ok()   { printf "  %s✓%s %-22s %s%s%s\n" "$G" "$N" "$1" "$D" "$2" "$N"; }
+  bad()  { printf "  %s✗%s %-22s %s%s%s\n" "$R" "$N" "$1" "$R" "$2" "$N"; CORRECTNESS_OK=0; }
+  note() { printf "  %s⚪ %-22s %s%s\n" "$D" "$1" "$2" "$N"; }
+
+  # A — fred-agents runtime store must be Postgres, not ephemeral SQLite (durability).
+  if kubectl get deploy fred-agents -n "$NAMESPACE" >/dev/null 2>&1; then
+    probed=1
+    acfg="$(kubectl exec -n "$NAMESPACE" deploy/fred-agents -- sh -c 'cat "$CONFIG_FILE"' 2>/dev/null || true)"
+    if [[ -z "$acfg" ]]; then printf "  %s? runtime store          could not read config%s\n" "$Y" "$N"
+    elif grep -q 'sqlite_path' <<<"$acfg"; then bad "runtime store" "fred-agents on SQLite — conversations lost on restart"
+    else ok "runtime store" "fred-agents → Postgres (durable)"; fi
+  fi
+
+  # B — control-plane KPI store wired to OpenSearch (else analytics dashboard 503).
+  if kubectl get deploy control-plane-backend -n "$NAMESPACE" >/dev/null 2>&1; then
+    probed=1
+    ccfg="$(kubectl exec -n "$NAMESPACE" deploy/control-plane-backend -- sh -c 'cat "$CONFIG_FILE"' 2>/dev/null || true)"
+    if [[ -z "$ccfg" ]]; then printf "  %s? kpi store              could not read config%s\n" "$Y" "$N"
+    elif grep -B1 'index: "kpi-index"' <<<"$ccfg" | grep -q 'enabled: true' && grep -q 'host: "http://opensearch' <<<"$ccfg"; then
+      ok "kpi store" "control-plane → OpenSearch (analytics dashboard live)"
+    else bad "kpi store" "KPI OpenSearch sink not wired — dashboard presets will 503"; fi
+  fi
+
+  # C — each runtime catalog source backed by a ready Service (info if not deployed).
+  if [[ -n "$ccfg" ]]; then
+    local svc eps
+    while IFS= read -r svc; do
+      [[ -z "$svc" ]] && continue
+      probed=1
+      if ! kubectl get svc "$svc" -n "$NAMESPACE" >/dev/null 2>&1; then
+        note "catalog: $svc" "not deployed (no Service)"
+      else
+        eps="$(kubectl get endpoints "$svc" -n "$NAMESPACE" -o jsonpath='{.subsets[*].addresses[*].ip}' 2>/dev/null || true)"
+        if [[ -n "${eps// /}" ]]; then ok "catalog: $svc" "reachable"
+        else bad "catalog: $svc" "Service has no ready endpoints"; fi
+      fi
+    done < <(grep -oE 'base_url: "http://[^"]+"' <<<"$ccfg" | sed -E 's#.*http://([^/:"]+).*#\1#' | sort -u)
+  fi
+
+  # D — DB migrations applied (alembic revision present in the fred DB).
+  local pgpw; pgpw="$(kubectl get secret "$SECRET_NAME" -n "$NAMESPACE" -o jsonpath='{.data.POSTGRES_FRED_PASSWORD}' 2>/dev/null | base64 -d || true)"
+  if [[ -n "$pgpw" ]] && kubectl get pod "$POSTGRES_POD" -n "$NAMESPACE" >/dev/null 2>&1; then
+    probed=1
+    local atables t rev found=0
+    atables="$(kubectl exec -n "$NAMESPACE" "$POSTGRES_POD" -- env PGPASSWORD="$pgpw" \
+      psql -U fred -d fred -tAc "SELECT relname FROM pg_class WHERE relkind='r' AND relname LIKE 'alembic_version%'" 2>/dev/null || true)"
+    while IFS= read -r t; do
+      [[ -z "$t" ]] && continue
+      found=1
+      rev="$(kubectl exec -n "$NAMESPACE" "$POSTGRES_POD" -- env PGPASSWORD="$pgpw" \
+        psql -U fred -d fred -tAc "SELECT version_num FROM ${t} LIMIT 1" 2>/dev/null | tr -d '[:space:]' || true)"
+      if [[ -n "$rev" ]]; then ok "migrations: $t" "rev ${rev:0:12}"
+      else bad "migrations: $t" "version table empty — migration never ran"; fi
+    done <<< "$atables"
+    if [[ "$found" == "0" ]] && kubectl get deploy control-plane-backend -n "$NAMESPACE" >/dev/null 2>&1; then
+      bad "migrations" "no alembic_version table in fred DB — migrations not applied"
+    fi
+  fi
+
+  if [[ "$probed" == "0" ]]; then CORRECTNESS_SKIPPED=1; printf "  %snothing to probe (no app workloads)%s\n" "$D" "$N"; fi
+  if [[ "$CORRECTNESS_OK" == "1" ]]; then
+    printf "%s└──────────────────────────────────────────────────────%s\n" "$D" "$N"
+  else
+    printf "%s└─ a correctness check failed — deployment is incomplete ─%s\n" "$R" "$N"
+  fi
+}
+
 STABLE=1; GCS_OK=1; GCS_SKIPPED=0; APPS_OK=1; APPS_SKIPPED=0; MISSING_COUNT=0; WORKLOADS_NOTREADY=0
-CERTS_OK=1; CERTS_SKIPPED=0
+CERTS_OK=1; CERTS_SKIPPED=0; CORRECTNESS_OK=1; CORRECTNESS_SKIPPED=0
 start="$(date +%s)"
 while :; do
   now="$(date +%s)"; elapsed="$(( now - start ))"
@@ -376,16 +468,19 @@ while :; do
     render_gcs
     render_app_readiness
     render_certs
+    render_correctness
 
     if [[ "$STABLE" == "1" \
           && ( "$GCS_OK" == "1" || "$GCS_SKIPPED" == "1" ) \
           && ( "$APPS_OK" == "1" || "$APPS_SKIPPED" == "1" ) \
-          && ( "$CERTS_OK" == "1" || "$CERTS_SKIPPED" == "1" ) ]]; then
+          && ( "$CERTS_OK" == "1" || "$CERTS_SKIPPED" == "1" ) \
+          && ( "$CORRECTNESS_OK" == "1" || "$CORRECTNESS_SKIPPED" == "1" ) ]]; then
       printf "\n%s✅ PLATFORM STABLE%s — all workloads ready" "$B$G" "$N"
       [[ "$GCS_SKIPPED" == "1" ]] && printf " %s(GCS checks skipped)%s" "$Y" "$N" \
                                   || printf "; GCS prerequisites OK"
       [[ "$APPS_SKIPPED" != "1" ]] && printf "; app dependencies OK"
       [[ "$CERTS_SKIPPED" != "1" ]] && printf "; TLS certs Active"
+      [[ "$CORRECTNESS_SKIPPED" != "1" ]] && printf "; config correct"
       printf ".\n"
       exit 0
     fi
@@ -396,6 +491,7 @@ while :; do
     [[ "$GCS_OK" != "1" && "$GCS_SKIPPED" != "1" ]] && reasons+=("GCS prerequisites failing")
     [[ "$APPS_OK" != "1" && "$APPS_SKIPPED" != "1" ]] && reasons+=("app dependency down")
     [[ "$CERTS_OK" != "1" && "$CERTS_SKIPPED" != "1" ]] && reasons+=("TLS cert not Active")
+    [[ "$CORRECTNESS_OK" != "1" && "$CORRECTNESS_SKIPPED" != "1" ]] && reasons+=("correctness check failed (incomplete deployment)")
     printf "\n%s❌ NOT STABLE%s — %s.\n" "$B$R" "$N" "$(IFS='; '; echo "${reasons[*]}")"
     exit 1
   fi
