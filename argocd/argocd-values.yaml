@@ -1,0 +1,25 @@
+# ArgoCD config (non-secret). Read by bin/fredlab-argocd-install.sh.
+# The OIDC client secret is NOT here — the install script fetches it from Keycloak at
+# runtime and injects it, so no secret ever lands in git.
+configs:
+  params:
+    # Serve HTTP behind the load balancer; TLS terminates at the GCE Ingress + managed cert.
+    server.insecure: true
+  cm:
+    url: https://argocd.playground.fredlab.dev
+    oidc.config: |
+      name: Keycloak
+      issuer: https://keycloak.playground.fredlab.dev/realms/app
+      clientID: argocd
+      clientSecret: $oidc.keycloak.clientSecret
+      requestedScopes:
+        - openid
+        - profile
+        - email
+        - groups
+  rbac:
+    # Authenticated Keycloak users are read-only by default. To grant ArgoCD admin to a
+    # Keycloak group (delivered via the `groups` claim), uncomment and set your group:
+    # policy.csv: |
+    #   g, <your-keycloak-admin-group>, role:admin
+    policy.default: role:readonly
