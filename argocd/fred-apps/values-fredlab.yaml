@@ -11,8 +11,6 @@ controlPlane:
   enabled: true
   image:
     repository: europe-west1-docker.pkg.dev/fredlab-playground/fredlab-repo/control-plane-backend
-    # Pinned to the tag CURRENTLY LIVE (from bin/fredlab-status.sh) so the GitOps
-    # cutover is image-neutral — ownership moves to ArgoCD, the running image does not
-    # change. Bump to the latest swift only AFTER the handoff is proven, via the
-    # image-bump step. NB: the real tag format is YYYYMMDD-swift-<shortsha>.
-    tag: "20260624-swift-91b49147"
+    # The release-tag marker lets bin/fredlab-release.sh rewrite this line. Format:
+    # YYYYMMDD-swift-<shortsha>. Change = commit + push -> ArgoCD deploys it.
+    tag: "20260624-swift-91b49147" # release-tag: control-plane-backend
