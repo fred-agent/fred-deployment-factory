@@ -12,11 +12,12 @@ configs:
       issuer: https://keycloak.playground.fredlab.dev/realms/app
       clientID: argocd
       clientSecret: $oidc.keycloak.clientSecret
+      # No "groups" scope here — this realm has no such client scope (it would fail with
+      # invalid_scope). The groups claim still arrives via the mapper on the argocd client.
       requestedScopes:
         - openid
         - profile
         - email
-        - groups
   rbac:
     # Authenticated Keycloak users are read-only by default. To grant ArgoCD admin to a
     # Keycloak group (delivered via the `groups` claim), uncomment and set your group:
