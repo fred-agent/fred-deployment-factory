@@ -1,0 +1,8 @@
+apiVersion: networking.gke.io/v1
+kind: ManagedCertificate
+metadata:
+  name: fredlab-argocd-cert
+  namespace: argocd
+spec:
+  domains:
+    - argocd.playground.fredlab.dev
