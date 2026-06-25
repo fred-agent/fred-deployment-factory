@@ -394,7 +394,7 @@ render_correctness() {
     probed=1
     acfg="$(kubectl exec -n "$NAMESPACE" deploy/fred-agents -- sh -c 'cat "$CONFIG_FILE"' 2>/dev/null || true)"
     if [[ -z "$acfg" ]]; then printf "  %s? runtime store          could not read config%s\n" "$Y" "$N"
-    elif grep -q 'sqlite_path' <<<"$acfg"; then bad "runtime store" "fred-agents on SQLite — conversations lost on restart"
+    elif grep -qE '^[[:space:]]*sqlite_path:' <<<"$acfg"; then bad "runtime store" "fred-agents on SQLite — conversations lost on restart"
     else ok "runtime store" "fred-agents → Postgres (durable)"; fi
   fi
 
@@ -403,7 +403,7 @@ render_correctness() {
     probed=1
     ccfg="$(kubectl exec -n "$NAMESPACE" deploy/control-plane-backend -- sh -c 'cat "$CONFIG_FILE"' 2>/dev/null || true)"
     if [[ -z "$ccfg" ]]; then printf "  %s? kpi store              could not read config%s\n" "$Y" "$N"
-    elif grep -B1 'index: "kpi-index"' <<<"$ccfg" | grep -q 'enabled: true' && grep -q 'host: "http://opensearch' <<<"$ccfg"; then
+    elif grep -B1 'index: "kpi-index"' <<<"$ccfg" | grep -q 'enabled: true' && grep -qE '^[[:space:]]*host: "http://opensearch' <<<"$ccfg"; then
       ok "kpi store" "control-plane → OpenSearch (analytics dashboard live)"
     else bad "kpi store" "KPI OpenSearch sink not wired — dashboard presets will 503"; fi
   fi
