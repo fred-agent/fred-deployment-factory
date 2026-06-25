@@ -2,6 +2,18 @@
 
 Canonical deployment path for `fredlab-infra` on GKE Autopilot.
 
+> **The verdict is a script, not this page.** This guide is the *path*; the *checklist*
+> is executable. After each phase, run `bin/fredlab-status.sh` — a fully green run
+> (workloads · MISSING check · GCS · app `/ready` · TLS certs · **Correctness**) means the
+> deployment is complete **and** correct. `bin/fred-preflight.sh` covers identity
+> prerequisites before the first deploy. **If a step here ever disagrees with the scripts,
+> trust the scripts and fix the step.**
+>
+> This page does not restate what already lives elsewhere — it points:
+> - image tags, deploy order, fast redeploys (`-fast`) → `OPERATING-CONVENTIONS.md`
+> - required secrets → `fredlab-secrets.values.example.yaml`
+> - GCS / Workload-Identity reference → `docs/swift/platform/DEPLOYMENT_GUIDE_GKE.md`
+
 ## 1. Prerequisites
 
 Run from the repository root:
@@ -767,3 +779,30 @@ kubectl logs deploy/knowledge-flow-backend --tail=120
 | Vertex AI / `PermissionDenied` during ingestion | GSA missing `roles/aiplatform.user`, or the model `location` is not a valid Vertex region. Re-run the prereq script; adjust `knowledgeFlow.config.models.location`. |
 | Tabular SQL preview errors with `NotImplementedError` | Expected on pure Workload Identity — GCS presigned URLs need an SA key or `signBlob`. |
 | `GET /knowledge-flow/v1/tags` hangs → 504, UI "Service de connaissance non démarré" | KNOWN OPEN ISSUE (app-level, not deployment). KF's rebac engine stalls initializing/syncing its authorization model in the shared OpenFGA `fred` store on the first tags lookup (`rebac.lookup_user_resources`). Auth, DB schema, OpenFGA, and KF rebac config are all confirmed correct. Investigate in `fred-core` `security/rebac/openfga_engine.py`; candidate fixes: dedicated OpenFGA store for KF, or a unified authorization model including KF's `tags`/`document` types. |
+
+### Conversations Disappear After A Restart
+
+A conversation shows in the list but reopens empty after a `fred-agents` restart/redeploy.
+Cause: the runtime was using SQLite on an `emptyDir` (wiped on every pod restart) instead
+of Postgres. The chart now points the runtime `storage.postgres` at the `fred` DB (no
+`sqlite_path`); `bin/fredlab-status.sh` **Correctness** must read
+`runtime store … fred-agents → Postgres (durable)`. Inspect the tables with
+`bin/fredlab-sessions.sh`. Conversations created before the fix are unrecoverable.
+
+### Analytics Dashboard 503 (`KPI store not available`)
+
+The admin analytics dashboard errors; `/control-plane/v1/kpi/presets/...` returns 503.
+Cause: the control-plane KPI store reads from OpenSearch, but the KPI OpenSearch sink was
+disabled / had no `storage.opensearch` connection, so it fell back to the non-queryable log
+sink. The chart now sets `observability.kpi.opensearch.enabled: true` + a `storage.opensearch`
+block + `OPENSEARCH_PASSWORD`; Correctness must read `kpi store … → OpenSearch`. KPI events
+accrue forward from when the sink was enabled (the log-only period is not backfilled).
+
+### Deploys / Restarts Are Very Slow
+
+Every `helm upgrade` re-runs the `keycloak-provision` post-upgrade hook (heavy: it builds
+the temporal-ui auth flow) and helm blocks on it. For app-only redeploys where identity is
+unchanged, pass `-fast` to skip that hook (`OPERATING-CONVENTIONS.md` C2.1). To just bounce
+pods without helm at all: `kubectl rollout restart deploy/<name>`. Do **not** `disable` the
+frontend to "restart" it — that deletes its managed certificate and forces a 15–60 min
+re-provision (see "Studio TLS Certificate Is Not Ready").
