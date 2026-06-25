@@ -1,0 +1,31 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: fred-apps
+  namespace: argocd
+  # Keep the Application around if it is ever deleted from git by accident.
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/fred-agent/fred-deployment-factory.git
+    targetRevision: main
+    path: argocd/fred-apps
+    helm:
+      valueFiles:
+        - values.yaml
+        - values-fredlab.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: default
+  # No `automated:` block on purpose — MANUAL sync for the first cutover so the diff
+  # is reviewed before anything is applied. Add automated + selfHeal once it is green:
+  #   syncPolicy:
+  #     automated:
+  #       prune: true
+  #       selfHeal: true
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=false
+      - ServerSideApply=true

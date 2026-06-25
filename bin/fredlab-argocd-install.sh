@@ -24,8 +24,8 @@ Usage:
 Environment overrides:
   NAMESPACE              (default: argocd)
   RELEASE               (default: argocd)
-  ARGOCD_CHART_VERSION  pin the argo/argo-cd chart version (recommended after first run
-                        for reproducibility; empty = install latest)
+  ARGOCD_CHART_VERSION  argo/argo-cd chart version (default pinned below for
+                        reproducibility; set empty to track latest)
   WAIT_TIMEOUT          (default: 300s) rollout wait; non-fatal if Autopilot is still
                         provisioning nodes
 EOF
@@ -39,7 +39,8 @@ esac
 
 NAMESPACE="${NAMESPACE:-argocd}"
 RELEASE="${RELEASE:-argocd}"
-ARGOCD_CHART_VERSION="${ARGOCD_CHART_VERSION:-}"
+# Pinned to the version first installed on fredlab (2026-06-25). Bump deliberately.
+ARGOCD_CHART_VERSION="${ARGOCD_CHART_VERSION-9.7.0}"
 WAIT_TIMEOUT="${WAIT_TIMEOUT:-300s}"
 REPO_URL="https://argoproj.github.io/argo-helm"
 

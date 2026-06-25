@@ -1,0 +1,16 @@
+# fredlab environment overlay — enables the apps and pins their images.
+# The ArgoCD Application loads this AFTER values.yaml.
+#
+# This is the file the image-bump step (scripted commit) will edit: it sets the
+# YYYYMMDD-<shortsha> tag per app, commits, and ArgoCD syncs the new tag.
+#
+# Region/project: GKE is europe-west9 but Artifact Registry is europe-west1
+# (matches the build scripts' REGION default). Confirm the project id.
+
+controlPlane:
+  enabled: true
+  image:
+    repository: europe-west1-docker.pkg.dev/fredlab-playground/fredlab-repo/control-plane-backend
+    # Set to the tag currently live (read the IMAGE TAG column from bin/fredlab-status.sh
+    # before the first sync, so the cutover keeps the same image).
+    tag: "REPLACE_WITH_CURRENT_TAG"

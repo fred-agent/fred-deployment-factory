@@ -1,0 +1,134 @@
+# fred-apps — defaults for the GitOps-managed application layer.
+#
+# This chart deploys ONLY stateless app workloads, owned by ArgoCD, into `default`.
+# It deliberately does NOT create: the fredlab-infra-secrets Secret, the Ingress,
+# ManagedCertificates, or any infra StatefulSet/Service. Those stay owned by the
+# imperative infra layer (helm release `fredlab-infra`) and are treated as frozen.
+#
+# App workloads reference the infra-owned Secret and Services BY NAME. The keys below
+# under `secret` and `postgresql` must match the running infra layer.
+#
+# Per-environment image repository + tag live in values-fredlab.yaml (the overlay the
+# ArgoCD Application loads last). Apps default to disabled here; the overlay enables them.
+
+nameOverride: ""
+fullnameOverride: ""
+imagePullPolicy: IfNotPresent
+
+# Infra-owned Secret the apps read credentials from (created by the infra layer).
+secret:
+  fullnameOverride: fredlab-infra-secrets
+
+# Infra coordinates the apps reference. Must match the running infra layer.
+postgresql:
+  fullnameOverride: postgres
+  service:
+    port: 5432
+  fred:
+    database: fred
+    user: fred
+
+controlPlane:
+  enabled: false
+  fullnameOverride: control-plane-backend
+  configMapName: control-plane-config
+  replicaCount: 1
+  image:
+    # Set in values-fredlab.yaml. Example:
+    # europe-west1-docker.pkg.dev/<project-id>/fredlab-repo/control-plane-backend
+    repository: ""
+    tag: ""
+  service:
+    type: ClusterIP
+    port: 8080
+  containerPort: 8222
+  health:
+    path: /control-plane/v1/healthz
+  # Schema migrations are NOT run by this chart in the GitOps slice — the live DB is
+  # already at head. Kept for parity; wire as an ArgoCD PreSync hook when needed.
+  migration:
+    enabled: false
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      memory: 1Gi
+  config:
+    appBaseUrl: /control-plane/v1
+    logLevel: info
+    gcuVersion: v1
+    defaultTeamMaxResourcesStorageSize: 5368709120
+    personalMaxResourcesStorageSize: 5368709120
+    keycloakRealm: app
+    keycloakInternalUrl: http://keycloak:8080
+    keycloakIssuerUrl: https://keycloak.playground.fredlab.dev/realms/app
+    keycloakClientId: control-plane
+    openfgaUrl: http://openfga:8080
+    openfgaStoreName: fred
+    temporalAddress: temporal:7233
+    scheduler:
+      enabled: true
+      backend: temporal
+      temporalNamespace: default
+      temporalTaskQueue: control-plane-lifecycle
+      temporalWorkflowIdPrefix: control-plane
+      temporalConnectTimeoutSeconds: 5
+    security:
+      m2m:
+        enabled: true
+      user:
+        enabled: true
+        clientId: app
+      authorizedOrigins:
+        - https://keycloak.playground.fredlab.dev
+        - https://studio.playground.fredlab.dev
+        - https://control-plane.playground.fredlab.dev
+      rebac:
+        enabled: true
+    opensearch:
+      host: http://opensearch:9200
+      secure: false
+      verifyCerts: false
+      username: admin
+      password: admin
+    observability:
+      log:
+        enabled: true
+      prometheus:
+        enabled: false
+        address: 0.0.0.0
+        port: 9222
+      opensearch:
+        enabled: true
+        index: kpi-index
+      processMetricsIntervalSec: 0
+    contentStorage:
+      localRootPath: /tmp/control-plane-content
+    frontend:
+      featureFlags:
+        enableK8Features: false
+        enableElecWarfare: false
+      uiSettings:
+        siteDisplayName: Fredlab
+        agentsNicknameSingular: agent
+        agentsNicknamePlural: agents
+    knowledgeFlowBaseUrl: http://knowledge-flow-backend:8080/knowledge-flow/v1
+    runtimeCatalogSources:
+      - runtimeId: fred-agents
+        baseUrl: http://fred-agents:8080/fred/agents/v2
+        enabled: true
+        ingressPrefix: /fred/agents/v2
+      - runtimeId: rags-agents
+        baseUrl: http://rags-agents:8080/rags/agents/v2
+        enabled: true
+        ingressPrefix: /rags/agents/v2
+      - runtimeId: dt-agents
+        baseUrl: http://dt-agents:8080/dt/agents/v2
+        enabled: true
+        ingressPrefix: /dt/agents/v2
+      - runtimeId: evaluation
+        baseUrl: http://fred-evaluation-backend:8080/evaluation/v1
+        enabled: true
+        ingressPrefix: /evaluation/v1
+  extraEnv: {}

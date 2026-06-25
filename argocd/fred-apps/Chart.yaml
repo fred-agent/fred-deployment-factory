@@ -1,0 +1,6 @@
+apiVersion: v2
+name: fred-apps
+description: "GitOps-managed fred application layer (ArgoCD-owned). Stateless app workloads only; references the infra-owned Secret and Services by name. Does not create infra, Ingress, ManagedCertificates, or the fredlab-infra-secrets Secret."
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
