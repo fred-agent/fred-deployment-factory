@@ -260,7 +260,7 @@ helm/fredlab-infra/legal/gdpr.md
 This content is public, not secret. Update and review it in Git, then redeploy the frontend:
 
 ```bash
-bin/fredlab-frontend-deploy.sh start 0.2
+bin/fredlab-deploy.sh frontend start 0.2
 ```
 
 Validate from inside the cluster:
@@ -317,7 +317,7 @@ Control Plane image contract:
 The chart provides a Fredlab-specific runtime configuration through the `control-plane-config` ConfigMap. This intentionally replaces the image's bundled `configuration_prod.yaml`, which still contains local/example endpoints such as `localhost` and `app-keycloak`.
 
 ```bash
-bin/fredlab-control-plane-deploy.sh migrate 0.2
+bin/fredlab-deploy.sh control-plane migrate 0.2
 ```
 
 Validate:
@@ -351,7 +351,7 @@ Expected: at least one Alembic revision is present.
 ## 10. Start Control Plane Backend
 
 ```bash
-bin/fredlab-control-plane-deploy.sh start 0.2
+bin/fredlab-deploy.sh control-plane start 0.2
 ```
 
 Validate:
@@ -389,7 +389,7 @@ The frontend image is already built by `bin/fredlab-build frontend 0.2`. Startin
 At this stage only Control Plane is deployed. The frontend chart therefore points the not-yet-deployed `fred-agents` and `knowledge-flow-backend` upstreams to `control-plane-backend` temporarily, because Nginx fails at startup when an upstream DNS name does not exist. Switch those values to the real services when those components are deployed.
 
 ```bash
-bin/fredlab-frontend-deploy.sh start 0.2
+bin/fredlab-deploy.sh frontend start 0.2
 ```
 
 Validate:
@@ -646,7 +646,7 @@ creates them with Alembic (version table `alembic_version_knowledge_flow`, separ
 from control-plane's). Run this once before starting KF, or after any schema change:
 
 ```bash
-bin/fredlab-knowledge-flow-deploy.sh migrate 0.2
+bin/fredlab-deploy.sh knowledge-flow migrate 0.2
 ```
 
 Validate:
@@ -662,7 +662,7 @@ Without this, KF starts but API calls that read those tables fail with
 ### 15.5 Start Knowledge Flow
 
 ```bash
-bin/fredlab-knowledge-flow-deploy.sh start 0.2
+bin/fredlab-deploy.sh knowledge-flow start 0.2
 ```
 
 The script enables `knowledgeFlow`, sets the Artifact Registry image, annotates
@@ -697,7 +697,7 @@ embeddings end to end.
 ### 15.6 Redeploy the frontend (so it proxies to the real Knowledge Flow)
 
 ```bash
-bin/fredlab-frontend-deploy.sh start 0.2
+bin/fredlab-deploy.sh frontend start 0.2
 ```
 
 ## Troubleshooting
@@ -731,7 +731,7 @@ Use only for immutable StatefulSet spec drift.
 ### Disable Control Plane Without Deleting Data
 
 ```bash
-bin/fredlab-control-plane-deploy.sh disable
+bin/fredlab-deploy.sh control-plane disable
 ```
 
 ### Studio TLS Certificate Is Not Ready

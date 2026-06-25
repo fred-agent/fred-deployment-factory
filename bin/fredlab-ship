@@ -1,0 +1,119 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+# fredlab-ship — the daily code-redeploy button.
+#
+# "I pulled the latest ~/fred and want it live." This:
+#   1. Derives the round tag from ~/fred HEAD: YYYYMMDD-<shortsha> (convention C1).
+#   2. Builds only what changed — since the tag embeds the sha, a new commit means a
+#      tag that is not yet in Artifact Registry. Per image: present -> skip, absent -> build.
+#   3. Fast-redeploys control-plane (migrate then start), frontend, and agents at that
+#      tag, in -fast mode (no keycloak-provision, no cert churn).
+#   4. Prints fredlab-status.sh so you see the new IMAGE TAG go green.
+#
+# Assumes infra/helm values are unchanged. For identity changes, a fresh cluster, or
+# knowledge-flow / evaluation, use bin/fredlab-deploy.sh directly (normal, non-fast).
+
+usage() {
+  cat <<'EOF'
+Usage:
+  bin/fredlab-ship [options]
+
+Options:
+  --tag <tag>     ship this exact tag instead of deriving it from ~/fred HEAD
+  --force         rebuild every image even if the tag already exists in the registry
+  --redeploy      deploy at the tag even when nothing was (re)built
+  --no-migrate    skip the control-plane alembic migrate step (start only)
+  --no-status     skip the trailing fredlab-status.sh
+  -h, --help      show this help
+
+Environment overrides:
+  FRED_REPO_DIR   (default: ~/fred) — source repo the tag is derived from
+  PROJECT_ID, REGION, REPOSITORY
+EOF
+}
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+FORCE=0
+REDEPLOY=0
+NO_MIGRATE=0
+NO_STATUS=0
+TAG=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --tag) TAG="${2:-}"; shift 2 ;;
+    --force) FORCE=1; shift ;;
+    --redeploy) REDEPLOY=1; shift ;;
+    --no-migrate) NO_MIGRATE=1; shift ;;
+    --no-status) NO_STATUS=1; shift ;;
+    -h|--help) usage; exit 0 ;;
+    *) echo "Unknown option: $1"; usage; exit 1 ;;
+  esac
+done
+
+FRED_REPO_DIR="${FRED_REPO_DIR:-${HOME}/fred}"
+PROJECT_ID="${PROJECT_ID:-$(gcloud config get-value project 2>/dev/null)}"
+REGION="${REGION:-europe-west1}"
+REPOSITORY="${REPOSITORY:-fredlab-repo}"
+
+if [[ -z "${TAG}" ]]; then
+  if [[ ! -d "${FRED_REPO_DIR}/.git" ]]; then
+    echo "No git repo at ${FRED_REPO_DIR}. Set FRED_REPO_DIR or pass --tag."
+    exit 1
+  fi
+  if ! git -C "${FRED_REPO_DIR}" diff --quiet || ! git -C "${FRED_REPO_DIR}" diff --cached --quiet; then
+    echo "⚠ ${FRED_REPO_DIR} tree is dirty — the <shortsha> in the tag will not match the built content."
+  fi
+  TAG="$(date -u +%Y%m%d)-$(git -C "${FRED_REPO_DIR}" rev-parse --short HEAD)"
+fi
+echo "Ship tag: ${TAG}"
+
+# build-name (catalog) | registry image name | deploy component
+PIPELINE=(
+  "control-plane-backend control-plane-backend control-plane"
+  "frontend              fred-frontend          frontend"
+  "fred-agents           fred-agents            agents"
+)
+
+image_has_tag() {
+  # $1 registry image name, $2 tag. True if the tag exists under that image.
+  gcloud artifacts docker images list \
+    "${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/$1" \
+    --include-tags --format='value(tags)' 2>/dev/null \
+    | tr ',;' '\n' | grep -qx "$2"
+}
+
+echo "== Build phase =="
+BUILT=0
+for row in "${PIPELINE[@]}"; do
+  read -r build_name image_name _component <<<"${row}"
+  if [[ "${FORCE}" != "1" ]] && image_has_tag "${image_name}" "${TAG}"; then
+    echo "skip  ${image_name}:${TAG} (already in registry)"
+    continue
+  fi
+  echo "build ${build_name} -> ${image_name}:${TAG}"
+  "${SCRIPT_DIR}/fredlab-build" "${build_name}" "${TAG}"
+  BUILT=$((BUILT + 1))
+done
+
+if [[ "${BUILT}" -eq 0 && "${FORCE}" != "1" && "${REDEPLOY}" != "1" ]]; then
+  echo "No image changes for ${TAG} — already shipped. Use --redeploy to roll anyway."
+  exit 0
+fi
+
+echo "== Deploy phase (-fast) =="
+if [[ "${NO_MIGRATE}" != "1" ]]; then
+  "${SCRIPT_DIR}/fredlab-deploy.sh" control-plane migrate "${TAG}" -fast
+fi
+"${SCRIPT_DIR}/fredlab-deploy.sh" control-plane start "${TAG}" -fast
+"${SCRIPT_DIR}/fredlab-deploy.sh" frontend      start "${TAG}" -fast
+"${SCRIPT_DIR}/fredlab-deploy.sh" agents        start "${TAG}" -fast
+
+if [[ "${NO_STATUS}" != "1" && -x "${SCRIPT_DIR}/fredlab-status.sh" ]]; then
+  echo "== Status =="
+  "${SCRIPT_DIR}/fredlab-status.sh" || true
+fi
+
+echo "Shipped ${TAG}."

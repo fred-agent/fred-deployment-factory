@@ -66,10 +66,10 @@ Knowledge Flow keeps `migrate` and `start` explicit; `start` brings up the
 backend **and** the Temporal worker off the same tag/GSA.
 
 ```bash
-bin/fredlab-knowledge-flow-deploy.sh migrate "$TAG"
-bin/fredlab-knowledge-flow-deploy.sh start   "$TAG"
-bin/fredlab-control-plane-deploy.sh  start   "$TAG"   # migrate first if schema changed
-bin/fredlab-frontend-deploy.sh       start   "$TAG"
+bin/fredlab-deploy.sh knowledge-flow migrate "$TAG"
+bin/fredlab-deploy.sh knowledge-flow start   "$TAG"
+bin/fredlab-deploy.sh control-plane  start   "$TAG"   # migrate first if schema changed
+bin/fredlab-deploy.sh frontend       start   "$TAG"
 ```
 
 ## C2.1 — Fast redeploys (`-fast`)
@@ -84,10 +84,10 @@ For an **app-only redeploy** (new image tag, identity unchanged), pass `-fast` t
 skip that hook:
 
 ```bash
-bin/fredlab-control-plane-deploy.sh  start -fast "$TAG"
-bin/fredlab-knowledge-flow-deploy.sh start -fast "$TAG"
-bin/fredlab-agents-deploy.sh         start -fast "$TAG"
-bin/fredlab-frontend-deploy.sh       start -fast "$TAG"
+bin/fredlab-deploy.sh control-plane  start -fast "$TAG"
+bin/fredlab-deploy.sh knowledge-flow start -fast "$TAG"
+bin/fredlab-deploy.sh agents         start -fast "$TAG"
+bin/fredlab-deploy.sh frontend       start -fast "$TAG"
 ```
 
 `-fast` is position-independent (`start -fast <tag>` or `start <tag> -fast`) and
@@ -108,6 +108,36 @@ Rules:
   kubectl rollout restart deploy/control-plane-backend deploy/knowledge-flow-backend \
     deploy/knowledge-flow-worker deploy/fred-agents deploy/fred-frontend
   ```
+
+## C2.2 — `fredlab-ship`: the one-command code redeploy
+
+The everyday loop — "I pulled the latest `~/fred`, push it live" — is a single
+command. It derives the round tag, builds only what changed, and fast-redeploys
+the app trio. It assumes infra/helm values are unchanged.
+
+```bash
+bin/fredlab-ship
+```
+
+What it does, in order:
+
+1. **Derives the tag** from `~/fred` HEAD as `YYYYMMDD-<shortsha>` (C1); warns if
+   the tree is dirty.
+2. **Builds only what changed.** Because the tag embeds the sha, a new commit is a
+   tag that is not yet in Artifact Registry. Per image (`control-plane-backend`,
+   `fred-frontend`, `fred-agents`): already present → skip, absent → build. The
+   registry *is* the change-detection state — no state file.
+3. **Fast-redeploys** at that tag via `bin/fredlab-deploy.sh ... -fast`:
+   control-plane `migrate` then `start`, then frontend and agents. The migrate is
+   idempotent (`alembic upgrade head` is a no-op at head); `--no-migrate` skips it.
+4. **Prints `fredlab-status.sh`** so you watch the new IMAGE TAG go green.
+
+If HEAD has not moved since the last ship, every image is already in the registry
+and the command is a no-op (`--redeploy` rolls anyway; `--force` rebuilds anyway).
+
+Use `bin/fredlab-deploy.sh` directly (normal, non-`-fast`) for anything outside
+this loop: identity changes, a fresh cluster, or knowledge-flow / evaluation —
+`fredlab-ship` deliberately covers only the three frequently-changed app images.
 
 ## C3 — Know what is deployed right now
 
@@ -172,3 +202,5 @@ overrides (`KEEP_COUNT`, `LOG_RETENTION_DAYS`, …) rather than editing the scri
 | 2026-06-24 | C2.1 | `-fast` skips keycloak-provision on redeploys | Dimitri   | Adopted  |
 | 2026-06-24 | C3 | `fredlab-status.sh` IMAGE TAG = what's live  | Dimitri     | Adopted  |
 | 2026-06-24 | C4 | Retention & cost control scripts + budget    | Dimitri     | Adopted  |
+| 2026-06-25 | C2.2 | `fredlab-ship` one-command build+fast-redeploy | Dimitri   | Adopted  |
+| 2026-06-25 | — | Folded per-app deploy scripts into generic `fredlab-deploy.sh` | Dimitri | Adopted  |

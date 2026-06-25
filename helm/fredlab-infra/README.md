@@ -164,6 +164,20 @@ deploy with the convention tag `YYYYMMDD-<shortsha>` (e.g. `20260624-9ee83e7`),
 the same tag across every image in a round; the `0.2` examples below are
 illustrative only.
 
+**Everyday code redeploy** — once the stack is up, pulling a new `~/fred` and
+pushing it live is one command (derives the tag, builds only what changed,
+fast-redeploys control-plane + frontend + agents). See
+[OPERATING-CONVENTIONS.md §C2.2](./OPERATING-CONVENTIONS.md):
+
+```bash
+bin/fredlab-ship
+```
+
+The phase-by-phase commands below use the generic `bin/fredlab-deploy.sh
+<component> <action>` (components: `control-plane`, `frontend`, `agents`,
+`knowledge-flow`, `evaluation`) and are for first bring-up or out-of-loop
+deploys.
+
 Foundation:
 
 ```bash
@@ -199,8 +213,8 @@ This creates the future Knowledge Flow bucket, a Google service account, and Wor
 Control Plane runtime:
 
 ```bash
-bin/fredlab-control-plane-deploy.sh migrate 0.2
-bin/fredlab-control-plane-deploy.sh start 0.2
+bin/fredlab-deploy.sh control-plane migrate 0.2
+bin/fredlab-deploy.sh control-plane start 0.2
 ```
 
 The deployment phase stays explicit: `migrate` runs Alembic database migrations first, then `start` launches the HTTP backend. On a fresh database, migrations create the initial Control Plane tables.
@@ -210,7 +224,7 @@ Control Plane does not use the image's bundled `configuration_prod.yaml` directl
 Frontend runtime:
 
 ```bash
-bin/fredlab-frontend-deploy.sh start 0.2
+bin/fredlab-deploy.sh frontend start 0.2
 ```
 
 This deploys the public `fred-frontend` service at `https://studio.playground.fredlab.dev`. The frontend stays thin: Nginx serves the static UI and proxies `/control-plane/...` to `control-plane-backend:8080`. The login configuration still comes from Control Plane through `/control-plane/v1/frontend/config`.
@@ -218,7 +232,7 @@ This deploys the public `fred-frontend` service at `https://studio.playground.fr
 The CGU/GDPR pages are served from `helm/fredlab-infra/legal/` through a ConfigMap mounted in the frontend pod. After changing those files:
 
 ```bash
-bin/fredlab-frontend-deploy.sh start 0.2
+bin/fredlab-deploy.sh frontend start 0.2
 ```
 
 During the first bootstrap, `fred-agents` and `knowledge-flow-backend` are not deployed yet. Their frontend upstreams intentionally point to `control-plane-backend` so Nginx can start; they must be switched to their real services when those components are deployed.
