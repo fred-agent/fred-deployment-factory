@@ -336,7 +336,7 @@ render_certs() {
   if [[ "$CHECK_CERTS" != "1" ]]; then CERTS_SKIPPED=1; return; fi
 
   local json
-  if ! json="$(kubectl get managedcertificate -n "$NAMESPACE" -o json 2>/dev/null)"; then
+  if ! json="$(kubectl get managedcertificate -A -o json 2>/dev/null)"; then
     CERTS_SKIPPED=1
     printf "%s┌─ TLS certificates ───────────────────────────────────%s\n" "$D" "$N"
     printf "  %s⚪ skipped%s — ManagedCertificate CRD not available\n" "$Y" "$N"
@@ -345,7 +345,7 @@ render_certs() {
   fi
 
   local rows
-  rows="$(jq -r '.items[]? | [ .metadata.name,
+  rows="$(jq -r '.items[]? | [ (.metadata.namespace + "/" + .metadata.name),
                                (.status.certificateStatus // "Unknown"),
                                ((.spec.domains // []) | join(",")) ] | @tsv' <<< "$json")"
 
@@ -365,7 +365,7 @@ render_certs() {
       Provisioning) icon="⏳"; col="$Y"; CERTS_OK=0 ;;
       *)            icon="✗"; col="$R"; CERTS_OK=0 ;;
     esac
-    printf "  %s%s %-26s %-14s%s %s%s%s\n" "$col" "$icon" "$cname" "$cstatus" "$N" "$D" "$cdomains" "$N"
+    printf "  %s%s %-34s %-14s%s %s%s%s\n" "$col" "$icon" "$cname" "$cstatus" "$N" "$D" "$cdomains" "$N"
   done <<< "$rows"
 
   if [[ "$CERTS_OK" == "1" ]]; then
