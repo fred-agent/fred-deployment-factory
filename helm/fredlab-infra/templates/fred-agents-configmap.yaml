@@ -49,8 +49,17 @@ data:
       tracer: {{ .Values.fredAgents.config.tracer | quote }}
 
     storage:
+      # Durable runtime store: the LangGraph checkpointer + session history use this
+      # connection. Real Postgres (host/database/username, NO sqlite_path) → fred-core
+      # uses asyncpg and the tables (session_history, v2_langgraph_checkpoint*) auto-create
+      # on first use. Previously sqlite_path on an emptyDir lost all conversations on
+      # every pod restart. Shares the `fred` DB with control-plane (different tables).
       postgres:
-        sqlite_path: {{ .Values.fredAgents.config.sqlitePath | quote }}
+        host: {{ include "fredlab-infra.postgresName" . | quote }}
+        port: {{ .Values.postgresql.service.port }}
+        database: {{ .Values.postgresql.fred.database | quote }}
+        username: {{ .Values.postgresql.fred.user | quote }}
+        pool_pre_ping: true
       opensearch:
         host: {{ .Values.fredAgents.config.opensearch.host | quote }}
         secure: {{ .Values.fredAgents.config.opensearch.secure }}

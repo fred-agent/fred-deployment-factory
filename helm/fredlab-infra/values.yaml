@@ -689,9 +689,12 @@ fredAgents:
     openfgaStoreName: fred
     knowledgeFlowUrl: http://knowledge-flow-backend:8080/knowledge-flow/v1
     controlPlaneUrl: http://control-plane-backend:8080/control-plane/v1
-    # Runtime task/checkpoint store. sqlite on an emptyDir (ephemeral, no migration);
-    # the file lives directly in the mounted dir so no subdir needs creating.
-    sqlitePath: /var/fred/runtime.sqlite3
+    # Durable runtime store. The LangGraph checkpointer + session history persist to the
+    # shared `fred` Postgres DB — the configmap renders storage.postgres from the global
+    # postgresql.* values (host/port/database/user), same as control-plane/knowledge-flow.
+    # No sqlite_path → fred-core uses real Postgres; tables auto-create on first use (no
+    # migration job). (Previously sqlite on an emptyDir, which lost conversations on every
+    # pod restart.)
     opensearch:
       host: http://opensearch:9200
       secure: false

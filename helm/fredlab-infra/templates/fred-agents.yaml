@@ -63,9 +63,18 @@ spec:
               value: /etc/fred/fred-agents/configuration.yaml
             - name: ENV_FILE
               value: /etc/fred/fred-agents/empty.env
-            # Writable home for the sqlite runtime store + any model/cache writes.
+            # Writable home for model/cache writes (the runtime store is now Postgres,
+            # not the emptyDir sqlite file).
             - name: HOME
               value: /var/fred
+            # Password for the `fred` Postgres DB; fred-core's PostgresStoreConfig reads
+            # it from FRED_POSTGRES_PASSWORD. Required now that the runtime checkpointer +
+            # session history are Postgres-backed (durable across pod restarts).
+            - name: FRED_POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fredlab-infra.secretName" . }}
+                  key: POSTGRES_FRED_PASSWORD
             - name: KEYCLOAK_AGENTIC_CLIENT_SECRET
               valueFrom:
                 secretKeyRef:
