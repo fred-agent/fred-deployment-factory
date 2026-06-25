@@ -19,8 +19,10 @@ configs:
         - profile
         - email
   rbac:
-    # Authenticated Keycloak users are read-only by default. To grant ArgoCD admin to a
-    # Keycloak group (delivered via the `groups` claim), uncomment and set your group:
-    # policy.csv: |
-    #   g, <your-keycloak-admin-group>, role:admin
     policy.default: role:readonly
+    # Admins are NAMED people, matched by email (the `fredlab` group is too broad — it
+    # contains non-admins). Add Sébastien & Simon as more `g, <email>, role:admin` lines.
+    scopes: '[groups, email]'
+    policy.csv: |
+      g, dimitri.tombroff@fredlab.dev, role:admin
+      g, e044f362-bfeb-414f-bd14-ac559f319e66, role:admin
