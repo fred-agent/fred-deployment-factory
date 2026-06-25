@@ -13,4 +13,4 @@ controlPlane:
     repository: europe-west1-docker.pkg.dev/fredlab-playground/fredlab-repo/control-plane-backend
     # The release-tag marker lets bin/fredlab-release.sh rewrite this line. Format:
     # YYYYMMDD-swift-<shortsha>. Change = commit + push -> ArgoCD deploys it.
-    tag: "20260624-swift-91b49147" # release-tag: control-plane-backend
+    tag: "20260625-swift-cdee43b6" # release-tag: control-plane-backend
