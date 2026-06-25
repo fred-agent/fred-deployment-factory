@@ -11,7 +11,7 @@ command -v kubectl >/dev/null 2>&1 || { echo "Missing required tool: kubectl"; e
 
 au="$(kubectl -n "$NAMESPACE" get secret "$SECRET" -o jsonpath='{.data.KC_BOOTSTRAP_ADMIN_USERNAME}' | base64 -d)"
 ap="$(kubectl -n "$NAMESPACE" get secret "$SECRET" -o jsonpath='{.data.KC_BOOTSTRAP_ADMIN_PASSWORD}' | base64 -d)"
-kc() { kubectl -n "$NAMESPACE" exec -i "deploy/$KEYCLOAK_DEPLOY" -- /opt/keycloak/bin/kcadm.sh "$@"; }
+kc() { kubectl -n "$NAMESPACE" exec "deploy/$KEYCLOAK_DEPLOY" -- /opt/keycloak/bin/kcadm.sh "$@"; }
 
 kc config credentials --server http://localhost:8080 --realm master --user "$au" --password "$ap" >/dev/null
 
