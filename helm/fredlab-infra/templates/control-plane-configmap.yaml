@@ -52,7 +52,8 @@ data:
           port: {{ .Values.controlPlane.config.observability.prometheus.port }}
           address: {{ .Values.controlPlane.config.observability.prometheus.address | quote }}
         opensearch:
-          enabled: false
+          enabled: {{ .Values.controlPlane.config.observability.opensearch.enabled }}
+          index: {{ .Values.controlPlane.config.observability.opensearch.index | quote }}
         process_metrics_interval_sec: {{ .Values.controlPlane.config.observability.processMetricsIntervalSec }}
 
     scheduler:
@@ -93,6 +94,14 @@ data:
         database: {{ .Values.postgresql.fred.database | quote }}
         username: {{ .Values.postgresql.fred.user | quote }}
         pool_pre_ping: true
+      # In-cluster OpenSearch — the connection the KPI store uses so the analytics
+      # dashboard presets can query metrics. Same security-disabled OpenSearch as
+      # knowledge-flow; username/password sent but ignored (OPENSEARCH_PASSWORD env).
+      opensearch:
+        host: {{ .Values.controlPlane.config.opensearch.host | quote }}
+        secure: {{ .Values.controlPlane.config.opensearch.secure }}
+        verify_certs: {{ .Values.controlPlane.config.opensearch.verifyCerts }}
+        username: {{ .Values.controlPlane.config.opensearch.username | quote }}
       content_storage:
         type: local
         root_path: {{ .Values.controlPlane.config.contentStorage.localRootPath | quote }}

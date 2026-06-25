@@ -392,6 +392,15 @@ controlPlane:
         - https://control-plane.playground.fredlab.dev
       rebac:
         enabled: true
+    # OpenSearch connection used as the KPI store backend for the analytics dashboard.
+    # Same in-cluster, security-disabled OpenSearch as knowledge-flow (password ignored
+    # by the server but must be non-empty; passed via OPENSEARCH_PASSWORD env).
+    opensearch:
+      host: http://opensearch:9200
+      secure: false
+      verifyCerts: false
+      username: admin
+      password: admin
     observability:
       log:
         enabled: true
@@ -399,6 +408,11 @@ controlPlane:
         enabled: false
         address: 0.0.0.0
         port: 9222
+      # KPI OpenSearch sink: writes KPI events to OpenSearch AND backs the analytics
+      # dashboard read queries. Disabled → presets return 503 "KPI store not available".
+      opensearch:
+        enabled: true
+        index: kpi-index
       processMetricsIntervalSec: 0
     contentStorage:
       localRootPath: /tmp/control-plane-content

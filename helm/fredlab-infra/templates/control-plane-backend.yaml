@@ -108,6 +108,11 @@ spec:
                 secretKeyRef:
                   name: {{ include "fredlab-infra.secretName" . }}
                   key: OPENFGA_API_TOKEN
+            # In-cluster OpenSearch (security plugin disabled): value is ignored by the
+            # server but the OpenSearch store config requires OPENSEARCH_PASSWORD non-empty.
+            # Needed for the KPI OpenSearch store that backs the analytics dashboard.
+            - name: OPENSEARCH_PASSWORD
+              value: {{ .Values.controlPlane.config.opensearch.password | quote }}
             - name: TEMPORAL_ADDRESS
               value: {{ .Values.controlPlane.config.temporalAddress | quote }}
             {{- range $name, $value := .Values.controlPlane.extraEnv }}
