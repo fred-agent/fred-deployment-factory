@@ -1,0 +1,74 @@
+{{- if .Values.fredAgents.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "fredlab-infra.agentsConfigName" . }}
+  labels:
+    {{- include "fredlab-infra.labels" . | nindent 4 }}
+    app.kubernetes.io/component: fred-agents
+data:
+  empty.env: ""
+  configuration.yaml: |
+    app:
+      name: "Fred default agents"
+      base_url: {{ .Values.fredAgents.config.appBaseUrl | quote }}
+      host: 0.0.0.0
+      port: {{ .Values.fredAgents.containerPort }}
+      log_level: {{ .Values.fredAgents.config.logLevel | quote }}
+      limit_concurrency: null
+      openai_compat: {{ .Values.fredAgents.config.openaiCompat }}
+
+    security:
+      m2m:
+        enabled: true
+        client_id: {{ .Values.fredAgents.config.keycloakClientId | quote }}
+        realm_url: {{ .Values.fredAgents.config.keycloakIssuerUrl | quote }}
+        secret_env_var: KEYCLOAK_AGENTIC_CLIENT_SECRET
+      user:
+        enabled: true
+        client_id: {{ .Values.fredAgents.config.userClientId | quote }}
+        realm_url: {{ .Values.fredAgents.config.keycloakIssuerUrl | quote }}
+      authorized_origins:
+        {{- range .Values.fredAgents.config.authorizedOrigins }}
+        - {{ . | quote }}
+        {{- end }}
+      rebac:
+        enabled: true
+        type: openfga
+        api_url: {{ .Values.fredAgents.config.openfgaUrl | quote }}
+        store_name: {{ .Values.fredAgents.config.openfgaStoreName | quote }}
+        token_env_var: OPENFGA_API_TOKEN
+
+    ai:
+      knowledge_flow_url: {{ .Values.fredAgents.config.knowledgeFlowUrl | quote }}
+      timeout:
+        connect: 20
+        read: 60
+
+    observability:
+      tracer: {{ .Values.fredAgents.config.tracer | quote }}
+
+    storage:
+      # Durable runtime store: the LangGraph checkpointer + session history use this
+      # connection. Real Postgres (host/database/username, NO sqlite_path) → fred-core
+      # uses asyncpg and the tables (session_history, v2_langgraph_checkpoint*) auto-create
+      # on first use. Previously sqlite_path on an emptyDir lost all conversations on
+      # every pod restart. Shares the `fred` DB with control-plane (different tables).
+      postgres:
+        host: {{ include "fredlab-infra.postgresName" . | quote }}
+        port: {{ .Values.postgresql.service.port }}
+        database: {{ .Values.postgresql.fred.database | quote }}
+        username: {{ .Values.postgresql.fred.user | quote }}
+        pool_pre_ping: true
+      opensearch:
+        host: {{ .Values.fredAgents.config.opensearch.host | quote }}
+        secure: {{ .Values.fredAgents.config.opensearch.secure }}
+        verify_certs: {{ .Values.fredAgents.config.opensearch.verifyCerts }}
+        username: {{ .Values.fredAgents.config.opensearch.username | quote }}
+
+    scheduler:
+      enabled: false
+
+    platform:
+      control_plane_url: {{ .Values.fredAgents.config.controlPlaneUrl | quote }}
+{{- end }}

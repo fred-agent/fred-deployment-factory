@@ -132,3 +132,57 @@ controlPlane:
         enabled: true
         ingressPrefix: /evaluation/v1
   extraEnv: {}
+
+# fred-agents runtime. Stateless app workload; the runtime store (LangGraph checkpointer
+# + session history) is the shared `fred` Postgres DB (durable). Ported verbatim from the
+# imperative fredlab-infra values so ArgoCD renders the identical workload. Enabled +
+# image pinned in values-fredlab.yaml; gcpServiceAccount set there for Workload Identity.
+fredAgents:
+  enabled: false
+  fullnameOverride: fred-agents
+  configMapName: fred-agents-config
+  replicaCount: 1
+  serviceAccount:
+    name: fred-agents
+    # Reuses the GSA that already has roles/aiplatform.user (Vertex via Workload
+    # Identity). fred-agents object/GCS access is not required.
+    gcpServiceAccount: ""
+  image:
+    # europe-west1-docker.pkg.dev/<project-id>/fredlab-repo/fred-agents
+    repository: ""
+    tag: ""
+  service:
+    type: ClusterIP
+    port: 8080
+  containerPort: 8000
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      memory: 1Gi
+  config:
+    appBaseUrl: /fred/agents/v2
+    logLevel: info
+    openaiCompat: true
+    keycloakIssuerUrl: https://keycloak.playground.fredlab.dev/realms/app
+    keycloakClientId: agentic
+    userClientId: app
+    authorizedOrigins:
+      - https://studio.playground.fredlab.dev
+    openfgaUrl: http://openfga:8080
+    openfgaStoreName: fred
+    knowledgeFlowUrl: http://knowledge-flow-backend:8080/knowledge-flow/v1
+    controlPlaneUrl: http://control-plane-backend:8080/control-plane/v1
+    # Durable runtime store. The LangGraph checkpointer + session history persist to the
+    # shared `fred` Postgres DB — the configmap renders storage.postgres from the global
+    # postgresql.* values (host/port/database/user). No sqlite_path → fred-core uses real
+    # Postgres; tables auto-create on first use (no migration job).
+    opensearch:
+      host: http://opensearch:9200
+      secure: false
+      verifyCerts: false
+      username: admin
+      password: admin
+    # No Langfuse in fredlab — use plain logging tracer.
+    tracer: logging

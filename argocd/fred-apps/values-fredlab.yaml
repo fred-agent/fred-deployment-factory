@@ -14,3 +14,12 @@ controlPlane:
     # The release-tag marker lets bin/fredlab-release.sh rewrite this line. Format:
     # YYYYMMDD-swift-<shortsha>. Change = commit + push -> ArgoCD deploys it.
     tag: "20260625-swift-cdee43b6" # release-tag: control-plane-backend
+
+fredAgents:
+  enabled: true
+  serviceAccount:
+    # GSA with roles/aiplatform.user, bound to KSA default/fred-agents via Workload Identity.
+    gcpServiceAccount: fredlab-knowledge-flow-gcs@fredlab-playground.iam.gserviceaccount.com
+  image:
+    repository: europe-west1-docker.pkg.dev/fredlab-playground/fredlab-repo/fred-agents
+    tag: "20260625-swift-cdee43b6" # release-tag: fred-agents
