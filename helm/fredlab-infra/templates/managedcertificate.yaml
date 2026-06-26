@@ -3,7 +3,7 @@
 {{- if and .Values.temporal.enabled .Values.temporal.ui.enabled -}}
 {{- $certificates = append $certificates (dict "name" .Values.temporal.ui.managedCertificateName "domains" (list .Values.temporal.ui.hostname)) -}}
 {{- end -}}
-{{- if .Values.fredFrontend.enabled -}}
+{{- if .Values.fredFrontend.ingressEnabled -}}
 {{- $certificates = append $certificates (dict "name" .Values.fredFrontend.managedCertificateName "domains" (list .Values.fredFrontend.hostname)) -}}
 {{- end -}}
 {{- range .Values.ingress.extraManagedCertificates -}}

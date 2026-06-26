@@ -40,7 +40,7 @@ spec:
     healthyThreshold: {{ .Values.temporal.ui.backendConfig.healthCheck.healthyThreshold }}
     unhealthyThreshold: {{ .Values.temporal.ui.backendConfig.healthCheck.unhealthyThreshold }}
 {{- end }}
-{{- if .Values.fredFrontend.enabled }}
+{{- if .Values.fredFrontend.ingressEnabled }}
 ---
 apiVersion: cloud.google.com/v1
 kind: BackendConfig

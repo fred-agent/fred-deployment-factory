@@ -3,7 +3,7 @@
 {{- if and .Values.temporal.enabled .Values.temporal.ui.enabled -}}
 {{- $managedCertificates = append $managedCertificates .Values.temporal.ui.managedCertificateName -}}
 {{- end -}}
-{{- if .Values.fredFrontend.enabled -}}
+{{- if .Values.fredFrontend.ingressEnabled -}}
 {{- $managedCertificates = append $managedCertificates .Values.fredFrontend.managedCertificateName -}}
 {{- end -}}
 {{- range .Values.ingress.extraManagedCertificates -}}
@@ -46,7 +46,7 @@ spec:
                 port:
                   name: http
     {{- end }}
-    {{- if .Values.fredFrontend.enabled }}
+    {{- if .Values.fredFrontend.ingressEnabled }}
     - host: {{ .Values.fredFrontend.hostname | quote }}
       http:
         paths:

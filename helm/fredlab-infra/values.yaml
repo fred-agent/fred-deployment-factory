@@ -720,6 +720,13 @@ fredAgents:
 
 fredFrontend:
   enabled: false
+  # Studio L7 entrypoint (Ingress host-rule + ManagedCertificate + BackendConfig) is
+  # gated on THIS toggle, not `enabled`, so the workload can move to the ArgoCD-owned
+  # fred-apps chart while the infra layer keeps owning the public studio URL + cert.
+  # The Ingress routes to the `fred-frontend` Service by name regardless of who creates
+  # it. Keep true whenever studio should be reachable; `enabled` only controls the
+  # in-cluster Deployment/Service/ConfigMaps.
+  ingressEnabled: true
   fullnameOverride: fred-frontend
   replicaCount: 1
   hostname: studio.playground.fredlab.dev
