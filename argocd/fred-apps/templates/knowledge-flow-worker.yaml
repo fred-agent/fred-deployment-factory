@@ -1,0 +1,104 @@
+{{- if .Values.knowledgeFlowWorker.enabled }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ .Values.knowledgeFlowWorker.serviceAccount.name }}
+  labels:
+    {{- include "fredlab-infra.labels" . | nindent 4 }}
+    app.kubernetes.io/component: knowledge-flow-worker
+  annotations:
+    iam.gke.io/gcp-service-account: {{ required "knowledgeFlowWorker.serviceAccount.gcpServiceAccount is required when knowledgeFlowWorker.enabled=true (Workload Identity)." .Values.knowledgeFlowWorker.serviceAccount.gcpServiceAccount | quote }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "fredlab-infra.knowledgeFlowWorkerName" . }}
+  labels:
+    {{- include "fredlab-infra.labels" . | nindent 4 }}
+    app.kubernetes.io/component: knowledge-flow-worker
+spec:
+  replicas: {{ .Values.knowledgeFlowWorker.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "fredlab-infra.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: knowledge-flow-worker
+  template:
+    metadata:
+      labels:
+        {{- include "fredlab-infra.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: knowledge-flow-worker
+    spec:
+      serviceAccountName: {{ .Values.knowledgeFlowWorker.serviceAccount.name }}
+      enableServiceLinks: false
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: knowledge-flow-worker
+          image: {{ printf "%s:%s" (required "knowledgeFlowWorker.image.repository is required when knowledgeFlowWorker.enabled=true." .Values.knowledgeFlowWorker.image.repository) (required "knowledgeFlowWorker.image.tag is required when knowledgeFlowWorker.enabled=true." .Values.knowledgeFlowWorker.image.tag) | quote }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          # Same image as the API, but run the Temporal worker entrypoint instead of
+          # the FastAPI server. The worker polls the `ingestion` task queue defined in
+          # the shared knowledge-flow-config ConfigMap.
+          command:
+            - python
+            - -m
+            - knowledge_flow_backend.main_worker
+          env:
+            - name: CONFIG_FILE
+              value: /etc/fred/knowledge-flow/configuration.yaml
+            - name: ENV_FILE
+              value: /etc/fred/knowledge-flow/empty.env
+            # Postgres password is read from FRED_POSTGRES_PASSWORD by fred-core's
+            # PostgresStoreConfig; host/db/user come from the config file.
+            - name: FRED_POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fredlab-infra.secretName" . }}
+                  key: POSTGRES_FRED_PASSWORD
+            - name: KEYCLOAK_KNOWLEDGE_FLOW_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fredlab-infra.secretName" . }}
+                  key: KEYCLOAK_KNOWLEDGE_FLOW_CLIENT_SECRET
+            - name: OPENFGA_API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fredlab-infra.secretName" . }}
+                  key: OPENFGA_API_TOKEN
+            # In-cluster OpenSearch has the security plugin disabled, so this value
+            # is sent but ignored by the server. It must be non-empty because the
+            # OpenSearch store config requires OPENSEARCH_PASSWORD to be set.
+            - name: OPENSEARCH_PASSWORD
+              value: {{ .Values.knowledgeFlow.config.opensearch.password | quote }}
+            # OpenAI-compatible API key (e.g. Mistral) for openai-provider models.
+            # Unused while the model config uses Vertex AI; set when switching to Mistral.
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fredlab-infra.secretName" . }}
+                  key: OPENAI_API_KEY
+          ports:
+            # The worker serves no HTTP API — only Prometheus metrics on the port the
+            # shared ConfigMap configures (knowledgeFlow.metricsPort).
+            - name: metrics
+              containerPort: {{ .Values.knowledgeFlow.metricsPort }}
+          resources:
+            {{- toYaml .Values.knowledgeFlowWorker.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: knowledge-flow-config
+              mountPath: /etc/fred/knowledge-flow
+              readOnly: true
+      volumes:
+        - name: knowledge-flow-config
+          configMap:
+            name: {{ include "fredlab-infra.knowledgeFlowConfigName" . }}
+{{- end }}

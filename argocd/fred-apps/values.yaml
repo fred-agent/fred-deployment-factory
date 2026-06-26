@@ -186,3 +186,140 @@ fredAgents:
       password: admin
     # No Langfuse in fredlab — use plain logging tracer.
     tracer: logging
+
+# knowledge-flow backend + worker. Ported verbatim from fredlab-infra values so
+# ArgoCD renders the identical workloads. The migration job is intentionally NOT in
+# this GitOps slice (live DB already at head); migrations stay imperative for now.
+# Enabled + image + GSA + vertex project pinned in values-fredlab.yaml.
+knowledgeFlow:
+  enabled: false
+  fullnameOverride: knowledge-flow-backend
+  configMapName: knowledge-flow-config
+  replicaCount: 1
+  # Kubernetes service account annotated for Workload Identity. The GSA must hold
+  # roles/storage.objectAdmin on the GCS buckets (see bin/fredlab-gcp-gcs-prereqs.sh).
+  serviceAccount:
+    name: knowledge-flow-backend
+    # fredlab-knowledge-flow-gcs@<project-id>.iam.gserviceaccount.com
+    gcpServiceAccount: ""
+  image:
+    # Example Artifact Registry image:
+    # europe-west1-docker.pkg.dev/<project-id>/fredlab-repo/knowledge-flow-backend
+    repository: ""
+    tag: ""
+  service:
+    type: ClusterIP
+    port: 8080
+  containerPort: 8111
+  metricsPort: 9111
+  health:
+    path: /knowledge-flow/v1/healthz
+  migration:
+    # Runs `alembic upgrade head` (KF version table alembic_version_knowledge_flow)
+    # to create the metadata/tag/resource tables in the fred database.
+    enabled: false
+    backoffLimit: 3
+    command:
+      - alembic
+    args:
+      - upgrade
+      - head
+    resources:
+      requests:
+        cpu: 250m
+        memory: 256Mi
+      limits:
+        memory: 512Mi
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      memory: 2Gi
+  config:
+    appBaseUrl: /knowledge-flow/v1
+    logLevel: info
+    keycloakInternalUrl: http://keycloak:8080
+    keycloakIssuerUrl: https://keycloak.playground.fredlab.dev/realms/app
+    keycloakClientId: knowledge-flow
+    userClientId: app
+    authorizedOrigins:
+      - https://studio.playground.fredlab.dev
+    openfgaUrl: http://openfga:8080
+    openfgaStoreName: fred
+    temporalAddress: temporal:7233
+    temporalNamespace: default
+    temporalTaskQueue: ingestion
+    storage:
+      # Content store: bucket_name is suffixed at runtime with -documents/-objects/-files.
+      contentBucketName: fredlab-playground-content
+      # Virtual filesystem bucket.
+      filesystemBucketName: fredlab-playground-knowledge-flow
+      filesystemPrefix: ""
+      # Empty → inferred from ADC / Workload Identity.
+      projectId: ""
+      # SA email that signs V4 signed URLs for tabular Parquet reads (IAM signBlob
+      # via Workload Identity). Empty → defaults to serviceAccount.gcpServiceAccount,
+      # which the prereq script grants serviceAccountTokenCreator on itself.
+      signingServiceAccountEmail: ""
+    # OpenSearch is the vector store (hybrid/semantic search). The in-cluster
+    # OpenSearch runs with the security plugin disabled → plain HTTP, no real auth.
+    opensearch:
+      host: http://opensearch:9200
+      secure: false
+      verifyCerts: false
+      username: admin
+      # Ignored by the security-disabled server, but must be non-empty.
+      password: admin
+      # The vector index. Tied to the embedding model's dimensions — if you change
+      # the embedding model, use a new index name. Tracked in STORAGE-INVENTORY.md.
+      vectorIndex: knowledge-flow-vectors
+      vectorBulkSize: 1000
+    # Vertex AI models (authenticate via ADC). Needs roles/aiplatform.user on the GSA.
+    models:
+      # Empty project → resolved from ADC. Location must be a Vertex AI region.
+      project: ""
+      location: europe-west4
+      chat:
+        provider: vertex-ai-model-garden
+        name: mistral-small-2503
+        modelFamily: mistral
+      embedding:
+        provider: vertex-ai
+        name: text-embedding-005
+      vision:
+        provider: vertex-ai
+        name: gemini-2.5-flash
+
+# knowledge-flow-worker: the Temporal worker that drains the `ingestion` task queue.
+# The knowledge-flow-backend API submits ingestion workflows; this worker executes
+# them (parse → embed → index). It runs the SAME image as knowledgeFlow but with the
+# `main_worker` entrypoint, and REUSES the knowledge-flow-config ConfigMap so the
+# task queue, Temporal address, models, GCS buckets and storage all match the API.
+# It serves no HTTP API — only Prometheus metrics — so it has no Service/Ingress.
+knowledgeFlowWorker:
+  enabled: false
+  fullnameOverride: knowledge-flow-worker
+  replicaCount: 1
+  # Kubernetes service account annotated for Workload Identity. The GSA must hold
+  # roles/storage.objectAdmin on the GCS buckets AND roles/aiplatform.user (the worker
+  # is what calls Vertex AI for embeddings/vision). WI binding for the KSA named here
+  # is created by bin/fredlab-gcp-gcs-prereqs.sh (KSA_NAMES includes knowledge-flow-worker).
+  serviceAccount:
+    name: knowledge-flow-worker
+    # fredlab-knowledge-flow-gcs@<project-id>.iam.gserviceaccount.com (same GSA as the backend)
+    gcpServiceAccount: ""
+  image:
+    # Same image as knowledgeFlow.image (knowledge-flow-backend). Pin to the tag you
+    # want the worker to run — usually identical to the backend tag.
+    repository: ""
+    tag: ""
+  # Worker does the heavy lifting (document parsing + embeddings), so it gets more
+  # headroom than the API pod.
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      memory: 3Gi
+

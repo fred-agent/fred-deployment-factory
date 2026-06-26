@@ -23,3 +23,25 @@ fredAgents:
   image:
     repository: europe-west1-docker.pkg.dev/fredlab-playground/fredlab-repo/fred-agents
     tag: "20260625-swift-cdee43b6" # release-tag: fred-agents
+
+knowledgeFlow:
+  enabled: true
+  serviceAccount:
+    # GSA with roles/storage.objectAdmin + roles/aiplatform.user, bound via Workload Identity.
+    gcpServiceAccount: fredlab-knowledge-flow-gcs@fredlab-playground.iam.gserviceaccount.com
+  image:
+    repository: europe-west1-docker.pkg.dev/fredlab-playground/fredlab-repo/knowledge-flow-backend
+    tag: "20260625-swift-cdee43b6" # release-tag: knowledge-flow-backend
+  config:
+    models:
+      # Vertex AI project (matches the imperative deploy's VERTEX_PROJECT=PROJECT_ID).
+      project: fredlab-playground
+
+knowledgeFlowWorker:
+  enabled: true
+  serviceAccount:
+    gcpServiceAccount: fredlab-knowledge-flow-gcs@fredlab-playground.iam.gserviceaccount.com
+  image:
+    # Same image as the backend (worker runs the main_worker entrypoint off it).
+    repository: europe-west1-docker.pkg.dev/fredlab-playground/fredlab-repo/knowledge-flow-backend
+    tag: "20260625-swift-cdee43b6" # release-tag: knowledge-flow-backend
