@@ -125,9 +125,10 @@ the target's classification. The `CLASS-*` backlog items track the C2/C3 hardeni
 
 ## 7. Open questions for the team
 
-1. **Canonical chart.** The monorepo `deploy/charts/fred` (generic, Gateway-API) and this
-   repo's `helm/fredlab-infra` / `argocd/fred-apps` are *different charts*. Which is the
-   corporate source of truth, and how do we converge without forking drift? (Backlog: CHART-1)
+1. **Canonical chart — DECIDED.** The monorepo `deploy/charts/fred` is the single Apps-layer
+   source; factories consume it (pinned) and supply only Foundation + env values. Sequencing:
+   prove one clean, tested chart here first (CHART-2), then promote + cut GKE over. Monorepo
+   tracking issue: ThalesGroup/fred#1839. (Backlog: CHART-1)
 2. **Secrets backend.** Vault vs External-Secrets-Operator vs SOPS-in-git. (Backlog: SEC-1)
 3. **When to enable auto-sync + self-heal + prune** on `fred-apps`. (Backlog: GITOPS-2)
 4. **Multi-env shape:** ApplicationSet vs app-of-apps vs per-env folders. (Backlog: ENV-1)

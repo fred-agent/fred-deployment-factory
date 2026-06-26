@@ -49,9 +49,10 @@ Status: `[ ]` todo · `[~]` in progress · `[x]` done. IDs are referenced from t
 
 ## CHART — convergence & hygiene
 
-- [ ] **CHART-1** Decide the canonical chart: monorepo `deploy/charts/fred` (generic, Gateway
-      API) vs this repo's `helm/fredlab-infra` + `argocd/fred-apps`. Plan convergence to one
-      source to stop drift. (RFC Q1)
+- [~] **CHART-1** Canonical chart — **decided: the monorepo `deploy/charts/fred` is the single
+      Apps-layer source**; each factory consumes it (pinned) + supplies its Foundation + env
+      values. Sequencing: (1) prove one clean, tested chart here first (CHART-2), then (2) promote
+      to the monorepo + cut GKE over. Monorepo tracking issue: ThalesGroup/fred#1839. (RFC §7)
 - [ ] **CHART-2** De-duplicate templates: `argocd/fred-apps/templates/*` are byte-identical
       copies of `helm/fredlab-infra/templates/*`. Extract a shared library/sub-chart so they
       cannot drift apart.
