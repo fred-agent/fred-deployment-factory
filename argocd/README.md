@@ -58,15 +58,29 @@ is read-only.
 
 ## Deploy / update an app — the steady-state loop
 
+Three commands. **Sync is manual by design** (auto-sync is off — no `automated:` block on the
+`fred-apps` Application): `git push` records the new tags and shows **OutOfSync**, then
+`bin/fredlab-argocd-sync.sh` is what actually deploys.
+
 ```bash
-bin/fredlab-release.sh control-plane     # 1. build image from ~/fred HEAD + bump tag in values-fredlab.yaml
-git commit -am "release control-plane" && git push   # 2. push -> ArgoCD sees the new tag
-# 3. ArgoCD UI -> fred-apps -> SYNC  (automatic once auto-sync is enabled)
+bin/fredlab-release.sh all               # 1. build all four app images from ~/fred HEAD + bump tags
+git commit -am "release <tag>" && git push   # 2. push -> ArgoCD sees the new tags
+bin/fredlab-argocd-sync.sh               # 3. trigger the sync (UI -> fred-apps -> SYNC also works)
 bin/fredlab-status.sh                    # 4. verify: new tag, healthy
 ```
 
-`git push` is the deploy. The image tag lives in `argocd/fred-apps/values-fredlab.yaml`
-(marked `# release-tag: <image>`); `fredlab-release.sh` rewrites it.
+`bin/fredlab-release.sh` takes `all` or a single component (`control-plane`, `frontend`,
+`fred-agents`, `knowledge-flow`); pass `<component> [tag]` to build/bump just one, or a bare
+`[tag]` to reuse an already-built image. The tags live in `argocd/fred-apps/values-fredlab.yaml`
+(marked `# release-tag: <image>`); the script rewrites them. `bin/fredlab-argocd-sync.sh` drives
+the Application via `kubectl` (no `argocd` CLI needed) and warns if HEAD isn't pushed.
+
+> **Small-cluster rollout note:** the fred-apps Deployments pin `maxSurge: 0` /
+> `maxUnavailable: 1` so a rollout replaces each pod **in place** rather than needing a spare
+> node for a surge pod. Without it, all four apps surging at once can exhaust node memory — and
+> if node auto-provisioning hits a GCE quota, new pods wedge in `Pending` while old pods keep
+> serving. Trade-off: a few seconds of per-app unavailability during a deploy. The same block is
+> mirrored in `helm/fredlab-infra` so a fresh-cluster bootstrap behaves identically.
 
 ## First-time cutover per app (one-time, hands it off the imperative release)
 
@@ -96,12 +110,6 @@ Notes from the cutover:
 - **fred-agents / knowledge-flow** ServiceAccounts (Workload Identity) are recreated by the
   fred-apps chart; the GCP-side IAM bindings on the GSA are unaffected by the cutover.
 
-> **TODO — steady-state release loop:** `bin/fredlab-release.sh` only knows `control-plane`.
-> Extend its component map (and the `# release-tag:` markers already in `values-fredlab.yaml`)
-> to `frontend` / `fred-agents` / `knowledge-flow-backend` so the push-to-deploy loop above
-> works for all four. Until then, bump the tag in `values-fredlab.yaml` by hand (or with
-> `bin/fredlab-release.sh <app> <tag>` once extended) and sync.
-
 ## Rollback
 
 `argocd app history fred-apps` then `argocd app rollback fred-apps <rev>` — or revert the tag
@@ -116,4 +124,6 @@ commit in git and re-sync.
 | `argocd/applications/fred-apps.yaml` | the ArgoCD Application |
 | `argocd/argocd-values.yaml` | ArgoCD config: `server.insecure`, url, OIDC, RBAC |
 | `argocd/expose/` | ArgoCD's Ingress + ManagedCertificate |
-| `bin/fredlab-argocd-*.sh`, `bin/fredlab-release.sh` | the scripts above |
+| `bin/fredlab-release.sh` | build + bump tags: `all` or one component |
+| `bin/fredlab-argocd-sync.sh` | trigger the sync via `kubectl` (no `argocd` CLI) |
+| `bin/fredlab-argocd-*.sh` | one-time setup (ip, keycloak-client, install, expose, app) |

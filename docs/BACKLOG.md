@@ -20,18 +20,23 @@ Status: `[ ]` todo · `[~]` in progress · `[x]` done. IDs are referenced from t
 - [x] Frontend edge decoupled via `fredFrontend.ingressEnabled` (Ingress/cert/BackendConfig
       stay in infra; no cert churn on workload moves).
 - [x] `/ready` status probe hardened against Autopilot cold-start (`bin/fredlab-status.sh`).
+- [x] Rollout strategy `maxSurge: 0 / maxUnavailable: 1` on all fred-apps Deployments (mirrored
+      in `helm/fredlab-infra`) — replaces pods in place so a small cluster doesn't need a surge
+      node. Without it, four simultaneous surges + a node-autoprovision GCE-quota hit wedge pods
+      in `Pending`. See `argocd/README.md` "Small-cluster rollout note".
 
 ---
 
 ## GITOPS — trust the loop
 
-- [ ] **GITOPS-1** Extend `bin/fredlab-release.sh` to all four apps (currently `control-plane`
-      only). Component map + reuse the `# release-tag:` markers already in `values-fredlab.yaml`.
-      *Unblocks push-to-deploy for fa/kf/fr; needed for the next image bump.*
+- [x] **GITOPS-1** `bin/fredlab-release.sh` handles `all` + each component (`control-plane`,
+      `frontend`, `fred-agents`, `knowledge-flow`) via a component→build-name→marker map; reuses
+      the `# release-tag:` markers in `values-fredlab.yaml`. `bin/fredlab-build all` builds the
+      four app images in one call.
 - [ ] **GITOPS-2** Enable `automated: { selfHeal, prune }` on the `fred-apps` Application once
       the loop is trusted. Decide prune safety per resource. (RFC Q3)
-- [ ] **GITOPS-3** Document/script the sync trigger (no `argocd` CLI installed today; we sync
-      via `kubectl patch app ... operation`). Add a `bin/fredlab-argocd-sync.sh` helper.
+- [x] **GITOPS-3** `bin/fredlab-argocd-sync.sh` triggers the sync via `kubectl` (refresh + patch
+      `operation.sync` to HEAD; warns if HEAD isn't pushed). No `argocd` CLI required.
 
 ## SEC — secrets & identity
 
@@ -53,9 +58,11 @@ Status: `[ ]` todo · `[~]` in progress · `[x]` done. IDs are referenced from t
       Apps-layer source**; each factory consumes it (pinned) + supplies its Foundation + env
       values. Sequencing: (1) prove one clean, tested chart here first (CHART-2), then (2) promote
       to the monorepo + cut GKE over. Monorepo tracking issue: ThalesGroup/fred#1839. (RFC §7)
-- [ ] **CHART-2** De-duplicate templates: `argocd/fred-apps/templates/*` are byte-identical
-      copies of `helm/fredlab-infra/templates/*`. Extract a shared library/sub-chart so they
-      cannot drift apart.
+- [ ] **CHART-2** De-duplicate templates: the 11 `argocd/fred-apps/templates/*` app files are
+      hand-kept copies of `helm/fredlab-infra/templates/*` and **have already drifted once** (the
+      `maxSurge` block landed in the ArgoCD copy first; re-synced by hand — and `_helpers.tpl`
+      still differs). Extract a shared library/sub-chart so they **cannot** drift. Until then, any
+      app-template edit must be applied to **both** copies (see CHART-3 for the guard).
 - [ ] **CHART-3** Add a CI check that fails if a fred-apps rendered ConfigMap diverges from the
       infra-rendered one for the same app (guards the copy in CHART-2 until it's removed).
 

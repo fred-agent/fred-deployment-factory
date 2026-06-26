@@ -2,6 +2,38 @@
 
 Local deployment repository for Fred.
 
+> ## ☁️ Deploying to the cloud? Start here.
+>
+> **This README covers the _local_ stack (docker-compose / k3d).** The live **GKE/GCP instance**
+> is GitOps-managed by **ArgoCD** and documented separately:
+>
+> - **What the repo is + the order to work in:** [`CLAUDE.md`](CLAUDE.md)
+> - **The deployment pattern + every decision:** [`docs/rfc/RFC-0001-gitops-deployment-pattern.md`](docs/rfc/RFC-0001-gitops-deployment-pattern.md)
+> - **GitOps ops (cutover, sync, boundary):** [`argocd/README.md`](argocd/README.md)
+> - **Open work (a new instance lives here):** [`docs/BACKLOG.md`](docs/BACKLOG.md)
+>
+> **Steady-state deploy of the latest `~/fred` — the whole loop is three commands:**
+>
+> ```bash
+> bin/fredlab-release.sh all     # build all four app images from ~/fred HEAD + bump tags
+> git commit -am "release <tag>" && git push    # records the new tags in git (NOT a deploy yet)
+> bin/fredlab-argocd-sync.sh     # THIS deploys: applies git to the cluster (UI SYNC also works)
+> bin/fredlab-status.sh          # verify: new tag, healthy
+> ```
+>
+> **Sync is manual by design.** Auto-sync is intentionally **off** (no `automated:` block on the
+> `fred-apps` Application) — pushing to git makes ArgoCD show **OutOfSync**, but **nothing reaches
+> the cluster until you run `bin/fredlab-argocd-sync.sh`** (or click SYNC in the UI). The push is a
+> reviewable checkpoint, not a deploy; the sync is the deploy.
+>
+> **Need access to the cluster?** The GKE/GCP instance is private. New team members: get in
+> touch with **Dimitri Tombroff** (`dimitri.tombroff@fredlab.dev`) to be granted access
+> (GCP project / GKE, Keycloak login, and ArgoCD RBAC are provisioned per person).
+>
+> First-time cluster setup and the A/B (Foundation/Apps) boundary are in
+> [`argocd/README.md`](argocd/README.md). Standing up a **new instance** is tracked as
+> `ENV-2` / `INST-1` in [`docs/BACKLOG.md`](docs/BACKLOG.md).
+
 The Docker Compose workflow in this repository groups services into two scopes:
 - Structural Fred stack:
   - PostgreSQL
