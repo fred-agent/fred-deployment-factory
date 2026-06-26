@@ -284,9 +284,14 @@ render_app_readiness() {
     probed=1
     # curl writes the body then a HTTPSTATUS:<code> marker, so a trailing kubectl
     # "pod deleted" line can't be mistaken for the status code.
+    # The pod is freshly scheduled (often on a cold Autopilot node), so the first
+    # DNS lookup / TCP connect can be slow or fail; --retry rides that out so a
+    # healthy app is not reported "unreachable" on a single transient miss.
     out="$(kubectl run "ready-${label}-${RANDOM}" --rm -i --restart=Never -n "$NAMESPACE" \
       --image=curlimages/curl:8.10.1 \
-      -- curl -sS -m 12 -w 'HTTPSTATUS:%{http_code}' "$url" 2>/dev/null || true)"
+      -- curl -sS --connect-timeout 5 --max-time 20 \
+         --retry 6 --retry-delay 2 --retry-connrefused --retry-all-errors \
+         -w 'HTTPSTATUS:%{http_code}' "$url" 2>/dev/null || true)"
     body="${out%%HTTPSTATUS:*}"
     local rest="${out#*HTTPSTATUS:}"
     code="${rest%%[^0-9]*}"
