@@ -5,17 +5,27 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 CATALOG="${IMAGE_CATALOG:-${REPO_ROOT}/config/fredlab-images.tsv}"
 
+# The four app-layer images ArgoCD (fred-apps) deploys. `all` builds exactly these
+# at one tag — the knowledge-flow worker reuses knowledge-flow-backend, so 4 builds
+# cover all 5 workloads. Evaluation / dt-agents / fred-samples are NOT app-layer and
+# are built by name on purpose.
+APP_LAYER=(control-plane-backend frontend fred-agents knowledge-flow-backend)
+
 usage() {
   cat <<'EOF'
 Usage:
   bin/fredlab-build list
+  bin/fredlab-build all <tag>
   bin/fredlab-build <name> [tag]
 
 Examples:
+  bin/fredlab-build all 20260626-swift-3edab4ee
   bin/fredlab-build frontend 0.2
   bin/fredlab-build control-plane-backend 0.2
   bin/fredlab-build fred-agents 0.2
 
+`all` builds the four ArgoCD app-layer images at one tag:
+  control-plane-backend frontend fred-agents knowledge-flow-backend
 The image catalog is config/fredlab-images.tsv.
 EOF
 }
@@ -46,6 +56,30 @@ list_images() {
   done < "${CATALOG}"
 }
 
+build_one() {
+  local target_name="$1" tag="$2" found=0
+  while IFS=$'\t' read -r name image repo_dir dockerfile build_context; do
+    [[ -z "${name}" || "${name}" == \#* ]] && continue
+    [[ "${name}" != "${target_name}" ]] && continue
+    found=1
+
+    FRED_REPO_DIR="$(expand_path "${repo_dir}")" \
+    IMAGE="${image}" \
+    DOCKERFILE="${dockerfile}" \
+    BUILD_CONTEXT="${build_context:-.}" \
+    TAG="${tag}" \
+    "${SCRIPT_DIR}/fredlab-build-image.sh"
+    break
+  done < "${CATALOG}"
+
+  if [[ "${found}" != "1" ]]; then
+    echo "Unknown image name: ${target_name}"
+    echo
+    list_images
+    return 1
+  fi
+}
+
 if [[ ! -f "${CATALOG}" ]]; then
   echo "Missing image catalog: ${CATALOG}"
   exit 1
@@ -61,25 +95,19 @@ case "${COMMAND}" in
     list_images
     exit 0
     ;;
+  all)
+    TAG="${2:-${TAG:-}}"
+    if [[ -z "${TAG}" ]]; then
+      echo "Usage: bin/fredlab-build all <tag>"
+      exit 1
+    fi
+    for name in "${APP_LAYER[@]}"; do
+      echo "=== building ${name}:${TAG} ==="
+      build_one "${name}" "${TAG}"
+    done
+    echo "Built all app-layer images at ${TAG}."
+    exit 0
+    ;;
 esac
 
-TARGET_NAME="${COMMAND}"
-TAG="${2:-${TAG:-}}"
-
-while IFS=$'\t' read -r name image repo_dir dockerfile build_context; do
-  [[ -z "${name}" || "${name}" == \#* ]] && continue
-  [[ "${name}" != "${TARGET_NAME}" ]] && continue
-
-  FRED_REPO_DIR="$(expand_path "${repo_dir}")" \
-  IMAGE="${image}" \
-  DOCKERFILE="${dockerfile}" \
-  BUILD_CONTEXT="${build_context:-.}" \
-  TAG="${TAG}" \
-  "${SCRIPT_DIR}/fredlab-build-image.sh"
-  exit 0
-done < "${CATALOG}"
-
-echo "Unknown image name: ${TARGET_NAME}"
-echo
-list_images
-exit 1
+build_one "${COMMAND}" "${2:-${TAG:-}}"
