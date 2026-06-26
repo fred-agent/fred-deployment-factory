@@ -11,11 +11,20 @@ and are called out as prerequisites.
 
 | Owned by ArgoCD (`fred-apps` chart) | Owned by the imperative infra layer (`fredlab-infra`) |
 | --- | --- |
-| control-plane-backend (then: frontend, fred-agents, knowledge-flow) | postgres, keycloak, openfga, opensearch, temporal |
-| their ConfigMaps | `fredlab-infra-secrets`, the infra Ingress, ManagedCertificates, provision Jobs |
+| control-plane-backend, fred-frontend, fred-agents, knowledge-flow (backend + worker) | postgres, keycloak, openfga, opensearch, temporal |
+| their ConfigMaps + the fred-agents / knowledge-flow ServiceAccounts | `fredlab-infra-secrets`, the infra Ingress, ManagedCertificates, BackendConfigs, provision Jobs |
 
-Apps reference the infra-owned Secret + Services **by name**. ArgoCD never renders a
-Secret, the infra Ingress, or its certs.
+All four fred app workloads are cut over (since 2026-06-26). Apps reference the infra-owned
+Secret + Services **by name**. ArgoCD never renders a Secret, the infra Ingress, or its certs.
+
+> **Frontend edge stays in infra:** the studio Ingress host-rule, `fredlab-studio-cert`
+> ManagedCertificate and the frontend BackendConfig live in `fredlab-infra`, gated on
+> `fredFrontend.ingressEnabled` (default true) — decoupled from `fredFrontend.enabled` so the
+> workload can be ArgoCD-owned while infra keeps the public studio URL + cert. The Ingress
+> routes to the `fred-frontend` Service by name regardless of who creates it.
+
+> **knowledge-flow migrations** are NOT in the GitOps slice — like control-plane, the live DB
+> is at head and the alembic job stays imperative (`bin/fredlab-deploy.sh knowledge-flow migrate`).
 
 > **Frozen-infra contract:** a new secret key, a new Keycloak client, or a new database is
 > an *infra* change (touch `helm/fredlab-infra`), not an app change.
@@ -61,15 +70,37 @@ bin/fredlab-status.sh                    # 4. verify: new tag, healthy
 
 ## First-time cutover per app (one-time, hands it off the imperative release)
 
+**All four fred apps are cut over** (control-plane, fred-agents, knowledge-flow, fred-frontend).
+The procedure used for each, for reference / future apps:
+
 ```bash
-bin/fredlab-deploy.sh control-plane disable -fast    # remove from the imperative release (brief downtime)
-# then SYNC fred-apps in ArgoCD -> ArgoCD becomes sole owner
+# 1. copy the app's templates from helm/fredlab-infra/templates into argocd/fred-apps/templates
+#    (they share the fredlab-infra.* helpers — usually a verbatim copy), add the value block to
+#    argocd/fred-apps/values.yaml (enabled:false) and the enable+image pin to values-fredlab.yaml.
+# 2. validate: helm template fred-apps argocd/fred-apps -f values.yaml -f values-fredlab.yaml
+#    and diff the rendered configuration.yaml against the live ConfigMap (must be identical).
+git commit && git push
+bin/fredlab-deploy.sh <app> disable -fast     # 3. remove the workload from the imperative release (brief blip)
+# 4. SYNC fred-apps in ArgoCD (UI, or: kubectl -n argocd patch app fred-apps --type merge \
+#    -p '{"operation":{"sync":{"revision":"<sha>"}}}') -> ArgoCD becomes sole owner
+bin/fredlab-status.sh                          # 5. verify: ownership instance=fred-apps, healthy
 ```
 
-Done for **control-plane**. frontend / fred-agents / knowledge-flow follow the same pattern
-(copy their templates into `fred-apps/`, add their blocks to the values files, disable on the
-imperative release, sync). **frontend** also needs the studio Ingress + cert kept in the infra
-layer, decoupled from the app toggle, before it moves.
+Notes from the cutover:
+- **frontend** needed the studio Ingress host-rule + `fredlab-studio-cert` + BackendConfig
+  decoupled from `fredFrontend.enabled` first (now gated on `fredFrontend.ingressEnabled`,
+  default true) so they stay in `fredlab-infra` while the workload moves. Verified the edge
+  resources render byte-identical with the workload disabled — no cert churn.
+- **knowledge-flow** moved backend + worker together; the migration Job is intentionally left
+  out of the GitOps slice (live DB at head).
+- **fred-agents / knowledge-flow** ServiceAccounts (Workload Identity) are recreated by the
+  fred-apps chart; the GCP-side IAM bindings on the GSA are unaffected by the cutover.
+
+> **TODO — steady-state release loop:** `bin/fredlab-release.sh` only knows `control-plane`.
+> Extend its component map (and the `# release-tag:` markers already in `values-fredlab.yaml`)
+> to `frontend` / `fred-agents` / `knowledge-flow-backend` so the push-to-deploy loop above
+> works for all four. Until then, bump the tag in `values-fredlab.yaml` by hand (or with
+> `bin/fredlab-release.sh <app> <tag>` once extended) and sync.
 
 ## Rollback
 
