@@ -100,3 +100,14 @@ The repo is a **C1 reference sample** (RFC §6). These are per-level hardening k
 - [ ] **CLASS-6** Image promotion to a C3 registry — model the airlocked chain
       (public → R1 → R2 → R3): who triggers each hop, integrity/signature checks, and how the
       final tag reaches the C3 deployment-factory. Today: manual. (the artifact half of CI-1/CI-2)
+
+## INST — platform instances
+
+Each instance reuses the same pattern (Foundation/Apps split + boundary); only the **cluster**,
+the **git host + GitOps mechanism**, and the **three classification knobs** change.
+
+- [ ] **INST-1** C2 instance on **TDP (managed AKS), driven by GitLab** — owner: Simon. Reuse
+      the GKE reference: same Foundation/Apps split + boundary, AKS cluster, GitLab git + GitOps
+      mechanism, C2 knobs (RFC §6). **Gated:** build on the hardened GKE chart (`CHART-2`) and,
+      ideally, the monorepo chart (`CHART-1` / ThalesGroup/fred#1839) — do **not** fork a
+      parallel model to stand C2 up first.

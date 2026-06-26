@@ -123,6 +123,11 @@ what) is unchanged; only its *exposure* hardens.
 Every secret source, every network boundary, and every admin exposure is a knob you tighten for
 the target's classification. The `CLASS-*` backlog items track the C2/C3 hardening.
 
+**First concrete C2 target.** A C2 instance on **TDP (Thales Digital Platform / managed AKS)**,
+driven by **GitLab** — same Foundation/Apps split and boundary, an AKS cluster, GitLab as the
+git host + GitOps mechanism, C2 knobs. Tracked as `INST-1`; it must inherit the hardened GKE
+reference (roadmap steps 1–2) rather than fork a parallel model.
+
 ## 7. Open questions for the team
 
 1. **Canonical chart — DECIDED.** The monorepo `deploy/charts/fred` is the single Apps-layer
