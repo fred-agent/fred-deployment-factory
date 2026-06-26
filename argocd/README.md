@@ -1,86 +1,88 @@
-# ArgoCD / GitOps for the fred application layer
+# ArgoCD GitOps — fred application layer
 
-ArgoCD (namespace `argocd`, installed by `bin/fredlab-argocd-install.sh`) owns the
-**stateless app workloads** in `default`. Infrastructure stays imperative and frozen.
+ArgoCD (namespace `argocd`) owns the **stateless app workloads** in namespace `default`.
+Infrastructure stays imperative and frozen (see `helm/fredlab-infra/DEPLOYMENT-STEPS.md`).
 
-## Boundary (what ArgoCD does and does NOT touch)
+**Rule:** every cluster change below is a `fredlab-*.sh` script or a chart/values file —
+never an ad-hoc `kubectl`/`helm` command. The only manual steps are external (DNS, auth)
+and are called out as prerequisites.
+
+## Boundary
 
 | Owned by ArgoCD (`fred-apps` chart) | Owned by the imperative infra layer (`fredlab-infra`) |
 | --- | --- |
-| control-plane-backend (+ later: frontend, fred-agents, knowledge-flow) | postgres, keycloak, openfga, opensearch, temporal (StatefulSets/Services) |
-| their ConfigMaps | `fredlab-infra-secrets` Secret, Ingress, ManagedCertificates, provision Jobs |
+| control-plane-backend (then: frontend, fred-agents, knowledge-flow) | postgres, keycloak, openfga, opensearch, temporal |
+| their ConfigMaps | `fredlab-infra-secrets`, the infra Ingress, ManagedCertificates, provision Jobs |
 
-Apps reference the infra-owned Secret and Services **by name**. ArgoCD never renders a
-Secret, an Ingress, or a certificate — so there is no data-loss or cert-churn risk.
+Apps reference the infra-owned Secret + Services **by name**. ArgoCD never renders a
+Secret, the infra Ingress, or its certs.
 
-> Frozen-infra contract: the moment an app needs a **new** secret key, a **new** Keycloak
-> client, or a **new** database, that is an *infra* change (touch `helm/fredlab-infra`),
-> not an app change.
+> **Frozen-infra contract:** a new secret key, a new Keycloak client, or a new database is
+> an *infra* change (touch `helm/fredlab-infra`), not an app change.
 
-## Layout
+## Prerequisites (manual / external — the only non-script steps)
 
+- `kubectl`, `helm`, `gcloud` authenticated to the cluster:
+  `gcloud container clusters get-credentials fredlab-playground-gke --region europe-west9 --project fredlab-playground`
+- A DNS **A record** `argocd.playground.fredlab.dev` → the IP from step 1 below (managed in Square, outside Helm).
+
+## One-time setup (run in order)
+
+```bash
+bin/fredlab-argocd-ip.sh                 # 1. reserve the static IP -> create the DNS A record
+bin/fredlab-argocd-keycloak-client.sh    # 2. confidential `argocd` OIDC client in realm app
+bin/fredlab-argocd-install.sh            # 3. install ArgoCD + OIDC + RBAC (config: argocd/argocd-values.yaml)
+bin/fredlab-argocd-expose.sh             # 4. Ingress + ManagedCertificate (argocd/expose/)
+bin/fredlab-argocd-app.sh                # 5. register the fred-apps Application (manual sync)
 ```
-argocd/
-  fred-apps/                 # the dedicated app chart (templates copied from fredlab-infra)
-    values.yaml              # defaults; apps disabled
-    values-fredlab.yaml      # env overlay: enables apps + pins image repo/tag  <-- image bump edits this
-  applications/
-    fred-apps.yaml           # the ArgoCD Application (manual sync until green)
+
+After step 4, wait for the cert: `bin/fredlab-status.sh` shows `argocd/fredlab-argocd-cert`
+go `Active` (~15–60 min, needs the DNS record). Then log in at
+`https://argocd.playground.fredlab.dev` via **Keycloak**.
+
+## Admin access
+
+Admins are **named people by email** in `argocd/argocd-values.yaml` (`rbac.policy.csv`) — not
+a group (the `fredlab` group has non-admins). Find emails with `bin/fredlab-keycloak-users.sh`,
+add `g, <email>, role:admin` lines, then re-run `bin/fredlab-argocd-install.sh`. Everyone else
+is read-only.
+
+## Deploy / update an app — the steady-state loop
+
+```bash
+bin/fredlab-release.sh control-plane     # 1. build image from ~/fred HEAD + bump tag in values-fredlab.yaml
+git commit -am "release control-plane" && git push   # 2. push -> ArgoCD sees the new tag
+# 3. ArgoCD UI -> fred-apps -> SYNC  (automatic once auto-sync is enabled)
+bin/fredlab-status.sh                    # 4. verify: new tag, healthy
 ```
 
-## First cutover (control-plane) — run in Cloud Shell
+`git push` is the deploy. The image tag lives in `argocd/fred-apps/values-fredlab.yaml`
+(marked `# release-tag: <image>`); `fredlab-release.sh` rewrites it.
 
-Context must be the fredlab cluster (`kubectl config current-context`).
+## First-time cutover per app (one-time, hands it off the imperative release)
 
-1. **Validate the chart renders** (catches extraction mistakes before ArgoCD ever runs):
-   ```bash
-   helm template fred-apps argocd/fred-apps \
-     -f argocd/fred-apps/values.yaml -f argocd/fred-apps/values-fredlab.yaml | head -60
-   ```
+```bash
+bin/fredlab-deploy.sh control-plane disable -fast    # remove from the imperative release (brief downtime)
+# then SYNC fred-apps in ArgoCD -> ArgoCD becomes sole owner
+```
 
-2. **Pin the current live tag** so the cutover does not change the image. Read the
-   IMAGE TAG for control-plane from `bin/fredlab-status.sh`, then set it in
-   `argocd/fred-apps/values-fredlab.yaml` (`controlPlane.image.tag`). Commit + push to
-   `main` (ArgoCD reads git, not your working tree).
-
-3. **Hand control-plane off the imperative release** (infra and the other apps stay up):
-   ```bash
-   bin/fredlab-deploy.sh control-plane disable
-   ```
-   This removes the imperative control-plane Service/Deployment/ConfigMap so there is a
-   single owner. (Brief control-plane downtime until step 5.)
-
-4. **Create the Application** (still manual sync):
-   ```bash
-   kubectl apply -f argocd/applications/fred-apps.yaml
-   ```
-
-5. **Review the diff, then sync** — from the UI (`port-forward svc/argocd-server`) or CLI:
-   ```bash
-   argocd app diff fred-apps      # expect: creates control-plane Service/Deployment/ConfigMap
-   argocd app sync fred-apps
-   ```
-
-6. **Confirm green:**
-   ```bash
-   argocd app get fred-apps
-   bin/fredlab-status.sh          # control-plane Running at the pinned tag, /ready green
-   ```
-
-7. **Enable auto-sync** once happy (edit `applications/fred-apps.yaml`, add the
-   `automated: {prune: true, selfHeal: true}` block shown in that file, re-apply).
+Done for **control-plane**. frontend / fred-agents / knowledge-flow follow the same pattern
+(copy their templates into `fred-apps/`, add their blocks to the values files, disable on the
+imperative release, sync). **frontend** also needs the studio Ingress + cert kept in the infra
+layer, decoupled from the app toggle, before it moves.
 
 ## Rollback
 
-```bash
-argocd app history fred-apps
-argocd app rollback fred-apps <REVISION>
-```
+`argocd app history fred-apps` then `argocd app rollback fred-apps <rev>` — or revert the tag
+commit in git and re-sync.
 
-## Next apps
+## Files
 
-frontend, fred-agents, knowledge-flow follow the same pattern: copy their templates into
-`fred-apps/templates/`, add their blocks to `values.yaml` + `values-fredlab.yaml`,
-`disable` them on the imperative release, sync. **frontend has one extra step** — its
-Service is referenced by the infra Ingress, so the infra layer must keep owning the
-studio Ingress rule + ManagedCertificate independently of the app toggle before moving it.
+| Path | What |
+| --- | --- |
+| `argocd/fred-apps/` | the app chart (templates copied from `fredlab-infra`) |
+| `argocd/fred-apps/values-fredlab.yaml` | per-app enable + pinned image tags (bumped by `fredlab-release.sh`) |
+| `argocd/applications/fred-apps.yaml` | the ArgoCD Application |
+| `argocd/argocd-values.yaml` | ArgoCD config: `server.insecure`, url, OIDC, RBAC |
+| `argocd/expose/` | ArgoCD's Ingress + ManagedCertificate |
+| `bin/fredlab-argocd-*.sh`, `bin/fredlab-release.sh` | the scripts above |
