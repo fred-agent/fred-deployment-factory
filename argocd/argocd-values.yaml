@@ -25,4 +25,6 @@ configs:
     scopes: '[groups, email]'
     policy.csv: |
       g, dimitri.tombroff@fredlab.dev, role:admin
+      g, sebastien.ehling@fredlab.dev, role:admin
+      g, simon.cariou@fredlab.dev, role:admin
       g, e044f362-bfeb-414f-bd14-ac559f319e66, role:admin
