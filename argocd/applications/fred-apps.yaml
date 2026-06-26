@@ -10,7 +10,7 @@ spec:
   project: default
   source:
     repoURL: https://github.com/fred-agent/fred-deployment-factory.git
-    targetRevision: main
+    targetRevision: swift   # default branch (matches the fred monorepo's 'swift')
     path: argocd/fred-apps
     helm:
       valueFiles:

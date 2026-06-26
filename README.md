@@ -2,6 +2,13 @@
 
 Local deployment repository for Fred.
 
+**Default branch: `swift`.** Fred ships in named release lines (the current one is **swift**;
+**kea** was the previous). This repo's default branch is `swift` to match
+[`ThalesGroup/fred`](https://github.com/ThalesGroup/fred) and the other internal repos — one
+branch name across the whole stack, so there's no mental remapping when you move between them.
+It's also the branch ArgoCD deploys the cloud instance from (`targetRevision: swift`), which keeps
+"the default branch" and "what's running in the cluster" the same thing by construction.
+
 > ## ☁️ Deploying to the cloud? Start here.
 >
 > **This README covers the _local_ stack (docker-compose / k3d).** The live **GKE/GCP instance**

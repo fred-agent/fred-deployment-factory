@@ -5,11 +5,11 @@ set -Eeuo pipefail
 # This is step 3 of the steady-state loop:
 #   bin/fredlab-release.sh all -> git push -> bin/fredlab-argocd-sync.sh -> bin/fredlab-status.sh
 #
-#   bin/fredlab-argocd-sync.sh            # sync fred-apps to origin/main HEAD
+#   bin/fredlab-argocd-sync.sh            # sync fred-apps to origin/swift HEAD
 #   bin/fredlab-argocd-sync.sh <app>      # sync a different Application by name
 
 APP="${1:-fred-apps}"
-BRANCH="${BRANCH:-main}"
+BRANCH="${BRANCH:-swift}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 command -v kubectl >/dev/null 2>&1 || { echo "Missing required tool: kubectl"; exit 1; }
