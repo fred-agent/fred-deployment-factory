@@ -45,3 +45,9 @@ knowledgeFlowWorker:
     # Same image as the backend (worker runs the main_worker entrypoint off it).
     repository: europe-west1-docker.pkg.dev/fredlab-playground/fredlab-repo/knowledge-flow-backend
     tag: "20260625-swift-cdee43b6" # release-tag: knowledge-flow-backend
+
+fredFrontend:
+  enabled: true
+  image:
+    repository: europe-west1-docker.pkg.dev/fredlab-playground/fredlab-repo/fred-frontend
+    tag: "20260625-swift-cdee43b6" # release-tag: fred-frontend

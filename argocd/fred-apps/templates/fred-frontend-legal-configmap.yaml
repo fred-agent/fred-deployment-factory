@@ -1,0 +1,18 @@
+{{- if and .Values.fredFrontend.enabled .Values.fredFrontend.legal.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.fredFrontend.legal.configMapName | quote }}
+  labels:
+    {{- include "fredlab-infra.labels" . | nindent 4 }}
+    app.kubernetes.io/component: fred-frontend
+data:
+  gcu.fr.md: |-
+{{ .Files.Get .Values.fredFrontend.legal.files.gcuFr | nindent 4 }}
+  gcu.md: |-
+{{ .Files.Get .Values.fredFrontend.legal.files.gcuEn | nindent 4 }}
+  gdpr.fr.md: |-
+{{ .Files.Get .Values.fredFrontend.legal.files.gdprFr | nindent 4 }}
+  gdpr.md: |-
+{{ .Files.Get .Values.fredFrontend.legal.files.gdprEn | nindent 4 }}
+{{- end }}

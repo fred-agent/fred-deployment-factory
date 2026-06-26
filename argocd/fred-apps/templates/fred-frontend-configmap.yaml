@@ -1,0 +1,24 @@
+{{- if .Values.fredFrontend.enabled }}
+{{- $properties := dict -}}
+{{- range $key, $value := .Values.fredFrontend.config.properties }}
+{{- $_ := set $properties $key $value -}}
+{{- end }}
+{{- $_ := set $properties "gcuVersion" .Values.controlPlane.config.gcuVersion -}}
+{{- if .Values.fredFrontend.config.releaseBrand }}
+{{- $_ := set $properties "releaseBrand" .Values.fredFrontend.config.releaseBrand -}}
+{{- end }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.fredFrontend.config.configMapName | quote }}
+  labels:
+    {{- include "fredlab-infra.labels" . | nindent 4 }}
+    app.kubernetes.io/component: fred-frontend
+data:
+  config.json: |-
+    {
+      "frontend_basename": {{ .Values.fredFrontend.config.frontendBasename | quote }},
+      "feature_flags": {{ .Values.fredFrontend.config.featureFlags | toJson }},
+      "properties": {{ $properties | toJson }}
+    }
+{{- end }}

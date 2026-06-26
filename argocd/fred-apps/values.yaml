@@ -323,3 +323,74 @@ knowledgeFlowWorker:
     limits:
       memory: 3Gi
 
+
+# fred-frontend (nginx SPA + reverse proxy). Workload only — the studio Ingress,
+# ManagedCertificate and BackendConfig STAY in the fredlab-infra layer (this chart
+# never owns Ingress/certs). The Service keeps the backend-config annotation so the
+# infra-owned BackendConfig (SSE timeout) still applies. Ported verbatim from infra
+# values; enabled + image pinned in values-fredlab.yaml.
+fredFrontend:
+  enabled: false
+  fullnameOverride: fred-frontend
+  replicaCount: 1
+  hostname: studio.playground.fredlab.dev
+  managedCertificateName: fredlab-studio-cert
+  image:
+    # Example Artifact Registry image:
+    # europe-west1-docker.pkg.dev/<project-id>/fredlab-repo/fred-frontend
+    repository: ""
+    tag: ""
+  service:
+    type: ClusterIP
+    port: 8080
+  containerPort: 8080
+  upstreams:
+    controlPlane: http://control-plane-backend:8080
+    # nginx resolves upstream DNS names at startup, so each target must be a
+    # service that already exists. Both knowledge-flow-backend and fred-agents are
+    # now deployed by this chart, so the frontend points at them directly.
+    fredAgents: http://fred-agents:8080
+    knowledgeFlow: http://knowledge-flow-backend:8080
+  clientMaxBodySize: 150m
+  config:
+    # Static pre-auth frontend configuration. It is served as /config.json
+    # before the user has accepted CGU, so values needed by guards must live
+    # here and not only in the authenticated control-plane bootstrap.
+    configMapName: fred-frontend-config
+    frontendBasename: /
+    releaseBrand: fredlab
+    featureFlags: {}
+    properties: {}
+  legal:
+    # Public Markdown content served by nginx instead of the generic files
+    # bundled in the frontend image. These files are not secrets and should be
+    # reviewed/versioned with the deployment repository.
+    enabled: true
+    configMapName: fred-frontend-legal
+    files:
+      gcuFr: legal/gcu.fr.md
+      gcuEn: legal/gcu.md
+      gdprFr: legal/gdpr.fr.md
+      gdprEn: legal/gdpr.md
+  health:
+    path: /config.json
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      memory: 256Mi
+  backendConfig:
+    name: fredlab-frontend-backendconfig
+    # L7 LB backend request timeout (seconds). Default is 30s, which cuts long SSE
+    # chat streams mid-answer; 600s lets agent responses stream to completion.
+    timeoutSec: 600
+    healthCheck:
+      requestPath: /config.json
+      port: 8080
+      type: HTTP
+      checkIntervalSec: 15
+      timeoutSec: 5
+      healthyThreshold: 1
+      unhealthyThreshold: 3
+
