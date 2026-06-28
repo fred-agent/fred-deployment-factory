@@ -563,4 +563,39 @@ migration-reset: ## Wipe → up EMPTY (no demo seed) → restore identity + data
 	@echo "   → run the import in the app / kea admin UI."
 	@echo "============================================================"
 
-.PHONY: help network-create env-setup keycloak-post-install postgres-up keycloak-up seaweedfs-up opensearch-up clickhouse-up langfuse-up prometheus-up grafana-up openfga-post-install openfga-up temporal-up preflight-check docker-up docker-down all-down docker-wipe docker-destroy k3d-create k3d-up k3d-deploy k3d-restart k3d-redeploy k3d-logs k3d-down k3d-uninstall k3d-delete k3d-wipe k3d-status k3d-airgap-on k3d-airgap-off k3d-airgap-status checkpoint-save checkpoint-restore docker-restart-from-checkpoint checkpoint-list checkpoint-delete kea-identity-dump kea-identity-restore kea-data-dump kea-data-restore kea-snapshot migration-reset
+##@ Validation
+VALIDATION_DIR  ?= validation
+VALIDATION_VENV ?= $(VALIDATION_DIR)/.venv
+PYTHON_BIN      ?= python3
+# Shared Fred libraries live on the local swift checkout. Override if elsewhere.
+SWIFT_SRC       ?= ../Work/swift
+FRED_CORE_SRC   ?= $(SWIFT_SRC)/libs/fred-core
+FRED_SDK_SRC    ?= $(SWIFT_SRC)/libs/fred-sdk
+FRED_RUNTIME_SRC ?= $(SWIFT_SRC)/libs/fred-runtime
+# Localhost auth/isolation validation expects Docker infra plus manually started Fred apps.
+FRED_CONTROL_PLANE_URL ?= http://localhost:8222/control-plane/v1
+FRED_RUNTIME_PUBLIC_BASE ?= http://localhost:8000
+
+validate-auth-isolation-localhost: ## Black-box auth/security team-isolation validation against localhost Fred apps + Docker infra
+	@test -x $(VALIDATION_VENV)/bin/python || { \
+	  echo "▶ creating venv $(VALIDATION_VENV) (python3 -m venv)"; \
+	  $(PYTHON_BIN) -m venv $(VALIDATION_VENV) && \
+	  $(VALIDATION_VENV)/bin/pip install -q --upgrade pip; \
+	}
+	@echo "▶ installing deps (shared Fred libs editable + test app)"
+	@$(VALIDATION_VENV)/bin/pip install -q -e $(FRED_CORE_SRC) -e $(FRED_SDK_SRC) -e $(FRED_RUNTIME_SRC) -e $(VALIDATION_DIR)
+	@echo "▶ running black-box auth/security team-isolation scenarios on localhost"
+	@echo "  control-plane: $(FRED_CONTROL_PLANE_URL)"
+	@echo "  runtime base : $(FRED_RUNTIME_PUBLIC_BASE)"
+	cd $(VALIDATION_DIR) && \
+	  FRED_CONTROL_PLANE_URL="$(FRED_CONTROL_PLANE_URL)" \
+	  FRED_RUNTIME_PUBLIC_BASE="$(FRED_RUNTIME_PUBLIC_BASE)" \
+	  .venv/bin/pytest -x
+
+validate-auth-isolation-k3d: ## Black-box auth/security team-isolation validation against full k3d deployment (not implemented)
+	@echo "validate-auth-isolation-k3d is not yet implemented."
+	@echo "It will run the same black-box auth/security team-isolation suite against a full k3d deployment through ingress."
+	@echo "Current release gate: make validate-auth-isolation-localhost"
+	@exit 2
+
+.PHONY: help network-create env-setup keycloak-post-install postgres-up keycloak-up seaweedfs-up opensearch-up clickhouse-up langfuse-up prometheus-up grafana-up openfga-post-install openfga-up temporal-up preflight-check docker-up docker-down all-down docker-wipe docker-destroy k3d-create k3d-up k3d-deploy k3d-restart k3d-redeploy k3d-logs k3d-down k3d-uninstall k3d-delete k3d-wipe k3d-status k3d-airgap-on k3d-airgap-off k3d-airgap-status checkpoint-save checkpoint-restore docker-restart-from-checkpoint checkpoint-list checkpoint-delete kea-identity-dump kea-identity-restore kea-data-dump kea-data-restore kea-snapshot migration-reset validate-auth-isolation-localhost validate-auth-isolation-k3d

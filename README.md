@@ -9,6 +9,29 @@ branch name across the whole stack, so there's no mental remapping when you move
 It's also the branch ArgoCD deploys the cloud instance from (`targetRevision: swift`), which keeps
 "the default branch" and "what's running in the cluster" the same thing by construction.
 
+## Repository scope
+
+This repository currently carries several related but different concerns:
+
+- local Docker infrastructure for Fred dependencies: Keycloak, Postgres, OpenFGA,
+  OpenSearch, Temporal, and related services;
+- black-box auth/security validation for `swift` release candidates, using the
+  seeded users, teams, roles and OpenFGA relations from this repository;
+- k3d deployment work for local Kubernetes;
+- GCP/GKE deployment assets, whose chart organization is still WIP and evolving.
+
+The auth/security validation suite lives here because it needs the deployment
+seed data: several real users, teams and rights. That isolation matrix is awkward
+to prove with unit tests inside the `swift` repo alone. Run it systematically
+when validating a `swift` release candidate:
+
+```bash
+make validate-auth-isolation-localhost
+```
+
+This is not the only release check; it is the black-box check focused on
+Keycloak/OpenFGA authorization and team isolation across the running services.
+
 > ## ☁️ Deploying to the cloud? Start here.
 >
 > **This README covers the _local_ stack (docker-compose / k3d).** The live **GKE/GCP instance**
