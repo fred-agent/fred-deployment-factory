@@ -13,7 +13,7 @@ controlPlane:
     repository: europe-west1-docker.pkg.dev/fredlab-playground/fredlab-repo/control-plane-backend
     # The release-tag marker lets bin/fredlab-release.sh rewrite this line. Format:
     # YYYYMMDD-swift-<shortsha>. Change = commit + push -> ArgoCD deploys it.
-    tag: "20260626-swift-3edab4ee" # release-tag: control-plane-backend
+    tag: "20260628-swift-f27fe2f8" # release-tag: control-plane-backend
 
 fredAgents:
   enabled: true
@@ -22,7 +22,7 @@ fredAgents:
     gcpServiceAccount: fredlab-knowledge-flow-gcs@fredlab-playground.iam.gserviceaccount.com
   image:
     repository: europe-west1-docker.pkg.dev/fredlab-playground/fredlab-repo/fred-agents
-    tag: "20260626-swift-3edab4ee" # release-tag: fred-agents
+    tag: "20260628-swift-f27fe2f8" # release-tag: fred-agents
 
 knowledgeFlow:
   enabled: true
@@ -31,7 +31,7 @@ knowledgeFlow:
     gcpServiceAccount: fredlab-knowledge-flow-gcs@fredlab-playground.iam.gserviceaccount.com
   image:
     repository: europe-west1-docker.pkg.dev/fredlab-playground/fredlab-repo/knowledge-flow-backend
-    tag: "20260626-swift-3edab4ee" # release-tag: knowledge-flow-backend
+    tag: "20260628-swift-f27fe2f8" # release-tag: knowledge-flow-backend
   config:
     models:
       # Vertex AI project (matches the imperative deploy's VERTEX_PROJECT=PROJECT_ID).
@@ -44,10 +44,10 @@ knowledgeFlowWorker:
   image:
     # Same image as the backend (worker runs the main_worker entrypoint off it).
     repository: europe-west1-docker.pkg.dev/fredlab-playground/fredlab-repo/knowledge-flow-backend
-    tag: "20260626-swift-3edab4ee" # release-tag: knowledge-flow-backend
+    tag: "20260628-swift-f27fe2f8" # release-tag: knowledge-flow-backend
 
 fredFrontend:
   enabled: true
   image:
     repository: europe-west1-docker.pkg.dev/fredlab-playground/fredlab-repo/fred-frontend
-    tag: "20260626-swift-3edab4ee" # release-tag: fred-frontend
+    tag: "20260628-swift-f27fe2f8" # release-tag: fred-frontend

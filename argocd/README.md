@@ -58,6 +58,8 @@ is read-only.
 
 ## Deploy / update an app — the steady-state loop
 
+> Full operator walkthrough (auth, build prereqs, validation gate): [`../docs/DEPLOY-CLOUD.md`](../docs/DEPLOY-CLOUD.md). The loop below is the ArgoCD-focused summary.
+
 Three commands. **Sync is manual by design** (auto-sync is off — no `automated:` block on the
 `fred-apps` Application): `git push` records the new tags and shows **OutOfSync**, then
 `bin/fredlab-argocd-sync.sh` is what actually deploys.
