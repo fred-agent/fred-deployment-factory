@@ -63,7 +63,7 @@ PREFLIGHT_CHECK_AGENT_OWNERSHIP="${PREFLIGHT_CHECK_AGENT_OWNERSHIP:-false}"
 # are skipped instead of being reported as critical failures.
 STACK="${STACK:-base}"
 
-REQUIRED_CLIENTS=(app agentic knowledge-flow control-plane)
+REQUIRED_CLIENTS=(app agentic knowledge-flow control-plane fred-evaluation-worker)
 REQUIRED_APP_CLIENT_ROLES=(admin editor viewer)
 EXPECTED_SERVICE_APP_ROLE="service_agent"
 EXPECTED_GROUPS_SCOPE_NAME="groups-scope"
@@ -553,9 +553,11 @@ fi
 AGENTIC_ROLE_GAPS=0
 KNOWLEDGE_FLOW_ROLE_GAPS=0
 CONTROL_PLANE_ROLE_GAPS=0
+EVAL_WORKER_ROLE_GAPS=0
 AGENTIC_CLIENT_CONFIG_GAPS=0
 KNOWLEDGE_FLOW_CLIENT_CONFIG_GAPS=0
 CONTROL_PLANE_CLIENT_CONFIG_GAPS=0
+EVAL_WORKER_CLIENT_CONFIG_GAPS=0
 APP_CLIENT_ROLE_GAPS=0
 APP_USER_PERMISSION_GAPS=0
 APP_GROUPS_SCOPE_GAPS=0
@@ -563,7 +565,7 @@ APP_GROUPS_SCOPE_GAPS=0
 declare -A CLIENT_UUIDS=()
 if [[ -n "${ADM}" ]]; then
   step "Service account permissions (Keycloak)"
-  for client_id in app agentic knowledge-flow control-plane realm-management account; do
+  for client_id in app agentic knowledge-flow control-plane fred-evaluation-worker realm-management account; do
     if ! client_uuid="$(keycloak_client_uuid "$client_id" 2>/dev/null)"; then
       client_uuid=""
     fi
@@ -717,7 +719,7 @@ if [[ -n "${ADM}" ]]; then
     fi
   fi
 
-  for svc in agentic knowledge-flow control-plane; do
+  for svc in agentic knowledge-flow control-plane fred-evaluation-worker; do
     svc_uuid="${CLIENT_UUIDS[$svc]:-}"
     if [[ -z "$svc_uuid" ]]; then
       mark_critical "Skipping '${svc}' permission checks: missing client UUID"
@@ -742,6 +744,8 @@ if [[ -n "${ADM}" ]]; then
         ((AGENTIC_CLIENT_CONFIG_GAPS+=1))
       elif [[ "$svc" == "knowledge-flow" ]]; then
         ((KNOWLEDGE_FLOW_CLIENT_CONFIG_GAPS+=1))
+      elif [[ "$svc" == "fred-evaluation-worker" ]]; then
+        ((EVAL_WORKER_CLIENT_CONFIG_GAPS+=1))
       else
         ((CONTROL_PLANE_CLIENT_CONFIG_GAPS+=1))
       fi
@@ -784,6 +788,10 @@ if [[ -n "${ADM}" ]]; then
     elif [[ "$svc" == "knowledge-flow" ]]; then
       expected_rm_lines="$(words_to_sorted_lines "$EXPECTED_KF_RM_ROLES")"
       expected_acc_lines="$(words_to_sorted_lines "$EXPECTED_KF_ACCOUNT_ROLES")"
+    elif [[ "$svc" == "fred-evaluation-worker" ]]; then
+      # Least privilege (RFC EVAL-AUTH): only app:service_agent, no realm-management, no account roles.
+      expected_rm_lines=""
+      expected_acc_lines=""
     else
       expected_rm_lines="$(words_to_sorted_lines "$EXPECTED_CP_RM_ROLES")"
       expected_acc_lines="$(words_to_sorted_lines "$EXPECTED_CP_ACCOUNT_ROLES")"
@@ -803,6 +811,8 @@ if [[ -n "${ADM}" ]]; then
         ((AGENTIC_ROLE_GAPS+=1))
       elif [[ "$svc" == "knowledge-flow" ]]; then
         ((KNOWLEDGE_FLOW_ROLE_GAPS+=1))
+      elif [[ "$svc" == "fred-evaluation-worker" ]]; then
+        ((EVAL_WORKER_ROLE_GAPS+=1))
       else
         ((CONTROL_PLANE_ROLE_GAPS+=1))
       fi
@@ -813,6 +823,8 @@ if [[ -n "${ADM}" ]]; then
         ((AGENTIC_ROLE_GAPS+=1))
       elif [[ "$svc" == "knowledge-flow" ]]; then
         ((KNOWLEDGE_FLOW_ROLE_GAPS+=1))
+      elif [[ "$svc" == "fred-evaluation-worker" ]]; then
+        ((EVAL_WORKER_ROLE_GAPS+=1))
       else
         ((CONTROL_PLANE_ROLE_GAPS+=1))
       fi
@@ -823,6 +835,8 @@ if [[ -n "${ADM}" ]]; then
         ((AGENTIC_ROLE_GAPS+=1))
       elif [[ "$svc" == "knowledge-flow" ]]; then
         ((KNOWLEDGE_FLOW_ROLE_GAPS+=1))
+      elif [[ "$svc" == "fred-evaluation-worker" ]]; then
+        ((EVAL_WORKER_ROLE_GAPS+=1))
       else
         ((CONTROL_PLANE_ROLE_GAPS+=1))
       fi
@@ -1145,9 +1159,11 @@ info "groups-scope / groups mapper gaps: ${APP_GROUPS_SCOPE_GAPS}"
 info "Service-client config gaps (agentic): ${AGENTIC_CLIENT_CONFIG_GAPS}"
 info "Service-client config gaps (knowledge-flow): ${KNOWLEDGE_FLOW_CLIENT_CONFIG_GAPS}"
 info "Service-client config gaps (control-plane): ${CONTROL_PLANE_CLIENT_CONFIG_GAPS}"
+info "Service-client config gaps (fred-evaluation-worker): ${EVAL_WORKER_CLIENT_CONFIG_GAPS}"
 info "Service-account role gaps (agentic: realm-management + account + app:service_agent): ${AGENTIC_ROLE_GAPS}"
 info "Service-account role gaps (knowledge-flow: realm-management + account + app:service_agent): ${KNOWLEDGE_FLOW_ROLE_GAPS}"
 info "Service-account role gaps (control-plane: realm-management + account + app:service_agent): ${CONTROL_PLANE_ROLE_GAPS}"
+info "Service-account role gaps (fred-evaluation-worker: least-privilege, only app:service_agent): ${EVAL_WORKER_ROLE_GAPS}"
 if [[ "${OPENFGA_STATUS}" == "present" ]]; then
   info "OpenFGA store '${OPENFGA_STORE_NAME}': present (${STORE_ID})"
 elif [[ "${OPENFGA_STATUS}" == "store-missing" ]]; then

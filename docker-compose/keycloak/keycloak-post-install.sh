@@ -139,6 +139,9 @@ KEYCLOAK_KNOWLEDGE_FLOW_CLIENT_SECRET="${KEYCLOAK_KNOWLEDGE_FLOW_CLIENT_SECRET:-
 KEYCLOAK_CONTROL_PLANE_CLIENT_SECRET="${KEYCLOAK_CONTROL_PLANE_CLIENT_SECRET:-$(read_env_file_var KEYCLOAK_CONTROL_PLANE_CLIENT_SECRET)}"
 KEYCLOAK_CONTROL_PLANE_CLIENT_SECRET="${KEYCLOAK_CONTROL_PLANE_CLIENT_SECRET:-Azerty123_}"
 
+KEYCLOAK_EVAL_WORKER_CLIENT_SECRET="${KEYCLOAK_EVAL_WORKER_CLIENT_SECRET:-$(read_env_file_var KEYCLOAK_EVAL_WORKER_CLIENT_SECRET)}"
+KEYCLOAK_EVAL_WORKER_CLIENT_SECRET="${KEYCLOAK_EVAL_WORKER_CLIENT_SECRET:-Azerty123_}"
+
 KEYCLOAK_KF_ENABLE_MANAGE_USERS="${KEYCLOAK_KF_ENABLE_MANAGE_USERS:-$(read_env_file_var KEYCLOAK_KF_ENABLE_MANAGE_USERS)}"
 KEYCLOAK_KF_ENABLE_MANAGE_USERS="${KEYCLOAK_KF_ENABLE_MANAGE_USERS:-true}"
 
@@ -925,6 +928,8 @@ app_client_uuid="$(ensure_app_client)"
 agentic_client_uuid="$(ensure_service_client_confidential agentic "$KEYCLOAK_AGENTIC_CLIENT_SECRET")"
 knowledge_flow_client_uuid="$(ensure_service_client_confidential knowledge-flow "$KEYCLOAK_KNOWLEDGE_FLOW_CLIENT_SECRET")"
 control_plane_client_uuid="$(ensure_service_client_confidential control-plane "$KEYCLOAK_CONTROL_PLANE_CLIENT_SECRET")"
+# Evaluation worker (Fworker) — dedicated least-privilege service identity (RFC EVAL-AUTH).
+eval_worker_client_uuid="$(ensure_service_client_confidential fred-evaluation-worker "$KEYCLOAK_EVAL_WORKER_CLIENT_SECRET")"
 
 ensure_client_role app admin "application administrator role"
 ensure_client_role app editor "application editor role"
@@ -967,4 +972,4 @@ if should_force_relogin; then
   fi
 fi
 
-log "post-install completed (app=${app_client_uuid}, agentic=${agentic_client_uuid}, knowledge-flow=${knowledge_flow_client_uuid}, control-plane=${control_plane_client_uuid}, changes=${CHANGED})"
+log "post-install completed (app=${app_client_uuid}, agentic=${agentic_client_uuid}, knowledge-flow=${knowledge_flow_client_uuid}, control-plane=${control_plane_client_uuid}, fred-evaluation-worker=${eval_worker_client_uuid}, changes=${CHANGED})"
