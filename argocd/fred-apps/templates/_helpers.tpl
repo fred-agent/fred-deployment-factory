@@ -83,6 +83,18 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- default "fred-agents-config" .Values.fredAgents.configMapName | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 
+{{- define "fredlab-infra.evaluationName" -}}
+{{- default "evaluation-backend" .Values.evaluation.fullnameOverride | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+
+{{- define "fredlab-infra.evaluationConfigName" -}}
+{{- default "evaluation-config" .Values.evaluation.configMapName | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+
+{{- define "fredlab-infra.evaluationWorkerName" -}}
+{{- default "evaluation-worker" .Values.evaluationWorker.fullnameOverride | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+
 {{- define "fredlab-infra.secretName" -}}
 {{- default "fredlab-infra-secrets" .Values.secret.fullnameOverride | trunc 63 | trimSuffix "-" -}}
 {{- end -}}

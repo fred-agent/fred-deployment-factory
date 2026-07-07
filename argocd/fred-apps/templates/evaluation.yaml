@@ -1,0 +1,114 @@
+{{- if .Values.evaluation.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "fredlab-infra.evaluationName" . }}
+  labels:
+    {{- include "fredlab-infra.labels" . | nindent 4 }}
+    app.kubernetes.io/component: evaluation-backend
+spec:
+  type: {{ .Values.evaluation.service.type }}
+  ports:
+    - name: http
+      port: {{ .Values.evaluation.service.port }}
+      targetPort: http
+  selector:
+    {{- include "fredlab-infra.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: evaluation-backend
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "fredlab-infra.evaluationName" . }}
+  labels:
+    {{- include "fredlab-infra.labels" . | nindent 4 }}
+    app.kubernetes.io/component: evaluation-backend
+spec:
+  replicas: {{ .Values.evaluation.replicaCount }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0          # no spare node on this cluster — don't create a surge pod
+      maxUnavailable: 1    # free the old pod's memory first, then schedule the new one
+  selector:
+    matchLabels:
+      {{- include "fredlab-infra.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: evaluation-backend
+  template:
+    metadata:
+      labels:
+        {{- include "fredlab-infra.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: evaluation-backend
+    spec:
+      enableServiceLinks: false
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: evaluation-backend
+          image: {{ printf "%s:%s" (required "evaluation.image.repository is required when evaluation.enabled=true." .Values.evaluation.image.repository) (required "evaluation.image.tag is required when evaluation.enabled=true." .Values.evaluation.image.tag) | quote }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          # Default entrypoint = the FastAPI server (see Dockerfile-prod). The worker
+          # Deployment overrides `command:` to run the Temporal worker instead.
+          env:
+            - name: CONFIG_FILE
+              value: /etc/fred/evaluation/configuration.yaml
+            - name: ENV_FILE
+              value: /etc/fred/evaluation/empty.env
+            # Postgres password read by fred-core's PostgresStoreConfig from
+            # FRED_POSTGRES_PASSWORD; host/db/user come from the config file.
+            - name: FRED_POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fredlab-infra.secretName" . }}
+                  key: POSTGRES_EVALUATION_PASSWORD
+            # M2M identity of the evaluation worker (least-privilege service_agent).
+            - name: KEYCLOAK_EVAL_WORKER_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fredlab-infra.secretName" . }}
+                  key: KEYCLOAK_EVAL_WORKER_CLIENT_SECRET
+            # Judge / analysis model API key (OpenAI-compatible, e.g. Mistral).
+            - name: MISTRAL_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fredlab-infra.secretName" . }}
+                  key: MISTRAL_API_KEY
+          ports:
+            - name: http
+              containerPort: {{ .Values.evaluation.containerPort }}
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.evaluation.health.path | quote }}
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 12
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.evaluation.health.path | quote }}
+              port: http
+            initialDelaySeconds: 40
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 6
+          resources:
+            {{- toYaml .Values.evaluation.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: evaluation-config
+              mountPath: /etc/fred/evaluation
+              readOnly: true
+      volumes:
+        - name: evaluation-config
+          configMap:
+            name: {{ include "fredlab-infra.evaluationConfigName" . }}
+{{- end }}

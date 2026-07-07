@@ -417,3 +417,77 @@ fredFrontend:
       healthyThreshold: 1
       unhealthyThreshold: 3
 
+# fred-evaluation-backend — API + worker, one image (see Dockerfile-prod), two
+# deployments. The worker overrides the container command to run the Temporal worker.
+# Apps default to disabled here; the overlay (values-fredlab.yaml) enables + pins images.
+evaluation:
+  enabled: false
+  fullnameOverride: evaluation-backend
+  configMapName: evaluation-config
+  replicaCount: 1
+  image:
+    # Set in values-fredlab.yaml. Example:
+    # europe-west1-docker.pkg.dev/<project-id>/fredlab-repo/fred-evaluation-backend
+    repository: ""
+    tag: ""
+  service:
+    type: ClusterIP
+    port: 8336
+  containerPort: 8336
+  health:
+    path: /evaluation/v1/healthz
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      memory: 1Gi
+  config:
+    appBaseUrl: /evaluation/v1
+    logLevel: info
+    keycloakIssuerUrl: https://keycloak.playground.fredlab.dev/realms/app
+    postgres:
+      database: evaluation
+      username: evaluation
+    security:
+      user:
+        enabled: true
+        clientId: app
+      m2m:
+        enabled: true
+        clientId: fred-evaluation-worker
+      authorizedOrigins:
+        - https://studio.playground.fredlab.dev
+    controlPlaneBaseUrl: http://control-plane-backend:8080/control-plane/v1
+    runtimeBaseUrl: http://fred-agents:8080
+    scheduler:
+      backend: temporal
+      temporalAddress: temporal:7233
+      temporalNamespace: default
+      temporalTaskQueue: evaluation
+    # LLM-as-judge / analysis model (OpenAI-compatible, e.g. Mistral). API key comes
+    # from the MISTRAL_API_KEY secret env var.
+    analysis:
+      provider: openai
+      name: mistral-medium-2508
+      settings:
+        openai_api_base: https://api.mistral.ai/v1
+        api_key_env: MISTRAL_API_KEY
+    observability:
+      tracer: none
+
+evaluationWorker:
+  enabled: false
+  fullnameOverride: evaluation-worker
+  replicaCount: 1
+  image:
+    # Same image as evaluation.image (fred-evaluation-backend). Pin to the same tag.
+    repository: ""
+    tag: ""
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      memory: 2Gi
+

@@ -61,3 +61,16 @@ fredFrontend:
   image:
     repository: europe-west1-docker.pkg.dev/fredlab-playground/fredlab-repo/fred-frontend
     tag: "20260707-swift-565d884f" # release-tag: fred-frontend
+
+evaluation:
+  enabled: true
+  image:
+    repository: europe-west1-docker.pkg.dev/fredlab-playground/fredlab-repo/fred-evaluation-backend
+    tag: "" # release-tag: fred-evaluation-backend — set to the tag pushed at step 1
+
+evaluationWorker:
+  enabled: true
+  image:
+    # Same image as the backend (worker runs the main_worker entrypoint off it).
+    repository: europe-west1-docker.pkg.dev/fredlab-playground/fredlab-repo/fred-evaluation-backend
+    tag: "" # release-tag: fred-evaluation-backend — keep identical to evaluation.image.tag

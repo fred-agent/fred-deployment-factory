@@ -1,0 +1,61 @@
+{{- if or .Values.evaluation.enabled .Values.evaluationWorker.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "fredlab-infra.evaluationConfigName" . }}
+  labels:
+    {{- include "fredlab-infra.labels" . | nindent 4 }}
+    app.kubernetes.io/component: evaluation-backend
+data:
+  empty.env: ""
+  configuration.yaml: |
+    app:
+      name: Fred Evaluation Backend
+      base_url: {{ .Values.evaluation.config.appBaseUrl | quote }}
+      address: 0.0.0.0
+      port: {{ .Values.evaluation.containerPort }}
+      log_level: {{ .Values.evaluation.config.logLevel | quote }}
+
+    storage:
+      postgres:
+        host: {{ include "fredlab-infra.postgresName" . | quote }}
+        port: {{ .Values.postgresql.service.port }}
+        database: {{ .Values.evaluation.config.postgres.database | quote }}
+        username: {{ .Values.evaluation.config.postgres.username | quote }}
+        pool_pre_ping: true
+
+    security:
+      user:
+        enabled: {{ .Values.evaluation.config.security.user.enabled }}
+        realm_url: {{ .Values.evaluation.config.keycloakIssuerUrl | quote }}
+        client_id: {{ .Values.evaluation.config.security.user.clientId | quote }}
+      m2m:
+        enabled: {{ .Values.evaluation.config.security.m2m.enabled }}
+        realm_url: {{ .Values.evaluation.config.keycloakIssuerUrl | quote }}
+        client_id: {{ .Values.evaluation.config.security.m2m.clientId | quote }}
+        secret_env_var: KEYCLOAK_EVAL_WORKER_CLIENT_SECRET
+      authorized_origins:
+        {{- range .Values.evaluation.config.security.authorizedOrigins }}
+        - {{ . | quote }}
+        {{- end }}
+
+    control_plane:
+      base_url: {{ .Values.evaluation.config.controlPlaneBaseUrl | quote }}
+      runtime_base_url: {{ .Values.evaluation.config.runtimeBaseUrl | quote }}
+
+    scheduler:
+      backend: {{ .Values.evaluation.config.scheduler.backend | quote }}
+      temporal:
+        host: {{ .Values.evaluation.config.scheduler.temporalAddress | quote }}
+        namespace: {{ .Values.evaluation.config.scheduler.temporalNamespace | quote }}
+        task_queue: {{ .Values.evaluation.config.scheduler.temporalTaskQueue | quote }}
+
+    analysis:
+      provider: {{ .Values.evaluation.config.analysis.provider | quote }}
+      name: {{ .Values.evaluation.config.analysis.name | quote }}
+      settings:
+        {{- toYaml .Values.evaluation.config.analysis.settings | nindent 8 }}
+
+    observability:
+      tracer: {{ .Values.evaluation.config.observability.tracer | quote }}
+{{- end }}
