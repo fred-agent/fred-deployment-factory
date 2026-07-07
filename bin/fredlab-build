@@ -33,6 +33,13 @@ EOF
 expand_path() {
   local value="$1"
   case "${value}" in
+    ""|"\$FRED_REPO_DIR")
+      # The monorepo. SINGLE source of truth = the FRED_REPO_DIR env (default ~/fred),
+      # the exact same knob bin/fredlab-release.sh uses for the tag — so the built
+      # source and the tag can never point at different checkouts. Relocate your
+      # monorepo? Set FRED_REPO_DIR; touch nothing here.
+      printf '%s\n' "${FRED_REPO_DIR:-${HOME}/fred}"
+      ;;
     "~")
       printf '%s\n' "${HOME}"
       ;;

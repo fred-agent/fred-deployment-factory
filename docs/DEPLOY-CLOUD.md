@@ -14,8 +14,17 @@ Mental model: **authenticate once → (validate) → build & bump → push → s
 
 ## Prerequisites
 
-**Tools on your laptop:** `gcloud`, `kubectl`, `helm`, `git`, and a `~/fred` checkout (the
-source the images are built from — its `HEAD` short-sha becomes the image tag).
+**Tools on your laptop:** `gcloud`, `kubectl`, `helm`, `git`, and a Fred monorepo checkout
+(the source the images are built from — its `HEAD` short-sha becomes the image tag).
+
+> **Where's the monorepo? One knob: `FRED_REPO_DIR` (default `~/fred`).** It is the single
+> source of truth — used for both the tag *and* the build source (the catalog
+> `config/fredlab-images.tsv` defers to it via the `$FRED_REPO_DIR` sentinel). If your
+> checkout isn't at `~/fred`, set it once and everything follows:
+> ```bash
+> export FRED_REPO_DIR="$HOME/path/to/fred"   # e.g. ~/Fred/fred — add to ~/.bashrc
+> ```
+> Don't hand-edit paths in the catalog or the scripts; setting this variable is the whole story.
 
 **Access:** the GKE/GCP instance is private. New team members: contact **Dimitri Tombroff**
 (`dimitri.tombroff@fredlab.dev`) to be granted GCP project / GKE access, a Keycloak login, and
