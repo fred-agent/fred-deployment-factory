@@ -6,6 +6,10 @@ REGION="${REGION:-europe-west1}"
 REPOSITORY="${REPOSITORY:-fredlab-repo}"
 FRED_REPO_DIR="${FRED_REPO_DIR:-${HOME}/fred}"
 BUILD_CONTEXT="${BUILD_CONTEXT:-.}"
+# Cloud Build machine. Default gives the frontend's Vite/Rollup build enough RAM for its
+# raised Node heap (see apps/frontend Dockerfile) and speeds every build. Override or set
+# to the empty string to fall back to the pool default.
+MACHINE_TYPE="${MACHINE_TYPE:-E2_HIGHCPU_8}"
 
 IMAGE="${IMAGE:-}"
 DOCKERFILE="${DOCKERFILE:-}"
@@ -50,6 +54,13 @@ steps:
 images:
   - ${IMAGE_URI}
 EOF
+
+if [[ -n "${MACHINE_TYPE}" ]]; then
+  cat >> "${BUILD_CONFIG}" <<EOF
+options:
+  machineType: ${MACHINE_TYPE}
+EOF
+fi
 
 echo "Building ${IMAGE_URI}"
 echo "Fred source repository: ${FRED_REPO_DIR}"
