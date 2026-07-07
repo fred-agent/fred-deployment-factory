@@ -42,6 +42,10 @@ auth:
   postgresTemporalDb: temporal
   postgresTemporalVisibilityDb: temporal_visibility
 
+  postgresEvaluationUser: evaluation
+  postgresEvaluationPassword: Azerty123_
+  postgresEvaluationDb: evaluation
+
   keycloakAdminUser: admin
   keycloakAdminPassword: Azerty123_
   keycloakAgenticClientSecret: Azerty123_
