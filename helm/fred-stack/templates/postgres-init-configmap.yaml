@@ -24,6 +24,9 @@ data:
       IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '{{ .Values.auth.postgresTemporalUser }}') THEN
         CREATE ROLE {{ .Values.auth.postgresTemporalUser }} NOSUPERUSER LOGIN PASSWORD '{{ .Values.auth.postgresTemporalPassword }}';
       END IF;
+      IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '{{ .Values.auth.postgresEvaluationUser }}') THEN
+        CREATE ROLE {{ .Values.auth.postgresEvaluationUser }} NOSUPERUSER LOGIN PASSWORD '{{ .Values.auth.postgresEvaluationPassword }}';
+      END IF;
     END
     $$;
 
@@ -43,6 +46,8 @@ data:
       WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = '{{ .Values.auth.postgresTemporalDb }}')\gexec
     SELECT 'CREATE DATABASE {{ .Values.auth.postgresTemporalVisibilityDb }} OWNER {{ .Values.auth.postgresTemporalUser }}'
       WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = '{{ .Values.auth.postgresTemporalVisibilityDb }}')\gexec
+    SELECT 'CREATE DATABASE {{ .Values.auth.postgresEvaluationDb }} OWNER {{ .Values.auth.postgresEvaluationUser }}'
+      WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = '{{ .Values.auth.postgresEvaluationDb }}')\gexec
 
     REVOKE ALL ON DATABASE {{ .Values.auth.postgresKeycloakDb }} FROM PUBLIC;
     GRANT CONNECT ON DATABASE {{ .Values.auth.postgresKeycloakDb }} TO {{ .Values.auth.postgresKeycloakUser }};
@@ -60,6 +65,8 @@ data:
     GRANT CONNECT ON DATABASE {{ .Values.auth.postgresTemporalDb }} TO {{ .Values.auth.postgresTemporalUser }};
     REVOKE ALL ON DATABASE {{ .Values.auth.postgresTemporalVisibilityDb }} FROM PUBLIC;
     GRANT CONNECT ON DATABASE {{ .Values.auth.postgresTemporalVisibilityDb }} TO {{ .Values.auth.postgresTemporalUser }};
+    REVOKE ALL ON DATABASE {{ .Values.auth.postgresEvaluationDb }} FROM PUBLIC;
+    GRANT CONNECT ON DATABASE {{ .Values.auth.postgresEvaluationDb }} TO {{ .Values.auth.postgresEvaluationUser }};
 
     \connect {{ .Values.auth.postgresFredDb }}
     CREATE EXTENSION IF NOT EXISTS vector;
