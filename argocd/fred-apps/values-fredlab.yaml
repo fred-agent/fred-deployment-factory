@@ -16,8 +16,7 @@ controlPlane:
     tag: "20260707-swift-565d884f" # release-tag: control-plane-backend
 
 controlPlaneWorker:
-  # Deferred: ship the app updates + retention first, enable the worker in a follow-up sync.
-  enabled: false
+  enabled: true
   image:
     # Same image as the backend (worker runs the control_plane_backend.main_worker
     # entrypoint off it). Shares the control-plane-backend release-tag marker, so

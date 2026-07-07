@@ -51,7 +51,7 @@ controlPlane:
   resources:
     requests:
       cpu: 250m
-      memory: 512Mi
+      memory: 320Mi
     limits:
       memory: 1Gi
   config:
@@ -152,7 +152,7 @@ controlPlaneWorker:
   resources:
     requests:
       cpu: 250m
-      memory: 512Mi
+      memory: 320Mi
     limits:
       memory: 1Gi
 
@@ -181,7 +181,7 @@ fredAgents:
   resources:
     requests:
       cpu: 250m
-      memory: 512Mi
+      memory: 320Mi
     limits:
       memory: 1Gi
   config:
