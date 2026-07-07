@@ -1,0 +1,133 @@
+{{- if .Values.controlPlaneWorker.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "fredlab-infra.controlPlaneWorkerName" . }}
+  labels:
+    {{- include "fredlab-infra.labels" . | nindent 4 }}
+    app.kubernetes.io/component: control-plane-worker
+spec:
+  replicas: {{ .Values.controlPlaneWorker.replicaCount }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0          # no spare node on this cluster — don't create a surge pod
+      maxUnavailable: 1    # free the old pod's memory first, then schedule the new one
+  selector:
+    matchLabels:
+      {{- include "fredlab-infra.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: control-plane-worker
+  template:
+    metadata:
+      labels:
+        {{- include "fredlab-infra.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: control-plane-worker
+    spec:
+      enableServiceLinks: false
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: control-plane-worker
+          image: {{ printf "%s:%s" (required "controlPlaneWorker.image.repository is required when controlPlaneWorker.enabled=true." .Values.controlPlaneWorker.image.repository) (required "controlPlaneWorker.image.tag is required when controlPlaneWorker.enabled=true." .Values.controlPlaneWorker.image.tag) | quote }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          # Same image as the control-plane API, but run the Temporal worker entrypoint
+          # instead of the FastAPI server. The worker polls the `control-plane-lifecycle`
+          # task queue defined in the shared control-plane-config ConfigMap and executes
+          # the lifecycle/erasure (RGPD retention) workflows the backend enqueues.
+          command:
+            - python
+            - -m
+            - control_plane_backend.main_worker
+          # Env mirrors the control-plane-backend: the worker shares the same config and
+          # needs the same connections (Postgres, Keycloak, OpenFGA, OpenSearch, Temporal).
+          env:
+            - name: CONFIG_FILE
+              value: /etc/fred/control-plane/configuration.yaml
+            - name: ENV_FILE
+              value: /etc/fred/control-plane/empty.env
+            - name: POSTGRES_HOST
+              value: {{ include "fredlab-infra.postgresName" . }}
+            - name: POSTGRES_PORT
+              value: {{ .Values.postgresql.service.port | quote }}
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fredlab-infra.secretName" . }}
+                  key: POSTGRES_FRED_DB
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fredlab-infra.secretName" . }}
+                  key: POSTGRES_FRED_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fredlab-infra.secretName" . }}
+                  key: POSTGRES_FRED_PASSWORD
+            - name: FRED_POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fredlab-infra.secretName" . }}
+                  key: POSTGRES_FRED_PASSWORD
+            - name: DATABASE_URL
+              value: "postgresql+asyncpg://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@{{ include "fredlab-infra.postgresName" . }}:{{ .Values.postgresql.service.port }}/$(POSTGRES_DB)"
+            - name: KEYCLOAK_BASE_URL
+              value: {{ .Values.controlPlane.config.keycloakInternalUrl | quote }}
+            - name: KEYCLOAK_REALM
+              value: {{ .Values.controlPlane.config.keycloakRealm | quote }}
+            - name: OIDC_ISSUER_URL
+              value: {{ .Values.controlPlane.config.keycloakIssuerUrl | quote }}
+            - name: KEYCLOAK_CLIENT_ID
+              value: {{ .Values.controlPlane.config.keycloakClientId | quote }}
+            - name: KEYCLOAK_CONTROL_PLANE_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fredlab-infra.secretName" . }}
+                  key: KEYCLOAK_CONTROL_PLANE_CLIENT_SECRET
+            - name: KEYCLOAK_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fredlab-infra.secretName" . }}
+                  key: KEYCLOAK_CONTROL_PLANE_CLIENT_SECRET
+            - name: OPENFGA_API_URL
+              value: {{ .Values.controlPlane.config.openfgaUrl | quote }}
+            - name: OPENFGA_URL
+              value: {{ .Values.controlPlane.config.openfgaUrl | quote }}
+            - name: OPENFGA_STORE_NAME
+              value: {{ .Values.controlPlane.config.openfgaStoreName | quote }}
+            - name: OPENFGA_API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fredlab-infra.secretName" . }}
+                  key: OPENFGA_API_TOKEN
+            # In-cluster OpenSearch (security plugin disabled): value is ignored by the
+            # server but the OpenSearch store config requires OPENSEARCH_PASSWORD non-empty.
+            - name: OPENSEARCH_PASSWORD
+              value: {{ .Values.controlPlane.config.opensearch.password | quote }}
+            - name: TEMPORAL_ADDRESS
+              value: {{ .Values.controlPlane.config.temporalAddress | quote }}
+          ports:
+            # The worker serves no HTTP API — only Prometheus metrics on the port the
+            # shared control-plane ConfigMap configures (observability.prometheus.port).
+            - name: metrics
+              containerPort: {{ .Values.controlPlane.config.observability.prometheus.port }}
+          resources:
+            {{- toYaml .Values.controlPlaneWorker.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: control-plane-config
+              mountPath: /etc/fred/control-plane
+              readOnly: true
+      volumes:
+        - name: control-plane-config
+          configMap:
+            name: {{ include "fredlab-infra.controlPlaneConfigName" . }}
+{{- end }}

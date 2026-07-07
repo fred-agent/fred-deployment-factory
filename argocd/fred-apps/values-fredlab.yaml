@@ -15,6 +15,15 @@ controlPlane:
     # YYYYMMDD-swift-<shortsha>. Change = commit + push -> ArgoCD deploys it.
     tag: "20260628-swift-f27fe2f8" # release-tag: control-plane-backend
 
+controlPlaneWorker:
+  enabled: true
+  image:
+    # Same image as the backend (worker runs the control_plane_backend.main_worker
+    # entrypoint off it). Shares the control-plane-backend release-tag marker, so
+    # bin/fredlab-release.sh bumps this line together with the backend.
+    repository: europe-west1-docker.pkg.dev/fredlab-playground/fredlab-repo/control-plane-backend
+    tag: "20260628-swift-f27fe2f8" # release-tag: control-plane-backend
+
 fredAgents:
   enabled: true
   serviceAccount:

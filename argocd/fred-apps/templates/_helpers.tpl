@@ -55,6 +55,10 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- default "control-plane-config" .Values.controlPlane.configMapName | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 
+{{- define "fredlab-infra.controlPlaneWorkerName" -}}
+{{- default "control-plane-worker" .Values.controlPlaneWorker.fullnameOverride | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+
 {{- define "fredlab-infra.fredFrontendName" -}}
 {{- default "fred-frontend" .Values.fredFrontend.fullnameOverride | trunc 63 | trimSuffix "-" -}}
 {{- end -}}

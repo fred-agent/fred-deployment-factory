@@ -133,6 +133,29 @@ controlPlane:
         ingressPrefix: /evaluation/v1
   extraEnv: {}
 
+# control-plane-worker: the Temporal worker that drains the `control-plane-lifecycle`
+# task queue. The control-plane-backend (scheduler.backend=temporal) enqueues lifecycle
+# / erasure workflows (RGPD retention); this worker executes them. It runs the SAME image
+# as controlPlane with the `control_plane_backend.main_worker` entrypoint, and REUSES the
+# control-plane-config ConfigMap so scheduler backend, Temporal address + task queue and
+# all connections match the API. Serves no HTTP API (metrics only) — no Service/Ingress.
+# The control-plane backend uses no Workload Identity, so the worker needs no ServiceAccount.
+controlPlaneWorker:
+  enabled: false
+  fullnameOverride: control-plane-worker
+  replicaCount: 1
+  image:
+    # Same image as controlPlane.image (control-plane-backend). Pin to the tag you
+    # want the worker to run — usually identical to the backend tag.
+    repository: ""
+    tag: ""
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      memory: 1Gi
+
 # fred-agents runtime. Stateless app workload; the runtime store (LangGraph checkpointer
 # + session history) is the shared `fred` Postgres DB (durable). Ported verbatim from the
 # imperative fredlab-infra values so ArgoCD renders the identical workload. Enabled +

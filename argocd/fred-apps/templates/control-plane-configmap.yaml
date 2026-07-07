@@ -15,23 +15,23 @@ data:
       purge:
         default:
           mode: deferred_delete
-          retention: PT30S
+          # Demo value for the "other" GKE teams (a4ilab, cloudshift): erase 1 day
+          # after leaving a team. fredlab is overridden below to 5 minutes.
+          retention: P1D
           cancel_on_rejoin: true
+          # Platform retention CEILINGS (CTRLP-12 B3): "platform caps, team may only
+          # tighten". MUST be present — without a cap the resolver rejects any team
+          # override (retention cannot be loosened without a platform-set bound).
+          team_delete_grace: P30D
+          max_idle: P365D
 
         rules:
-          - rule_id: purge.team.swiftpost
+          - rule_id: purge.team.fredlab
             match:
-              team_id: swiftpost
+              team_id: fredlab
               trigger: member_removed
             action:
-              retention: PT60S
-
-          - rule_id: purge.team.northbridge
-            match:
-              team_id: northbridge
-              trigger: member_removed
-            action:
-              retention: PT120S
+              retention: PT5M
   configuration.yaml: |
     app:
       name: Control Plane Backend
