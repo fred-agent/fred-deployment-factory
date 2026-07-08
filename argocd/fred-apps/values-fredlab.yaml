@@ -61,10 +61,10 @@ fredFrontend:
     repository: europe-west1-docker.pkg.dev/fredlab-playground/fredlab-repo/fred-frontend
     tag: "20260707-swift-565d884f" # release-tag: fred-frontend
 
-# fred-agent-evaluator — STAGED (enabled once images are built + eval DB migrated → DF-4).
-# Internal-only (no ingress). Two distinct images. Judge switches to Vertex Gemini in DF-3.
+# fred-agent-evaluator (API + worker) — LIVE. Internal-only (no ingress). Two distinct
+# images. LLM-as-judge on Vertex Gemini via Workload Identity. DB migrated (alembic head).
 fredEvaluation:
-  enabled: false
+  enabled: true
   serviceAccount:
     # Same GSA as KF/agents (roles/aiplatform.user) — Workload Identity for the Vertex judge.
     gcpServiceAccount: fredlab-knowledge-flow-gcs@fredlab-playground.iam.gserviceaccount.com
@@ -73,12 +73,12 @@ fredEvaluation:
       project: fredlab-playground
   image:
     repository: europe-west1-docker.pkg.dev/fredlab-playground/fredlab-repo/fred-evaluation-api
-    tag: ""   # set to the built tag in DF-4 (bin/fredlab-build fred-evaluation-api <tag>)
+    tag: "20260708-swift-180a6ae"
 
 fredEvaluationWorker:
-  enabled: false
+  enabled: true
   serviceAccount:
     gcpServiceAccount: fredlab-knowledge-flow-gcs@fredlab-playground.iam.gserviceaccount.com
   image:
     repository: europe-west1-docker.pkg.dev/fredlab-playground/fredlab-repo/fred-evaluation-worker
-    tag: ""   # set to the built tag in DF-4 (bin/fredlab-build fred-evaluation-worker <tag>)
+    tag: "20260708-swift-180a6ae"
