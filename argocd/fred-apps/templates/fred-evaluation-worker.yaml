@@ -6,8 +6,11 @@ metadata:
   labels:
     {{- include "fredlab-infra.labels" . | nindent 4 }}
     app.kubernetes.io/component: fred-evaluation-worker
-# No Workload Identity annotation: the worker calls Mistral over HTTPS (MISTRAL_API_KEY)
-# and Temporal/Postgres in-cluster; it needs no GCS/Vertex access.
+  {{- with .Values.fredEvaluationWorker.serviceAccount.gcpServiceAccount }}
+  annotations:
+    # Workload Identity → Vertex AI (aiplatform.user): the worker runs the LLM-as-judge.
+    iam.gke.io/gcp-service-account: {{ . | quote }}
+  {{- end }}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -82,6 +85,14 @@ spec:
                 secretKeyRef:
                   name: {{ include "fredlab-infra.secretName" . }}
                   key: LANGFUSE_SECRET_KEY
+            # Vertex AI (LLM-as-judge). litellm reads these for `vertex_ai/*` routing;
+            # credentials come from ADC (Workload Identity). Project omitted → ADC default.
+            {{- with .Values.fredEvaluation.config.vertex.project }}
+            - name: VERTEXAI_PROJECT
+              value: {{ . | quote }}
+            {{- end }}
+            - name: VERTEXAI_LOCATION
+              value: {{ .Values.fredEvaluation.config.vertex.location | quote }}
           resources:
             {{- toYaml .Values.fredEvaluationWorker.resources | nindent 12 }}
           securityContext:

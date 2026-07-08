@@ -61,19 +61,17 @@ data:
     worker:
       max_concurrent_cases: {{ .Values.fredEvaluation.config.worker.maxConcurrentCases }}
       poll_interval_seconds: {{ .Values.fredEvaluation.config.worker.pollIntervalSeconds }}
+      # LLM-as-judge via Vertex AI (Application Default Credentials / Workload Identity) —
+      # same path as knowledge-flow/fred-agents, no external API key, no egress. Requires
+      # the `vertex_ai` provider (fred-agent-evaluator #27) and the eval pod bound to a
+      # Vertex GSA (serviceAccount.gcpServiceAccount) + VERTEXAI_PROJECT/LOCATION env.
       judge_profiles:
-        mistral-small:
-          provider: openai
-          model: openai/mistral-small-2508
-          settings:
-            base_url: https://api.mistral.ai/v1
-            api_key_env: MISTRAL_API_KEY
-        mistral-medium:
-          provider: openai
-          model: openai/mistral-medium-2508
-          settings:
-            base_url: https://api.mistral.ai/v1
-            api_key_env: MISTRAL_API_KEY
+        gemini-flash:
+          provider: vertex_ai
+          name: gemini-2.5-flash
+        gemini-pro:
+          provider: vertex_ai
+          name: gemini-2.5-pro
 
     scheduler:
       backend: "temporal"

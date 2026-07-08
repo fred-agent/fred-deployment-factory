@@ -433,9 +433,10 @@ fredEvaluation:
   configMapName: fred-evaluation-config
   replicaCount: 1
   serviceAccount:
-    # Plain SA today (judge via Mistral HTTPS). DF-3 adds a Workload-Identity GSA
-    # (aiplatform.user) here to move the judge to Vertex Gemini.
     name: fred-evaluation-backend
+    # Bind to a GSA with roles/aiplatform.user (Workload Identity) so the LLM-as-judge
+    # reaches Vertex Gemini via ADC — no external API key. Set in values-fredlab.yaml.
+    gcpServiceAccount: ""
   image:
     # europe-west1-docker.pkg.dev/<project-id>/fredlab-repo/fred-evaluation-api
     repository: ""
@@ -468,6 +469,11 @@ fredEvaluation:
     # fredlab has no Langfuse — plain logging tracer.
     tracer: logging
     langfuseHost: http://langfuse:3000
+    # Vertex AI for the LLM-as-judge (litellm `vertex_ai/*` routing). Empty project →
+    # resolved from ADC (Workload Identity). Location must be a Vertex AI region (same as KF).
+    vertex:
+      project: ""
+      location: europe-west4
     worker:
       maxConcurrentCases: 4
       pollIntervalSeconds: 5
@@ -481,6 +487,8 @@ fredEvaluationWorker:
   replicaCount: 1
   serviceAccount:
     name: fred-evaluation-worker
+    # Same GSA as the API (aiplatform.user) — the worker runs the judge. Set in values-fredlab.yaml.
+    gcpServiceAccount: ""
   image:
     # europe-west1-docker.pkg.dev/<project-id>/fredlab-repo/fred-evaluation-worker
     repository: ""
