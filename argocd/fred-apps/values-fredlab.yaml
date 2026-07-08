@@ -65,12 +65,20 @@ fredFrontend:
 # Internal-only (no ingress). Two distinct images. Judge switches to Vertex Gemini in DF-3.
 fredEvaluation:
   enabled: false
+  serviceAccount:
+    # Same GSA as KF/agents (roles/aiplatform.user) — Workload Identity for the Vertex judge.
+    gcpServiceAccount: fredlab-knowledge-flow-gcs@fredlab-playground.iam.gserviceaccount.com
+  config:
+    vertex:
+      project: fredlab-playground
   image:
     repository: europe-west1-docker.pkg.dev/fredlab-playground/fredlab-repo/fred-evaluation-api
     tag: ""   # set to the built tag in DF-4 (bin/fredlab-build fred-evaluation-api <tag>)
 
 fredEvaluationWorker:
   enabled: false
+  serviceAccount:
+    gcpServiceAccount: fredlab-knowledge-flow-gcs@fredlab-playground.iam.gserviceaccount.com
   image:
     repository: europe-west1-docker.pkg.dev/fredlab-playground/fredlab-repo/fred-evaluation-worker
     tag: ""   # set to the built tag in DF-4 (bin/fredlab-build fred-evaluation-worker <tag>)

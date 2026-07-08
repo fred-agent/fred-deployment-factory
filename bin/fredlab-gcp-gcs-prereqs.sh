@@ -30,9 +30,9 @@ GSA_NAME="${GSA_NAME:-fredlab-knowledge-flow-gcs}"
 GSA_EMAIL="${GSA_EMAIL:-${GSA_NAME}@${PROJECT_ID}.iam.gserviceaccount.com}"
 
 # Space-separated list of Kubernetes service accounts allowed to impersonate the GSA.
-# fred-agents is included so the agents runtime can reach Vertex AI (aiplatform.user)
-# via Workload Identity.
-KSA_NAMES="${KSA_NAMES:-knowledge-flow-backend knowledge-flow-worker fred-agents}"
+# fred-agents + the fred-evaluation SAs are included so those runtimes can reach Vertex AI
+# (aiplatform.user) via Workload Identity — the evaluator runs an LLM-as-judge on Vertex.
+KSA_NAMES="${KSA_NAMES:-knowledge-flow-backend knowledge-flow-worker fred-agents fred-evaluation-backend fred-evaluation-worker}"
 
 CONTENT_BUCKETS=("${CONTENT_PREFIX}-documents" "${CONTENT_PREFIX}-objects" "${CONTENT_PREFIX}-files")
 BUCKETS=("${CONTENT_BUCKETS[@]}" "${FS_BUCKET}")
