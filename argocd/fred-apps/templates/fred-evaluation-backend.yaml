@@ -1,0 +1,142 @@
+{{- if .Values.fredEvaluation.enabled }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ .Values.fredEvaluation.serviceAccount.name }}
+  labels:
+    {{- include "fredlab-infra.labels" . | nindent 4 }}
+    app.kubernetes.io/component: fred-evaluation-backend
+# No Workload Identity annotation: the evaluator uses no GCS/Vertex. Its judge models
+# call Mistral over HTTPS with MISTRAL_API_KEY, so a plain ServiceAccount is enough.
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "fredlab-infra.fredEvaluationName" . }}
+  labels:
+    {{- include "fredlab-infra.labels" . | nindent 4 }}
+    app.kubernetes.io/component: fred-evaluation-backend
+spec:
+  type: {{ .Values.fredEvaluation.service.type }}
+  ports:
+    - name: http
+      port: {{ .Values.fredEvaluation.service.port }}
+      targetPort: http
+  selector:
+    {{- include "fredlab-infra.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: fred-evaluation-backend
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "fredlab-infra.fredEvaluationName" . }}
+  labels:
+    {{- include "fredlab-infra.labels" . | nindent 4 }}
+    app.kubernetes.io/component: fred-evaluation-backend
+spec:
+  replicas: {{ .Values.fredEvaluation.replicaCount }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0          # no spare node on this cluster — don't create a surge pod
+      maxUnavailable: 1    # free the old pod's memory first, then schedule the new one
+  selector:
+    matchLabels:
+      {{- include "fredlab-infra.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: fred-evaluation-backend
+  template:
+    metadata:
+      labels:
+        {{- include "fredlab-infra.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: fred-evaluation-backend
+    spec:
+      serviceAccountName: {{ .Values.fredEvaluation.serviceAccount.name }}
+      enableServiceLinks: false
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: fred-evaluation-backend
+          image: {{ printf "%s:%s" (required "fredEvaluation.image.repository is required when fredEvaluation.enabled=true." .Values.fredEvaluation.image.repository) (required "fredEvaluation.image.tag is required when fredEvaluation.enabled=true." .Values.fredEvaluation.image.tag) | quote }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          # Image ENTRYPOINT is `uvicorn fred_evaluation_backend.main:create_app --factory`
+          # with a baked CMD binding --port 8336 --host 0.0.0.0, so no command override.
+          env:
+            - name: CONFIG_FILE
+              value: /etc/fred/evaluation/configuration.yaml
+            - name: ENV_FILE
+              value: /etc/fred/evaluation/empty.env
+            # The evaluator's PostgresStoreConfig reads FRED_POSTGRES_PASSWORD; point it
+            # at the dedicated `evaluation` database password, NOT the shared `fred` one.
+            - name: FRED_POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fredlab-infra.secretName" . }}
+                  key: POSTGRES_EVALUATION_PASSWORD
+            - name: KEYCLOAK_EVALUATION_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fredlab-infra.secretName" . }}
+                  key: KEYCLOAK_EVALUATION_CLIENT_SECRET
+            # Mistral judge key (analysis + judge_profiles). Mistral wiring is still TBD;
+            # empty is tolerated until judging runs.
+            - name: MISTRAL_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fredlab-infra.secretName" . }}
+                  key: MISTRAL_API_KEY
+            # Langfuse keys are only consumed when observability.tracer=langfuse.
+            - name: LANGFUSE_PUBLIC_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fredlab-infra.secretName" . }}
+                  key: LANGFUSE_PUBLIC_KEY
+            - name: LANGFUSE_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fredlab-infra.secretName" . }}
+                  key: LANGFUSE_SECRET_KEY
+          ports:
+            - name: http
+              containerPort: {{ .Values.fredEvaluation.containerPort }}
+          startupProbe:
+            httpGet:
+              path: {{ .Values.fredEvaluation.health.path | quote }}
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.fredEvaluation.health.path | quote }}
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.fredEvaluation.health.path | quote }}
+              port: http
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 6
+          resources:
+            {{- toYaml .Values.fredEvaluation.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: fred-evaluation-config
+              mountPath: /etc/fred/evaluation
+              readOnly: true
+      volumes:
+        - name: fred-evaluation-config
+          configMap:
+            name: {{ include "fredlab-infra.fredEvaluationConfigName" . }}
+{{- end }}
