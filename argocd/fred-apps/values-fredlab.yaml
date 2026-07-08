@@ -60,3 +60,17 @@ fredFrontend:
   image:
     repository: europe-west1-docker.pkg.dev/fredlab-playground/fredlab-repo/fred-frontend
     tag: "20260707-swift-565d884f" # release-tag: fred-frontend
+
+# fred-agent-evaluator — STAGED (enabled once images are built + eval DB migrated → DF-4).
+# Internal-only (no ingress). Two distinct images. Judge switches to Vertex Gemini in DF-3.
+fredEvaluation:
+  enabled: false
+  image:
+    repository: europe-west1-docker.pkg.dev/fredlab-playground/fredlab-repo/fred-evaluation-api
+    tag: ""   # set to the built tag in DF-4 (bin/fredlab-build fred-evaluation-api <tag>)
+
+fredEvaluationWorker:
+  enabled: false
+  image:
+    repository: europe-west1-docker.pkg.dev/fredlab-playground/fredlab-repo/fred-evaluation-worker
+    tag: ""   # set to the built tag in DF-4 (bin/fredlab-build fred-evaluation-worker <tag>)

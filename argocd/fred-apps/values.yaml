@@ -27,6 +27,11 @@ postgresql:
   fred:
     database: fred
     user: fred
+  # Dedicated evaluation database (password lives in the infra Secret as
+  # POSTGRES_EVALUATION_PASSWORD, wired to the eval pods via FRED_POSTGRES_PASSWORD).
+  evaluation:
+    database: evaluation
+    user: evaluation
 
 controlPlane:
   enabled: false
@@ -417,3 +422,72 @@ fredFrontend:
       healthyThreshold: 1
       unhealthyThreshold: 3
 
+
+# fred-agent-evaluator backend (API) + worker. Ported from the imperative fredlab-infra
+# layer to the GitOps Apps chart. FastAPI on :8336 (/evaluation/v1), reached IN-CLUSTER by
+# the control-plane (NO ingress — internal-only). Two DISTINCT images (api != worker).
+# No OpenFGA/OpenSearch/GCS in the base config. Enabled + images pinned in values-fredlab.yaml.
+fredEvaluation:
+  enabled: false
+  fullnameOverride: fred-evaluation-backend
+  configMapName: fred-evaluation-config
+  replicaCount: 1
+  serviceAccount:
+    # Plain SA today (judge via Mistral HTTPS). DF-3 adds a Workload-Identity GSA
+    # (aiplatform.user) here to move the judge to Vertex Gemini.
+    name: fred-evaluation-backend
+  image:
+    # europe-west1-docker.pkg.dev/<project-id>/fredlab-repo/fred-evaluation-api
+    repository: ""
+    tag: ""
+  service:
+    type: ClusterIP
+    port: 8080
+  containerPort: 8336
+  health:
+    path: /evaluation/v1/healthz
+  resources:
+    requests:
+      cpu: 250m
+      memory: 320Mi
+    limits:
+      memory: 1Gi
+  config:
+    appBaseUrl: /evaluation/v1
+    logLevel: info
+    keycloakIssuerUrl: https://keycloak.playground.fredlab.dev/realms/app
+    keycloakClientId: evaluation
+    userClientId: app
+    authorizedOrigins:
+      - https://studio.playground.fredlab.dev
+    controlPlaneBaseUrl: http://control-plane-backend:8080/control-plane/v1
+    runtimeBaseUrl: http://fred-agents:8080
+    temporalAddress: temporal:7233
+    temporalNamespace: default
+    temporalTaskQueue: evaluation
+    # fredlab has no Langfuse — plain logging tracer.
+    tracer: logging
+    langfuseHost: http://langfuse:3000
+    worker:
+      maxConcurrentCases: 4
+      pollIntervalSeconds: 5
+
+# fred-agent-evaluator worker: Temporal worker draining the `evaluation` queue. SEPARATE
+# image from the API (main_worker entrypoint), REUSES the fred-evaluation-config ConfigMap.
+# No Service/Ingress.
+fredEvaluationWorker:
+  enabled: false
+  fullnameOverride: fred-evaluation-worker
+  replicaCount: 1
+  serviceAccount:
+    name: fred-evaluation-worker
+  image:
+    # europe-west1-docker.pkg.dev/<project-id>/fredlab-repo/fred-evaluation-worker
+    repository: ""
+    tag: ""
+  resources:
+    requests:
+      cpu: 250m
+      memory: 384Mi
+    limits:
+      memory: 1Gi

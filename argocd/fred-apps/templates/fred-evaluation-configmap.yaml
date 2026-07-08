@@ -1,0 +1,84 @@
+{{- if or .Values.fredEvaluation.enabled .Values.fredEvaluationWorker.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "fredlab-infra.fredEvaluationConfigName" . }}
+  labels:
+    {{- include "fredlab-infra.labels" . | nindent 4 }}
+    app.kubernetes.io/component: fred-evaluation-backend
+data:
+  empty.env: ""
+  configuration.yaml: |
+    app:
+      name: "Fred Evaluation Backend"
+      base_url: {{ .Values.fredEvaluation.config.appBaseUrl | quote }}
+      address: 0.0.0.0
+      port: {{ .Values.fredEvaluation.containerPort }}
+      log_level: {{ .Values.fredEvaluation.config.logLevel | quote }}
+
+    storage:
+      postgres:
+        host: {{ include "fredlab-infra.postgresName" . | quote }}
+        port: {{ .Values.postgresql.service.port }}
+        # Dedicated `evaluation` database (not the shared `fred` DB). The password is
+        # read from FRED_POSTGRES_PASSWORD by fred-core's PostgresStoreConfig; the
+        # Deployment wires that env to the POSTGRES_EVALUATION_PASSWORD secret key.
+        database: {{ .Values.postgresql.evaluation.database | quote }}
+        username: {{ .Values.postgresql.evaluation.user | quote }}
+        pool_pre_ping: true
+
+    security:
+      m2m:
+        enabled: true
+        client_id: {{ .Values.fredEvaluation.config.keycloakClientId | quote }}
+        realm_url: {{ .Values.fredEvaluation.config.keycloakIssuerUrl | quote }}
+        secret_env_var: KEYCLOAK_EVALUATION_CLIENT_SECRET
+      user:
+        enabled: true
+        client_id: {{ .Values.fredEvaluation.config.userClientId | quote }}
+        realm_url: {{ .Values.fredEvaluation.config.keycloakIssuerUrl | quote }}
+      authorized_origins:
+        {{- range .Values.fredEvaluation.config.authorizedOrigins }}
+        - {{ . | quote }}
+        {{- end }}
+
+    observability:
+      tracer: {{ .Values.fredEvaluation.config.tracer | quote }}
+      langfuse:
+        host: {{ .Values.fredEvaluation.config.langfuseHost | quote }}
+      kpi:
+        log:
+          enabled: true
+        prometheus:
+          enabled: false
+        opensearch:
+          enabled: false
+
+    control_plane:
+      base_url: {{ .Values.fredEvaluation.config.controlPlaneBaseUrl | quote }}
+      runtime_base_url: {{ .Values.fredEvaluation.config.runtimeBaseUrl | quote }}
+
+    worker:
+      max_concurrent_cases: {{ .Values.fredEvaluation.config.worker.maxConcurrentCases }}
+      poll_interval_seconds: {{ .Values.fredEvaluation.config.worker.pollIntervalSeconds }}
+      judge_profiles:
+        mistral-small:
+          provider: openai
+          model: openai/mistral-small-2508
+          settings:
+            base_url: https://api.mistral.ai/v1
+            api_key_env: MISTRAL_API_KEY
+        mistral-medium:
+          provider: openai
+          model: openai/mistral-medium-2508
+          settings:
+            base_url: https://api.mistral.ai/v1
+            api_key_env: MISTRAL_API_KEY
+
+    scheduler:
+      backend: "temporal"
+      temporal:
+        host: {{ .Values.fredEvaluation.config.temporalAddress | quote }}
+        namespace: {{ .Values.fredEvaluation.config.temporalNamespace | quote }}
+        task_queue: {{ .Values.fredEvaluation.config.temporalTaskQueue | quote }}
+{{- end }}
