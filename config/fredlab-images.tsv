@@ -14,7 +14,7 @@ control-plane-backend	control-plane-backend	$FRED_REPO_DIR	apps/control-plane-ba
 frontend	fred-frontend	$FRED_REPO_DIR	apps/frontend/dockerfiles/Dockerfile-prod	.
 fred-agents	fred-agents	$FRED_REPO_DIR	apps/fred-agents/dockerfiles/Dockerfile-prod	.
 knowledge-flow-backend	knowledge-flow-backend	$FRED_REPO_DIR	apps/knowledge-flow-backend/dockerfiles/Dockerfile-prod	.
-fred-evaluation-api	fred-evaluation-api	$HOME/fred-agent-evaluator	apps/fred-evaluation-backend/dockerfiles/Dockerfile-api	.
-fred-evaluation-worker	fred-evaluation-worker	$HOME/fred-agent-evaluator	apps/fred-evaluation-backend/dockerfiles/Dockerfile-worker	.
+fred-evaluation-api	fred-evaluation-api	$HOME/Fred/fred-agent-evaluator	apps/fred-evaluation-backend/dockerfiles/Dockerfile-api	.
+fred-evaluation-worker	fred-evaluation-worker	$HOME/Fred/fred-agent-evaluator	apps/fred-evaluation-backend/dockerfiles/Dockerfile-worker	.
 dt-agents	dt-agents	$HOME/dt-agents	dockerfiles/Dockerfile	.
 fred-samples	fred-samples	$HOME/fred-samples	dockerfiles/Dockerfile	.
