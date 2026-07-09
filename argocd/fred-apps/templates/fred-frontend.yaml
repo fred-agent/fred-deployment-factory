@@ -58,6 +58,8 @@ spec:
               value: {{ .Values.fredFrontend.upstreams.fredAgents | quote }}
             - name: FRONTEND_KNOWLEDGE_FLOW_UPSTREAM
               value: {{ .Values.fredFrontend.upstreams.knowledgeFlow | quote }}
+            - name: FRONTEND_EVALUATION_UPSTREAM
+              value: {{ .Values.fredFrontend.upstreams.evaluation | quote }}
             - name: FRONTEND_CLIENT_MAX_BODY_SIZE
               value: {{ .Values.fredFrontend.clientMaxBodySize | quote }}
           ports:
