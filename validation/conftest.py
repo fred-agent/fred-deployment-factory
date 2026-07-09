@@ -12,6 +12,7 @@ client. The user/role/team matrix and endpoints live in `factory_config.py`.
 
 from __future__ import annotations
 
+import json
 import tempfile
 from pathlib import Path
 
@@ -19,7 +20,7 @@ import httpx
 import pytest
 from fred_core.cli.auth import KeycloakLoginConfig, KeycloakUserSessionManager
 
-from factory_config import CLIENT_ID, CP_URL, PASSWORD, REALM_URL, USERS, FactoryUser
+from factory_config import CLIENT_ID, CP_URL, KF_URL, PASSWORD, REALM_URL, USERS, FactoryUser
 
 
 @pytest.fixture(scope="session")
@@ -121,14 +122,74 @@ def cp():
         c.close()
 
 
+class KF:
+    """Thin knowledge-flow-backend client bound to one user's bearer token.
+
+    Mirrors `CP`. Separate from it because knowledge-flow-backend is a distinct
+    process (its own port/base_url, see `factory_config.KF_URL`) - a test that
+    doesn't need it shouldn't require it running.
+    """
+
+    def __init__(self, username: str) -> None:
+        self.username = username
+        self._client = httpx.Client(
+            base_url=KF_URL,
+            headers={"Authorization": f"Bearer {login(username)}"},
+            timeout=15.0,
+        )
+
+    def get(self, path: str, **kw) -> httpx.Response:
+        return self._client.get(path, **kw)
+
+    def post(self, path: str, **kw) -> httpx.Response:
+        return self._client.post(path, **kw)
+
+    def close(self) -> None:
+        self._client.close()
+
+
+@pytest.fixture(scope="session")
+def kf():
+    """Factory `kf(username) -> KF` (one client per user, auto-closed).
+
+    Unlike `cp`, reachability is checked lazily on first use (not at session
+    start) - knowledge-flow-backend is only required by the scenarios that
+    actually import this fixture.
+    """
+    clients: dict[str, KF] = {}
+    checked = False
+
+    def _factory(username: str) -> KF:
+        nonlocal checked
+        if not checked:
+            try:
+                httpx.get(f"{KF_URL}/healthz", timeout=3.0).raise_for_status()
+            except Exception as exc:  # noqa: BLE001
+                pytest.fail(
+                    f"knowledge-flow-backend not reachable at {KF_URL}/healthz ({exc}). "
+                    f"Start it manually (see validation/README.md) or set "
+                    f"FRED_KNOWLEDGE_FLOW_URL if it runs elsewhere.",
+                    pytrace=False,
+                )
+            checked = True
+        if username not in clients:
+            clients[username] = KF(username)
+        return clients[username]
+
+    yield _factory
+    for c in clients.values():
+        c.close()
+
+
 def pytest_report_header(config) -> list[str]:
     """Print the 'world under test' at the top of every run, so a failing run is
     understood at a glance — which stack, which team, which agent."""
-    from factory_config import AGENT_TAG, CP_URL, REALM_URL, TEST_TEAM, USERS
+    from factory_config import AGENT_TAG, CP_URL, KF_URL, REALM_URL, TEST_TEAM, USERS
 
     return [
         "fred platform validation — world under test:",
         f"  control-plane : {CP_URL}",
+        f"  knowledge-flow: {KF_URL} (only required by content-scope scenarios)",
         f"  keycloak realm: {REALM_URL}",
         f"  users         : {', '.join(sorted(USERS))}",
         f"  test team     : {TEST_TEAM}",
@@ -136,20 +197,37 @@ def pytest_report_header(config) -> list[str]:
     ]
 
 
+CLAIM_GROUPS_FILE = Path(__file__).parent / ".claim_groups.json"
+
+
 def pytest_collection_modifyitems(items) -> None:
     """Show each scenario as a plain-English sentence (its docstring) instead of the
     function name — e.g. 'bob (member) CANNOT enroll in a collaborative team'.
 
-    Docstrings may use the tokens {agent} and {team}; they are substituted from the
-    single source of truth in factory_config, so the concrete agent/team name shows
-    up in the test name itself (change the constant → every line updates)."""
+    Docstrings may use the tokens {agent} and {team} (single source of truth in
+    factory_config), plus {<param>} for any of the test's own parametrize
+    arguments (e.g. {username} on a `@pytest.mark.parametrize("username", ...)`
+    test) — substituted from that test instance's own callspec, so the concrete
+    value shows up in the sentence itself instead of only in the trailing
+    `[username=...]` summary.
+
+    Also writes a small sidecar mapping display-name -> source file
+    (.claim_groups.json), since overwriting `item._nodeid` below loses the
+    file/classname info the JUnit XML plugin would otherwise use for grouping.
+    `generate_report.py` reads this to group results by claim area without
+    needing any change to the test files themselves."""
     from factory_config import AGENT_TAG, TEST_TEAM
 
+    claim_groups: dict[str, str] = {}
     for item in items:
         doc = (getattr(item.obj, "__doc__", "") or "").strip()
         desc = " ".join(doc.split()) if doc else item.name
         desc = desc.replace("{agent}", AGENT_TAG).replace("{team}", TEST_TEAM)
         callspec = getattr(item, "callspec", None)
         if callspec is not None and callspec.params:
+            for key, value in callspec.params.items():
+                desc = desc.replace("{" + key + "}", str(value))
             desc += " [" + ", ".join(f"{k}={v}" for k, v in callspec.params.items()) + "]"
+        claim_groups[desc] = Path(item.location[0]).name
         item._nodeid = desc
+    CLAIM_GROUPS_FILE.write_text(json.dumps(claim_groups, indent=2))

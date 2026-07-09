@@ -341,6 +341,43 @@ ensure_team_role_closure() {
   esac
 }
 
+# AUTHZ-05 (fred FRED-AUTHORIZATION-TARGET-MODEL-RFC): platform_admin/platform_observer
+# are stored-only OpenFGA relations on the singleton organization - never derived from
+# Keycloak app_roles. Seeded here from a user's `platform_roles`, independent of
+# `app_roles` (legacy Keycloak admin/editor/viewer), so demo users can isolate the new
+# target relation from every legacy escalation path.
+ensure_platform_role_tuple() {
+  local user="$1"
+  local relation="$2"
+  local object="organization:fred"
+
+  if tuple_exists "$user" "$relation" "$object"; then
+    ((SKIPPED_TUPLES+=1))
+    return 0
+  fi
+
+  write_tuple "$user" "$relation" "$object"
+  ((ADDED_TUPLES+=1))
+  CHANGED=1
+}
+
+ensure_platform_role_closure() {
+  local user="$1"
+  local role="$2"
+
+  case "$role" in
+    admin)
+      ensure_platform_role_tuple "$user" platform_admin
+      ;;
+    observer)
+      ensure_platform_role_tuple "$user" platform_observer
+      ;;
+    *)
+      die "unsupported platform role '${role}' in demo identity config (supported: admin, observer)"
+      ;;
+  esac
+}
+
 require_cmd curl
 require_cmd jq
 
@@ -409,9 +446,11 @@ jq -e '
     ) and
     all((.team_roles.member // [])[]?; type == "string" and length > 0) and
     all((.team_roles.manager // [])[]?; type == "string" and length > 0) and
-    all((.team_roles.owner // [])[]?; type == "string" and length > 0)
+    all((.team_roles.owner // [])[]?; type == "string" and length > 0) and
+    ((.platform_roles // [])|type=="array") and
+    all((.platform_roles // [])[]?; type == "string" and (. == "admin" or . == "observer"))
   )
-' "$DEMO_IDENTITY_CONFIG_FILE" >/dev/null || die "invalid demo identity config format: each user must define username, optional teams[], and optional team_roles.{member,manager,owner}[]"
+' "$DEMO_IDENTITY_CONFIG_FILE" >/dev/null || die "invalid demo identity config format: each user must define username, optional teams[], optional team_roles.{member,manager,owner}[], and optional platform_roles[] (admin|observer only)"
 
 log "using demo identity config file '${DEMO_IDENTITY_CONFIG_FILE}'"
 
@@ -471,6 +510,26 @@ done < <(
         (($u.team_roles.manager // [])[]? | [$name, "manager", .]) ,
         (($u.team_roles.owner // [])[]? | [$name, "owner", .])
       )
+    | @tsv
+  ' "$DEMO_IDENTITY_CONFIG_FILE"
+)
+
+while IFS=$'\t' read -r username role; do
+  local_user_id=""
+  [[ -n "$username" ]] || continue
+  [[ -n "$role" ]] || continue
+
+  local_user_id="$(kc_user_id_by_username "$username")"
+  ensure_platform_role_closure "user:${local_user_id}" "$role"
+
+  if is_truthy "$OPENFGA_SEED_INCLUDE_USERNAME_USERS"; then
+    ensure_platform_role_closure "user:${username}" "$role"
+  fi
+done < <(
+  jq -r '
+    .users[]? as $u
+    | ($u.username // empty) as $name
+    | (($u.platform_roles // [])[]? | [$name, .])
     | @tsv
   ' "$DEMO_IDENTITY_CONFIG_FILE"
 )

@@ -143,6 +143,78 @@
       "teams": [
         "swiftpost"
       ]
+    },
+    {
+      "username": "oscar",
+      "first_name": "Oscar",
+      "last_name": "Reyes",
+      "email": "oscar@app.com",
+      "password": "Azerty123_",
+      "enabled": true,
+      "_purpose": "Legacy Keycloak admin, member of NO team. Proves the AUTHZ-05 fix: unlike alice, oscar has no legitimate team role anywhere, so any team access he gets is pure escalation.",
+      "app_roles": [
+        "admin"
+      ],
+      "teams": []
+    },
+    {
+      "username": "nina",
+      "first_name": "Nina",
+      "last_name": "Okafor",
+      "email": "nina@app.com",
+      "password": "Azerty123_",
+      "enabled": true,
+      "_purpose": "Authenticated, zero app_roles, zero teams - the floor case. Every platform capability must be denied; only the personal team is visible.",
+      "app_roles": [],
+      "teams": []
+    },
+    {
+      "username": "derek",
+      "first_name": "Derek",
+      "last_name": "Voss",
+      "email": "derek@app.com",
+      "password": "Azerty123_",
+      "enabled": true,
+      "_purpose": "Legacy Keycloak admin who is ALSO a legitimate manager of northbridge only. Proves the fix doesn't overshoot: northbridge access must still work; fredlab/swiftpost must still be denied.",
+      "app_roles": [
+        "admin"
+      ],
+      "team_roles": {
+        "manager": [
+          "northbridge"
+        ]
+      },
+      "teams": [
+        "northbridge"
+      ]
+    },
+    {
+      "username": "priya",
+      "first_name": "Priya",
+      "last_name": "Nair",
+      "email": "priya@app.com",
+      "password": "Azerty123_",
+      "enabled": true,
+      "_purpose": "AUTHZ-05 target model, pure form: OpenFGA platform_admin relation only - no legacy app_role, no team. Isolates the new relation from every legacy escalation path.",
+      "app_roles": [],
+      "platform_roles": [
+        "admin"
+      ],
+      "teams": []
+    },
+    {
+      "username": "quinn",
+      "first_name": "Quinn",
+      "last_name": "Ahmadi",
+      "email": "quinn@app.com",
+      "password": "Azerty123_",
+      "enabled": true,
+      "_purpose": "AUTHZ-05 target model, pure form: OpenFGA platform_observer relation only - no legacy app_role, no team.",
+      "app_roles": [],
+      "platform_roles": [
+        "observer"
+      ],
+      "teams": []
     }
   ]
 }

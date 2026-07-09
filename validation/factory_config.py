@@ -29,6 +29,10 @@ CP_URL = os.getenv(
 
 
 RUNTIME_PUBLIC_BASE = os.getenv("FRED_RUNTIME_PUBLIC_BASE", "http://localhost:8000").rstrip("/")
+# knowledge-flow-backend, started manually per validation/README.md like the other
+# swift apps. Default matches its documented standalone port/base_url (README.md,
+# configuration_local_mock.yaml): 8111 / "/knowledge-flow/v1".
+KF_URL = os.getenv("FRED_KNOWLEDGE_FLOW_URL", "http://localhost:8111/knowledge-flow/v1").rstrip("/")
 CONFIG_PATH = Path(
     os.getenv(
         "FRED_CONFIG_PATH",
@@ -57,10 +61,29 @@ class FactoryUser:
     app_roles: tuple[str, ...]
     teams: tuple[str, ...]
     team_roles: dict[str, str]  # team -> owner/manager (membership is implicit)
+    # AUTHZ-05 target model (fred FRED-AUTHORIZATION-TARGET-MODEL-RFC): stored-only
+    # OpenFGA relations on the singleton organization, never derived from app_roles.
+    # Values: "admin" -> platform_admin, "observer" -> platform_observer.
+    platform_roles: tuple[str, ...] = ()
 
     @property
     def is_global_admin(self) -> bool:
+        """Legacy Keycloak `admin` app role - NOT the AUTHZ-05 target `platform_admin`.
+
+        A global admin is not automatically a team owner/manager (see AUTHZ-05
+        §24.2); use `relation_in`/`can_enroll_in` for team-scoped questions.
+        """
         return "admin" in self.app_roles
+
+    @property
+    def is_platform_admin(self) -> bool:
+        """AUTHZ-05 target `platform_admin` relation (stored, not Keycloak-derived)."""
+        return "admin" in self.platform_roles
+
+    @property
+    def is_platform_observer(self) -> bool:
+        """AUTHZ-05 target `platform_observer` relation (stored, not Keycloak-derived)."""
+        return "observer" in self.platform_roles
 
     def relation_in(self, team: str) -> str | None:
         """owner > manager > member (member implied by membership in `teams`)."""
@@ -86,6 +109,7 @@ def load_users() -> dict[str, FactoryUser]:
             app_roles=tuple(u.get("app_roles", [])),
             teams=tuple(u.get("teams", [])),
             team_roles=roles_by_team,
+            platform_roles=tuple(u.get("platform_roles", [])),
         )
     return out
 

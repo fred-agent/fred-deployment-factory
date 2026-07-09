@@ -7,10 +7,21 @@ set -euo pipefail
 # This script ONLY inspects configuration/state and never writes anything.
 # It checks:
 # 1) Keycloak realm/clients/users/groups
-# 2) App roles, groups scope mapper, service-account rights
-# 3) OpenFGA store presence + team memberships from demo identity config
+# 2) App roles (legacy Keycloak admin/editor/viewer), groups scope mapper,
+#    service-account rights
+# 3) OpenFGA store presence + authorization-model shape (AUTHZ-05 target
+#    relations present, no platform-to-team escalation) + team memberships
+#    and platform roles (platform_admin/platform_observer) from demo identity
+#    config
 # 4) Optional Postgres agent IDs + owner coverage for Alice (read-only)
 # 5) Langfuse endpoints + S3 bucket diagnostics
+#
+# On users with NO app_roles and/or NO platform_roles: this is a real, valid,
+# common state (AUTHZ-05) - not every demo user is expected to hold a legacy
+# Keycloak role. See "Why these exact users" near the top of
+# validation/README.md for the reasoning; this script validates users AGAINST
+# whatever configuration.yaml actually declares for them, it does not assume
+# every user needs an app role.
 # -----------------------------------------------------------------------------
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
@@ -76,7 +87,14 @@ declare -A EXPECTED_TEAMS=()
 declare -A EXPECTED_MANAGER_TEAMS=()
 declare -A EXPECTED_OWNER_TEAMS=()
 declare -A EXPECTED_APP_ROLES=()
+declare -A EXPECTED_PLATFORM_ROLES=()
 declare -A KEYCLOAK_GROUP_NAME_BY_ID=()
+
+# AUTHZ-05 target platform relations (fred FRED-AUTHORIZATION-TARGET-MODEL-RFC),
+# stored-only OpenFGA relations on the singleton organization:fred - never
+# derived from a Keycloak role. "admin" in configuration.yaml's platform_roles
+# maps to the OpenFGA relation "platform_admin", "observer" to "platform_observer".
+declare -A PLATFORM_ROLE_TO_FGA_RELATION=( [admin]="platform_admin" [observer]="platform_observer" )
 
 EXPECTED_AGENTIC_RM_ROLES="query-groups query-users view-users"
 EXPECTED_AGENTIC_ACCOUNT_ROLES="view-groups"
@@ -310,6 +328,17 @@ fga_team_relation_lines() {
   done <<<"$raw_team_suffixes" | sort -u
 }
 
+# AUTHZ-05: does `subject` hold `relation` directly on the singleton
+# organization:fred? Used for platform_admin/platform_observer, which unlike
+# team relations have no per-object identity to resolve - just presence/absence.
+fga_has_org_relation() {
+  local subject="$1"
+  local relation="$2"
+  jq -e --arg subj "$subject" --arg rel "$relation" \
+    '.tuples[]?.key | select(.user==$subj and .relation==$rel and .object=="organization:fred")' \
+    <<<"$ALL_TUPLES" >/dev/null 2>&1
+}
+
 load_demo_identity_expectations() {
   local duplicate_teams
   local duplicate_users
@@ -333,7 +362,9 @@ load_demo_identity_expectations() {
       all((.team_roles.manager // [])[]?; type == "string" and length > 0) and
       all((.team_roles.owner // [])[]?; type == "string" and length > 0) and
       ((.app_roles // []) | type == "array") and
-      all((.app_roles // [])[]?; type == "string" and length > 0)
+      all((.app_roles // [])[]?; type == "string" and length > 0) and
+      ((.platform_roles // []) | type == "array") and
+      all((.platform_roles // [])[]?; type == "string" and (. == "admin" or . == "observer"))
     )
   ' "$DEMO_IDENTITY_CONFIG_FILE" >/dev/null \
     || die "Invalid demo identity config format in ${DEMO_IDENTITY_CONFIG_FILE}"
@@ -375,9 +406,10 @@ load_demo_identity_expectations() {
   EXPECTED_MANAGER_TEAMS=()
   EXPECTED_OWNER_TEAMS=()
   EXPECTED_APP_ROLES=()
+  EXPECTED_PLATFORM_ROLES=()
   while IFS= read -r user_json; do
     [[ -n "$user_json" ]] || continue
-    local username team_words manager_words owner_words role_words
+    local username team_words manager_words owner_words role_words platform_role_words
     username="$(jq -r '.username' <<<"$user_json")"
     team_words="$(
       jq -r '
@@ -399,10 +431,12 @@ load_demo_identity_expectations() {
     )"
     owner_words="$(jq -r '(.team_roles.owner // []) | unique | join(" ")' <<<"$user_json")"
     role_words="$(jq -r '(.app_roles // []) | join(" ")' <<<"$user_json")"
+    platform_role_words="$(jq -r '(.platform_roles // []) | join(" ")' <<<"$user_json")"
     EXPECTED_TEAMS["$username"]="$team_words"
     EXPECTED_MANAGER_TEAMS["$username"]="$manager_words"
     EXPECTED_OWNER_TEAMS["$username"]="$owner_words"
     EXPECTED_APP_ROLES["$username"]="$role_words"
+    EXPECTED_PLATFORM_ROLES["$username"]="$platform_role_words"
   done < <(jq -c '.users[]?' "$DEMO_IDENTITY_CONFIG_FILE")
 }
 
@@ -614,6 +648,15 @@ if [[ -n "${ADM}" ]]; then
       mark_critical "Cannot read roles for app client"
     fi
 
+    # AUTHZ-05: a user with app_roles=[] in configuration.yaml is a deliberate,
+    # valid state (e.g. a freshly onboarded user with nothing granted yet, or a
+    # user whose authorization comes entirely from platform_roles/team_roles
+    # instead - see "Why these exact users" in validation/README.md). This loop
+    # therefore validates each user against what configuration.yaml actually
+    # declares for them, not against a blanket "must hold admin/editor/viewer"
+    # assumption. The claim-mechanism sanity check (does resource_access.app.roles
+    # work at all) is done once, in aggregate, right after this loop.
+    ANY_USER_HAS_REQUIRED_APP_ROLE=0
     for u in "${REQUIRED_USERS[@]}"; do
       uid="${USER_IDS[$u]:-}"
       if [[ -z "$uid" ]]; then
@@ -625,14 +668,17 @@ if [[ -n "${ADM}" ]]; then
       user_app_roles_direct="$(keycloak_user_client_roles "$uid" "$APP_CLIENT_UUID" 2>/dev/null || true)"
       user_app_roles_effective="$(keycloak_user_client_roles_composite "$uid" "$APP_CLIENT_UUID" 2>/dev/null || true)"
       expected_user_roles_lines="$(words_to_sorted_lines "${EXPECTED_APP_ROLES[$u]:-}")"
-      granted_required_roles="$(intersect_lines "$required_user_permissions_lines" "$user_app_roles_effective")"
 
       info "User '${u}' app roles (direct): $(sorted_lines_to_csv "$user_app_roles_direct")"
       info "User '${u}' app roles (effective): $(sorted_lines_to_csv "$user_app_roles_effective")"
 
       if [[ -z "$expected_user_roles_lines" ]]; then
-        ((APP_USER_PERMISSION_GAPS+=1))
-        mark_critical "User '${u}' has no expected app roles in demo identity config"
+        info "User '${u}' has no app_roles by design (AUTHZ-05) - authorization, if any, comes from platform_roles/team_roles instead"
+        extra_user_direct_roles="$(extra_lines "" "$user_app_roles_direct")"
+        if [[ -n "$extra_user_direct_roles" ]]; then
+          ((APP_USER_PERMISSION_GAPS+=1))
+          mark_critical "User '${u}' expected to have NO app roles (demo identity config) but Keycloak grants: $(sorted_lines_to_csv "$extra_user_direct_roles")"
+        fi
       else
         missing_user_direct_roles="$(missing_lines "$expected_user_roles_lines" "$user_app_roles_direct")"
         extra_user_direct_roles="$(extra_lines "$expected_user_roles_lines" "$user_app_roles_direct")"
@@ -651,11 +697,23 @@ if [[ -n "${ADM}" ]]; then
         fi
       fi
 
-      if [[ -z "$granted_required_roles" ]]; then
-        ((APP_USER_PERMISSION_GAPS+=1))
-        mark_critical "User '${u}' has no effective app role in {admin, editor, viewer}; token claim resource_access.app.roles would not meet prerequisite"
+      if [[ -n "$(intersect_lines "$required_user_permissions_lines" "$user_app_roles_effective")" ]]; then
+        ANY_USER_HAS_REQUIRED_APP_ROLE=1
       fi
     done
+
+    # Claim-mechanism sanity check, once in aggregate (not per user): at least
+    # one demo user must actually carry an effective admin/editor/viewer role,
+    # proving resource_access.app.roles is wired end-to-end. A stack where
+    # nobody has a legacy app role at all is a real config problem even under
+    # AUTHZ-05 (some legacy-role-gated capabilities still exist - see fred's
+    # RFC §25a); a stack where SOME users legitimately have none is not.
+    if [[ "$ANY_USER_HAS_REQUIRED_APP_ROLE" -eq 0 ]]; then
+      ((APP_USER_PERMISSION_GAPS+=1))
+      mark_critical "No demo user has an effective app role in {admin, editor, viewer}; token claim resource_access.app.roles would never be populated for anyone"
+    else
+      ok "At least one demo user has an effective app role in {admin, editor, viewer} - resource_access.app.roles claim mechanism confirmed working"
+    fi
 
     groups_scope_uuid="$(keycloak_client_scope_uuid "$EXPECTED_GROUPS_SCOPE_NAME" 2>/dev/null || true)"
     if [[ -z "$groups_scope_uuid" ]]; then
@@ -877,6 +935,39 @@ else
   mark_critical "Cannot reach OpenFGA API at ${FGA}"
 fi
 
+MODEL_SHAPE_GAPS=0
+if [[ -n "${STORE_ID}" ]]; then
+  step "Validate authorization-model shape (AUTHZ-05)"
+  info "Checking the LIVE model actually pushed to OpenFGA, not just fred-core's schema.fga.json source"
+  if latest_models_payload="$(curl -fsS -H "Authorization: Bearer ${OPENFGA_TOKEN}" "${FGA}/stores/${STORE_ID}/authorization-models?page_size=1" 2>/dev/null)"; then
+    current_model="$(jq -c '.authorization_models[0] // empty' <<<"$latest_models_payload")"
+    if [[ -z "$current_model" ]]; then
+      ((MODEL_SHAPE_GAPS+=1))
+      mark_critical "OpenFGA store '${OPENFGA_STORE_NAME}' has no authorization model at all"
+    else
+      org_relations="$(jq -r '.type_definitions[]? | select(.type=="organization") | .relations // {} | keys[]?' <<<"$current_model" | sort -u)"
+      team_owner_def="$(jq -c '.type_definitions[]? | select(.type=="team") | .relations.owner // {}' <<<"$current_model")"
+
+      if contains_line "platform_admin" "$org_relations" && contains_line "platform_observer" "$org_relations"; then
+        ok "organization type defines platform_admin and platform_observer (AUTHZ-05 target relations present)"
+      else
+        ((MODEL_SHAPE_GAPS+=1))
+        mark_critical "organization type is missing platform_admin/platform_observer - the live OpenFGA model predates AUTHZ-05. Run 'make sync-openfga-model' then re-run 'make openfga-post-install'."
+      fi
+
+      if [[ "$team_owner_def" == '{"this":{}}' ]]; then
+        ok "team.owner is a direct-only relation (no organization-admin escalation into team ownership)"
+      else
+        ((MODEL_SHAPE_GAPS+=1))
+        mark_critical "team.owner is NOT direct-only (got: ${team_owner_def}) - this is the exact escalation bug fixed in AUTHZ-05 (FRED-AUTHORIZATION-TARGET-MODEL-RFC.md §24.2): a Keycloak admin would be an implicit owner of every team. Run 'make sync-openfga-model' then re-run 'make openfga-post-install'."
+      fi
+    fi
+  else
+    ((MODEL_SHAPE_GAPS+=1))
+    mark_critical "Cannot read authorization models from OpenFGA store '${OPENFGA_STORE_NAME}'"
+  fi
+fi
+
 ALICE_UID="${USER_IDS[alice]:-}"
 if [[ -n "${ALICE_UID}" ]]; then
   step "Resolve Alice UID from Keycloak"
@@ -890,6 +981,8 @@ FGA_UUID_MANAGER_MISSING=0
 FGA_USERNAME_MANAGER_MISSING=0
 FGA_UUID_OWNER_MISSING=0
 FGA_USERNAME_OWNER_MISSING=0
+FGA_UUID_PLATFORM_ROLE_MISSING=0
+FGA_USERNAME_PLATFORM_ROLE_MISSING=0
 
 step "Starting situation: team membership matrix"
 for u in "${REQUIRED_USERS[@]}"; do
@@ -903,11 +996,13 @@ for u in "${REQUIRED_USERS[@]}"; do
   expected_teams="$(words_to_sorted_lines "${EXPECTED_TEAMS[$u]:-}")"
   expected_manager_teams="$(words_to_sorted_lines "${EXPECTED_MANAGER_TEAMS[$u]:-}")"
   expected_owner_teams="$(words_to_sorted_lines "${EXPECTED_OWNER_TEAMS[$u]:-}")"
+  expected_platform_roles="$(words_to_sorted_lines "${EXPECTED_PLATFORM_ROLES[$u]:-}")"
   expected_groups="$(to_keycloak_group_lines "$expected_teams")"
   info "Keycloak UID: ${uid}"
   info "Expected teams: $(sorted_lines_to_csv "$expected_teams")"
   info "Expected manager teams: $(sorted_lines_to_csv "$expected_manager_teams")"
   info "Expected owner teams: $(sorted_lines_to_csv "$expected_owner_teams")"
+  info "Expected platform roles (AUTHZ-05): $(sorted_lines_to_csv "$expected_platform_roles")"
 
   kc_groups="$(
     curl -fsS -H "Authorization: Bearer ${ADM}" \
@@ -977,6 +1072,34 @@ for u in "${REQUIRED_USERS[@]}"; do
         mark_warning "OpenFGA username-subject owner tuples missing for '${u}': $(sorted_lines_to_csv "$missing_fga_user_owner")"
       fi
     fi
+
+    # AUTHZ-05 platform roles (platform_admin/platform_observer): stored-only
+    # OpenFGA relations on organization:fred, seeded by openfga-post-install.sh
+    # from configuration.yaml's platform_roles - independent of app_roles.
+    while IFS= read -r platform_role; do
+      [[ -n "$platform_role" ]] || continue
+      fga_relation="${PLATFORM_ROLE_TO_FGA_RELATION[$platform_role]:-}"
+      if [[ -z "$fga_relation" ]]; then
+        mark_critical "Unknown platform role '${platform_role}' for user '${u}' (supported: admin, observer)"
+        continue
+      fi
+
+      if fga_has_org_relation "user:${uid}" "$fga_relation"; then
+        ok "OpenFGA UUID-subject '${fga_relation}' present for '${u}'"
+      else
+        ((FGA_UUID_PLATFORM_ROLE_MISSING+=1))
+        mark_critical "OpenFGA UUID-subject tuple missing for '${u}': expected '${fga_relation}' on organization:fred"
+      fi
+
+      if [[ "${OPENFGA_EXPECT_USERNAME_SUBJECTS,,}" == "true" ]]; then
+        if fga_has_org_relation "user:${u}" "$fga_relation"; then
+          ok "OpenFGA username-subject '${fga_relation}' present for '${u}'"
+        else
+          ((FGA_USERNAME_PLATFORM_ROLE_MISSING+=1))
+          mark_warning "OpenFGA username-subject tuple missing for '${u}': expected '${fga_relation}' on organization:fred"
+        fi
+      fi
+    done <<<"$expected_platform_roles"
   fi
 done
 
@@ -1203,6 +1326,18 @@ else
   info "Team membership gaps (OpenFGA username-subject): skipped by config"
   info "Team manager-role gaps (OpenFGA username-subject): skipped by config"
   info "Team owner-role gaps (OpenFGA username-subject): skipped by config"
+fi
+info "Authorization-model shape gaps (AUTHZ-05 relations, no escalation): ${MODEL_SHAPE_GAPS}"
+if [[ -n "${ALL_TUPLES}" ]]; then
+  info "Platform-role gaps (OpenFGA UUID-subject): ${FGA_UUID_PLATFORM_ROLE_MISSING}"
+  if [[ "${OPENFGA_EXPECT_USERNAME_SUBJECTS,,}" == "true" ]]; then
+    info "Platform-role gaps (OpenFGA username-subject): ${FGA_USERNAME_PLATFORM_ROLE_MISSING}"
+  else
+    info "Platform-role gaps (OpenFGA username-subject): skipped by config"
+  fi
+else
+  info "Platform-role gaps (OpenFGA UUID-subject): not evaluated (OpenFGA unavailable or tuple read failed)"
+  info "Platform-role gaps (OpenFGA username-subject): not evaluated (OpenFGA unavailable or tuple read failed)"
 fi
 info "Temporal UI endpoint: ${TEMPORAL_UI_URL} (HTTP ${TEMPORAL_UI_HTTP_CODE})"
 if langfuse_expected; then

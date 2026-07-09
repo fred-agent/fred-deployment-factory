@@ -5,3 +5,6 @@ __pycache__/
 **/__pycache__/
 *.py[cod]
 *.egg-info/
+.claim_groups.json
+report.xml
+report.md

@@ -567,16 +567,48 @@ migration-reset: ## Wipe → up EMPTY (no demo seed) → restore identity + data
 VALIDATION_DIR  ?= validation
 VALIDATION_VENV ?= $(VALIDATION_DIR)/.venv
 PYTHON_BIN      ?= python3
-# Shared Fred libraries live on the local swift checkout. Override if elsewhere.
-SWIFT_SRC       ?= ../Work/swift
+# Shared Fred libraries live on the local `fred` checkout, expected as a sibling
+# directory of this repo (../fred). Override if yours lives elsewhere.
+SWIFT_SRC       ?= ../fred
 FRED_CORE_SRC   ?= $(SWIFT_SRC)/libs/fred-core
 FRED_SDK_SRC    ?= $(SWIFT_SRC)/libs/fred-sdk
 FRED_RUNTIME_SRC ?= $(SWIFT_SRC)/libs/fred-runtime
+
+# Fails fast with a precise, actionable message instead of pip's generic
+# "not a valid editable requirement" (which doesn't say WHICH path is wrong or
+# how to fix it). Checks for pyproject.toml specifically, since a directory can
+# exist but not be a valid Python project (e.g. an empty/wrong checkout).
+define require_swift_lib
+	@test -f "$(1)/pyproject.toml" || { \
+	  echo "✗ Not a valid Python project: $(1)/pyproject.toml not found."; \
+	  echo "  SWIFT_SRC is currently: $(SWIFT_SRC)"; \
+	  echo "  Fix: pass the path to your 'fred' checkout, e.g.:"; \
+	  echo "    make $@ SWIFT_SRC=/path/to/fred"; \
+	  exit 1; \
+	}
+endef
+
+check-swift-src: ## Verify SWIFT_SRC points at a real fred checkout with fred-core/fred-sdk/fred-runtime
+	$(call require_swift_lib,$(FRED_CORE_SRC))
+	$(call require_swift_lib,$(FRED_SDK_SRC))
+	$(call require_swift_lib,$(FRED_RUNTIME_SRC))
+	@echo "✓ SWIFT_SRC resolves to a valid fred checkout ($(SWIFT_SRC))"
+
 # Localhost auth/isolation validation expects Docker infra plus manually started Fred apps.
 FRED_CONTROL_PLANE_URL ?= http://localhost:8222/control-plane/v1
 FRED_RUNTIME_PUBLIC_BASE ?= http://localhost:8000
+# Default: stop at the first failure (fast release-gate signal - one break is
+# enough to say "not ready"). Override to see the full pass/fail picture in one
+# run, e.g. when comparing an unfixed checkout against a fixed one:
+#   make validate-auth-isolation-localhost PYTEST_ARGS=""
+PYTEST_ARGS ?= -x
 
-validate-auth-isolation-localhost: ## Black-box auth/security team-isolation validation against localhost Fred apps + Docker infra
+sync-openfga-model: check-swift-src ## Regenerate docker-compose/openfga/openfga-model.json from the swift fred-core schema (manual - run after any fred-core rebac/schema.fga change)
+	@python3 -m json.tool $(FRED_CORE_SRC)/fred_core/security/rebac/schema.fga.json docker-compose/openfga/openfga-model.json
+	@echo "✓ synced docker-compose/openfga/openfga-model.json from $(FRED_CORE_SRC)/fred_core/security/rebac/schema.fga.json"
+	@echo "  Re-run 'make openfga-post-install' (or 'make docker-up') to push the updated model to the running store."
+
+validate-auth-isolation-localhost: check-swift-src ## Black-box auth/security team-isolation validation against localhost Fred apps + Docker infra
 	@test -x $(VALIDATION_VENV)/bin/python || { \
 	  echo "▶ creating venv $(VALIDATION_VENV) (python3 -m venv)"; \
 	  $(PYTHON_BIN) -m venv $(VALIDATION_VENV) && \
@@ -590,7 +622,7 @@ validate-auth-isolation-localhost: ## Black-box auth/security team-isolation val
 	cd $(VALIDATION_DIR) && \
 	  FRED_CONTROL_PLANE_URL="$(FRED_CONTROL_PLANE_URL)" \
 	  FRED_RUNTIME_PUBLIC_BASE="$(FRED_RUNTIME_PUBLIC_BASE)" \
-	  .venv/bin/pytest -x
+	  .venv/bin/pytest $(PYTEST_ARGS)
 
 validate-auth-isolation-k3d: ## Black-box auth/security team-isolation validation against full k3d deployment (not implemented)
 	@echo "validate-auth-isolation-k3d is not yet implemented."
@@ -598,4 +630,24 @@ validate-auth-isolation-k3d: ## Black-box auth/security team-isolation validatio
 	@echo "Current release gate: make validate-auth-isolation-localhost"
 	@exit 2
 
-.PHONY: help network-create env-setup keycloak-post-install postgres-up keycloak-up seaweedfs-up opensearch-up clickhouse-up langfuse-up prometheus-up grafana-up openfga-post-install openfga-up temporal-up preflight-check docker-up docker-down all-down docker-wipe docker-destroy k3d-create k3d-up k3d-deploy k3d-restart k3d-redeploy k3d-logs k3d-down k3d-uninstall k3d-delete k3d-wipe k3d-status k3d-airgap-on k3d-airgap-off k3d-airgap-status checkpoint-save checkpoint-restore docker-restart-from-checkpoint checkpoint-list checkpoint-delete kea-identity-dump kea-identity-restore kea-data-dump kea-data-restore kea-snapshot migration-reset validate-auth-isolation-localhost validate-auth-isolation-k3d
+VALIDATION_REPORT ?= $(VALIDATION_DIR)/report.md
+VALIDATION_JUNIT_XML ?= $(VALIDATION_DIR)/report.xml
+
+validation-report: check-swift-src ## Run the full validation suite (no -x) and write a short claims-grouped Markdown report
+	@test -x $(VALIDATION_VENV)/bin/python || { \
+	  echo "▶ creating venv $(VALIDATION_VENV) (python3 -m venv)"; \
+	  $(PYTHON_BIN) -m venv $(VALIDATION_VENV) && \
+	  $(VALIDATION_VENV)/bin/pip install -q --upgrade pip; \
+	}
+	@echo "▶ installing deps (shared Fred libs editable + test app)"
+	@$(VALIDATION_VENV)/bin/pip install -q -e $(FRED_CORE_SRC) -e $(FRED_SDK_SRC) -e $(FRED_RUNTIME_SRC) -e $(VALIDATION_DIR)
+	@echo "▶ running the full suite (no -x, so one failure doesn't hide the rest)"
+	-cd $(VALIDATION_DIR) && \
+	  FRED_CONTROL_PLANE_URL="$(FRED_CONTROL_PLANE_URL)" \
+	  FRED_RUNTIME_PUBLIC_BASE="$(FRED_RUNTIME_PUBLIC_BASE)" \
+	  .venv/bin/pytest --junitxml=report.xml
+	@$(VALIDATION_VENV)/bin/python $(VALIDATION_DIR)/generate_report.py $(VALIDATION_JUNIT_XML) | tee $(VALIDATION_REPORT)
+	@echo ""
+	@echo "✓ Report written to $(VALIDATION_REPORT)"
+
+.PHONY: help network-create env-setup keycloak-post-install postgres-up keycloak-up seaweedfs-up opensearch-up clickhouse-up langfuse-up prometheus-up grafana-up openfga-post-install openfga-up temporal-up preflight-check docker-up docker-down all-down docker-wipe docker-destroy k3d-create k3d-up k3d-deploy k3d-restart k3d-redeploy k3d-logs k3d-down k3d-uninstall k3d-delete k3d-wipe k3d-status k3d-airgap-on k3d-airgap-off k3d-airgap-status checkpoint-save checkpoint-restore docker-restart-from-checkpoint checkpoint-list checkpoint-delete kea-identity-dump kea-identity-restore kea-data-dump kea-data-restore kea-snapshot migration-reset check-swift-src sync-openfga-model validate-auth-isolation-localhost validate-auth-isolation-k3d validation-report

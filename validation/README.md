@@ -21,6 +21,35 @@ RBAC/ReBAC is per-identity and complex. Testing it by hand from the UI is a
 non-starter (a browser is one identity at a time). This driver holds **many
 identities** and checks who can do what - the honest way to validate ReBAC.
 
+## Why these exact users
+
+Every user in `config/configuration.yaml` exists to prove one specific, real
+claim about who can see what - not an arbitrary pile of combinations. Read
+top-to-bottom, this is the complete set needed to back up every claim in fred's
+`FRED-AUTHORIZATION-TARGET-MODEL-RFC.md`, not just the escalation bug that
+happened to be found first:
+
+- **nina** - a freshly onboarded person, nothing assigned yet → proves a bare
+  account gets nothing by default. This is not a synthetic edge case: it's the
+  everyday state of any user between "IT created their Keycloak account" and
+  "someone granted them a team or role" - Keycloak issues tokens to accounts
+  with zero client roles just fine.
+- **oscar** - a legacy Keycloak `admin`, member of no team at all → proves admin
+  can no longer see into any team (the escalation bug that was found and fixed).
+- **derek** - a legacy Keycloak `admin` who is *legitimately* a manager of one
+  team only → proves the fix didn't also break real, explicitly granted access.
+- **priya** - the new, clean AUTHZ-05 `platform_admin` role, nothing else →
+  proves the new role works standalone and still can't see team data.
+- **quinn** - the new, clean AUTHZ-05 `platform_observer` role, nothing else →
+  same proof, for the read-only platform role.
+- **alice, bob, phil, zoe, liam, sophia, marc, nadia** - ordinary team
+  members/managers/owners across real teams → the original cross-team
+  isolation matrix.
+
+If you need to add a user later, ask first: *what specific claim does this
+person prove or disprove that no existing user already covers?* If there isn't
+a one-sentence answer, it's noise, not signal.
+
 ## Supported validation modes
 
 ### Current mode - localhost auth/isolation
@@ -94,6 +123,60 @@ for this harness.
 | `FRED_CONFIG_PATH` | `../config/configuration.yaml` | Source of truth for users/roles |
 | `FRED_TEST_TEAM` | `fredlab` | Collaborative team used for isolation checks |
 | `FRED_TEST_AGENT_ID` | `fred.github.test_assistant` | Public no-LLM agent used for deterministic runtime execution |
+| `FRED_KNOWLEDGE_FLOW_URL` | `http://localhost:8111/knowledge-flow/v1` | knowledge-flow-backend base, started manually like the other apps. Only required by `test_content_scope_bypass.py`; checked lazily, not at session start. |
+
+## The complete-matrix demo users
+
+`config/configuration.yaml` now covers every cell of the AUTHZ-05 role matrix that
+can actually be observed against a running stack, not just team-vs-team:
+
+| user | app_roles (legacy Keycloak) | platform_roles (AUTHZ-05 target) | teams | purpose |
+|---|---|---|---|---|
+| alice | admin | — | manager of all 3 | original stable actor for setup/teardown |
+| bob, phil, zoe, liam | editor/viewer | — | 1-2 teams, plain member | original cross-team matrix |
+| sophia, marc, nadia | viewer | — | owner of 1 team each | original owner-role matrix |
+| **oscar** | **admin** | — | **none** | escalation stress case: the only prior `admin` (alice) is also manager everywhere, so she can't prove a negative. oscar has zero legitimate team role anywhere. |
+| **nina** | **none** | — | **none** | the floor case: authenticated, zero app_role, zero team. Every platform capability must be denied. |
+| **derek** | **admin** | — | **northbridge only, manager** | proves the fix doesn't overshoot: northbridge access must keep working; fredlab/swiftpost must stay denied. |
+| **priya** | none | **admin** | none | AUTHZ-05 target model in pure form: the new `platform_admin` relation, isolated from every legacy escalation path. |
+| **quinn** | none | **observer** | none | AUTHZ-05 target model in pure form: `platform_observer`. |
+
+`platform_roles` is a new, separate `configuration.yaml` field (`["admin"]` /
+`["observer"]`), seeded by `openfga-post-install.sh` directly as stored
+`platform_admin`/`platform_observer` OpenFGA tuples on `organization:fred` -
+independent of `app_roles`, exactly matching the AUTHZ-05 target model (these
+relations are never derived from a Keycloak role).
+
+Because `scenarios/test_runtime_team_isolation.py`'s existing checks already
+parametrize over every user in `USERS`, adding these 5 users to
+`configuration.yaml` alone extends ~25 existing test cases for free (e.g. each
+new user's `/teams` visibility and personal-space enrollment get checked
+automatically) - see `test_platform_role_isolation.py` and
+`test_content_scope_bypass.py` for the scenarios that specifically needed them.
+
+**Not yet addable:** a `team_editor`/`team_analyst`-style user for the AUTHZ-05
+target *team* roles. Those relations exist in fred-core's `schema.fga` but no
+control-plane endpoint assigns or checks them yet (the `owner`/`manager`/`member`
+vocabulary rename is deliberately deferred - see `fred`'s
+`AUTHZ-MIGRATION-BACKLOG.md`). Adding fixture users for them now would be
+untestable noise.
+
+## Keeping the OpenFGA model in sync
+
+`docker-compose/openfga/openfga-model.json` is a **hand-maintained copy**, not
+generated from `fred`. On 2026-07-09 it was found to have drifted significantly
+from `fred-core`'s actual `schema.fga` - missing most organization capabilities,
+missing `can_read_conversations`, and (fortunately, by omission) missing a live
+escalation bug that existed in `fred` at the time. It has now been synced.
+
+```bash
+make sync-openfga-model                    # uses SWIFT_SRC (default ../Work/swift)
+make sync-openfga-model SWIFT_SRC=/path/to/fred
+```
+
+Run this (manually - not wired into CI) after any change to
+`fred-core/fred_core/security/rebac/schema.fga`, then re-run
+`make openfga-post-install` (or `make docker-up`) to push the updated model.
 
 ## Run
 
@@ -105,8 +188,14 @@ scenarios, fails if the stack is absent or incomplete, stops at first failure):
 make validate-auth-isolation-localhost
 ```
 
-Override the swift checkout location if needed:
-`make validate-auth-isolation-localhost SWIFT_SRC=/path/to/swift`.
+Override the `fred` checkout location if needed (default: `../fred`, a sibling of
+this repo):
+`make validate-auth-isolation-localhost SWIFT_SRC=/path/to/fred`.
+
+Stops at the first failure by default (`-x`) - the right signal for a release
+gate. To see the full pass/fail picture in one run instead (e.g. comparing an
+unfixed checkout against a fixed one), clear it:
+`make validate-auth-isolation-localhost PYTEST_ARGS=""`.
 
 The target defaults to:
 
@@ -117,6 +206,47 @@ FRED_RUNTIME_PUBLIC_BASE=http://localhost:8000
 
 Override `FRED_RUNTIME_PUBLIC_BASE` with the frontend/proxy origin when the goal is
 to validate the exact browser-facing route.
+
+### A short, readable report instead of raw pytest output
+
+```bash
+make validation-report
+```
+
+Runs the whole suite (no `-x` - one failure must not hide the rest), then writes
+`validation/report.md`: results grouped by the real-world **claim** each test
+proves (not by test function name), with a one-line verdict and a details
+section for anything that failed. Meant to be readable by someone who has no
+interest in opening a pytest traceback. Example shape:
+
+```markdown
+# Fred Authorization Validation Report
+
+**Result:** NOT READY - 9 finding(s) need attention
+**Totals:** 53 passed, 9 failed, 0 error, 2 known gap (xfail), 1 possible infra issue, 0 skipped
+
+## Platform-role isolation (AUTHZ-05)
+
+| Result | Claim |
+|---|---|
+| FAIL | oscar (legacy Keycloak admin, member of no team) cannot read fredlab's agent catalog. |
+| FAIL | oscar (legacy Keycloak admin, member of no team) sees zero collaborative teams. |
+| PASS | derek (admin app role, real manager of northbridge only) can still read northbridge's catalog. |
+| PASS | priya (AUTHZ-05 platform_admin/platform_observer, zero teams) cannot read fredlab's catalog. |
+...
+
+## Content-scope bypass (known gap, not yet fixed)
+
+| Result | Claim |
+|---|---|
+| GAP | oscar (global admin, member of no team) must not read platform content capabilities. |
+| GAP | liam (viewer, swiftpost only) must not read content capabilities scoped to other teams. |
+```
+
+This is the minimal version of the tag-bound evidence report already specced in
+`RFC-C3-validation-extensions.md` (Extension F) - grouping and a verdict, nothing
+more. Attaching it to a git tag/commit with signed, retained artifacts
+(`pytest.xml`, `environment.json`, checksums) is future work, not done here.
 
 ## What it checks
 
@@ -131,3 +261,17 @@ to validate the exact browser-facing route.
   runtime identity.
 - **Enrollment authorization**: a plain member cannot enroll an agent in a
   collaborative team; a user can enroll in their own personal space.
+- **Platform-role isolation (AUTHZ-05)**: a legacy Keycloak `admin` with no team
+  membership cannot read a team's catalog (`oscar`); the same admin who *is* a
+  legitimate manager of exactly one team keeps that access without it leaking to
+  others (`derek`); the new target `platform_admin`/`platform_observer` relations
+  grant zero team data on their own (`priya`, `quinn`). See
+  `scenarios/test_platform_role_isolation.py`.
+- **Organization-scoped content bypass (known gap, not yet fixed)**:
+  `scenarios/test_content_scope_bypass.py` demonstrates that
+  `can_read_content`/`can_process_content` are gated at organization scope, not
+  team scope, in knowledge-flow-backend today. Marked `xfail(strict=True,
+  raises=AssertionError)` on purpose - it is expected to fail (reproduce the gap)
+  until the upstream fix ships; an unexpected pass turns the run red instead of
+  silently going green on a fixed vulnerability nobody re-checked. Requires
+  knowledge-flow-backend running (see `FRED_KNOWLEDGE_FLOW_URL` above).
