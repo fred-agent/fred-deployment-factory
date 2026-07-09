@@ -379,6 +379,9 @@ fredFrontend:
     # now deployed by this chart, so the frontend points at them directly.
     fredAgents: http://fred-agents:8080
     knowledgeFlow: http://knowledge-flow-backend:8080
+    # fred-evaluation-backend is deployed by this chart (fredEvaluation), so the
+    # service name already resolves when nginx starts.
+    evaluation: http://fred-evaluation-backend:8080
   clientMaxBodySize: 150m
   config:
     # Static pre-auth frontend configuration. It is served as /config.json
