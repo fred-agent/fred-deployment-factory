@@ -15,6 +15,13 @@ while the Fred applications run in the foreground from the `swift` checkout
 It reads the user/role/team matrix straight from `../config/configuration.yaml`, so
 there is **no drift**: change the users there and the assertions follow.
 
+On a fresh Swift stack, the suite also bootstraps the collaborative teams through
+the real Control Plane APIs before running assertions: Alice (`platform_admin`)
+creates missing teams with their configured `team_admin`, then that team admin
+applies the configured `team_editor`/`team_member` roles. This is intentional:
+`make docker-up` prepares identities and OpenFGA, while Swift's authoritative
+team registry lives in the application database.
+
 ## Why it exists
 
 RBAC/ReBAC is per-identity and complex. Testing it by hand from the UI is a
@@ -24,27 +31,24 @@ identities** and checks who can do what - the honest way to validate ReBAC.
 ## Why these exact users
 
 Every user in `config/configuration.yaml` exists to prove one specific, real
-claim about who can see what - not an arbitrary pile of combinations. Read
-top-to-bottom, this is the complete set needed to back up every claim in fred's
-`FRED-AUTHORIZATION-TARGET-MODEL-RFC.md`, not just the escalation bug that
-happened to be found first:
+claim about who can see what in the clean Swift model:
 
-- **nina** - a freshly onboarded person, nothing assigned yet → proves a bare
-  account gets nothing by default. This is not a synthetic edge case: it's the
-  everyday state of any user between "IT created their Keycloak account" and
-  "someone granted them a team or role" - Keycloak issues tokens to accounts
-  with zero client roles just fine.
-- **oscar** - a legacy Keycloak `admin`, member of no team at all → proves admin
-  can no longer see into any team (the escalation bug that was found and fixed).
-- **derek** - a legacy Keycloak `admin` who is *legitimately* a manager of one
-  team only → proves the fix didn't also break real, explicitly granted access.
-- **priya** - the new, clean AUTHZ-05 `platform_admin` role, nothing else →
-  proves the new role works standalone and still can't see team data.
-- **quinn** - the new, clean AUTHZ-05 `platform_observer` role, nothing else →
-  same proof, for the read-only platform role.
-- **alice, bob, phil, zoe, liam, sophia, marc, nadia** - ordinary team
-  members/managers/owners across real teams → the original cross-team
-  isolation matrix.
+- **alice** - `platform_admin` only → proves a platform admin is a platform actor,
+  not an implicit member/admin of every team.
+- **gabriel** - `platform_observer` only → same isolation proof for the read-only
+  platform role.
+- **bob / derek** - `team_editor` fixtures → can work in their assigned teams and
+  cannot cross into unassigned teams.
+- **sophia / marc / nadia** - `team_admin` fixtures → one admin per collaborative
+  team, used for legitimate team-admin workflows without platform escalation.
+- **phil / zoe / liam** - plain `team_member` fixtures → ordinary member visibility
+  and runtime access.
+- **oscar / nina / priya / quinn** - identity-only controls → authenticated users
+  with no OpenFGA grant get no collaborative team data by default.
+
+The Kea rehearsal users live separately in `config/configuration.kea.yaml`; that
+file intentionally keeps the old `app_roles` plus `member`/`manager`/`owner`
+vocabulary so the migration script has an old-world source to translate.
 
 If you need to add a user later, ask first: *what specific claim does this
 person prove or disprove that no existing user already covers?* If there isn't
@@ -132,14 +136,13 @@ can actually be observed against a running stack, not just team-vs-team:
 
 | user | app_roles (legacy Keycloak) | platform_roles (AUTHZ-05 target) | teams | purpose |
 |---|---|---|---|---|
-| alice | admin | — | manager of all 3 | original stable actor for setup/teardown |
-| bob, phil, zoe, liam | editor/viewer | — | 1-2 teams, plain member | original cross-team matrix |
-| sophia, marc, nadia | viewer | — | owner of 1 team each | original owner-role matrix |
-| **oscar** | **admin** | — | **none** | escalation stress case: the only prior `admin` (alice) is also manager everywhere, so she can't prove a negative. oscar has zero legitimate team role anywhere. |
-| **nina** | **none** | — | **none** | the floor case: authenticated, zero app_role, zero team. Every platform capability must be denied. |
-| **derek** | **admin** | — | **northbridge only, manager** | proves the fix doesn't overshoot: northbridge access must keep working; fredlab/swiftpost must stay denied. |
-| **priya** | none | **admin** | none | AUTHZ-05 target model in pure form: the new `platform_admin` relation, isolated from every legacy escalation path. |
-| **quinn** | none | **observer** | none | AUTHZ-05 target model in pure form: `platform_observer`. |
+| alice | none | **admin** | none | clean Swift platform_admin, isolated from team data. |
+| gabriel | none | **observer** | none | clean Swift platform_observer, isolated from team data. |
+| bob | none | — | team_editor of northbridge/fredlab | editor fixture for the target team role vocabulary. |
+| phil, zoe, liam | none | — | team_member of 1-2 teams | plain member cross-team matrix. |
+| sophia, marc, nadia | none | — | team_admin of 1 team each | team-admin matrix; one of them/bob acts as the validation operator for the test team. |
+| derek | none | — | team_editor of northbridge only | proves legitimate access stays team-scoped. |
+| oscar, nina, priya, quinn | none | — | none | identity-only floor/control users. |
 
 `platform_roles` is a new, separate `configuration.yaml` field (`["admin"]` /
 `["observer"]`), seeded by `openfga-post-install.sh` directly as stored
@@ -153,13 +156,6 @@ parametrize over every user in `USERS`, adding these 5 users to
 new user's `/teams` visibility and personal-space enrollment get checked
 automatically) - see `test_platform_role_isolation.py` and
 `test_content_scope_bypass.py` for the scenarios that specifically needed them.
-
-**Not yet addable:** a `team_editor`/`team_analyst`-style user for the AUTHZ-05
-target *team* roles. Those relations exist in fred-core's `schema.fga` but no
-control-plane endpoint assigns or checks them yet (the `owner`/`manager`/`member`
-vocabulary rename is deliberately deferred - see `fred`'s
-`AUTHZ-MIGRATION-BACKLOG.md`). Adding fixture users for them now would be
-untestable noise.
 
 ## Keeping the OpenFGA model in sync
 
@@ -213,34 +209,34 @@ to validate the exact browser-facing route.
 make validation-report
 ```
 
-Runs the whole suite (no `-x` - one failure must not hide the rest), then writes
-`validation/report.md`: results grouped by the real-world **claim** each test
-proves (not by test function name), with a one-line verdict and a details
-section for anything that failed. Meant to be readable by someone who has no
-interest in opening a pytest traceback. Example shape:
+Runs the whole suite (no `-x` - one failure must not hide the rest), writes
+`validation/report.md`, and returns pytest's exit code. That means the report is
+always produced for diagnosis, but the Make target still fails when the running
+stack is not authorization-ready.
+
+The report groups results by the real-world **claim** each test proves (not by
+test function name), with a one-line verdict and details for failures. Example
+shape:
 
 ```markdown
 # Fred Authorization Validation Report
 
-**Result:** NOT READY - 9 finding(s) need attention
-**Totals:** 53 passed, 9 failed, 0 error, 2 known gap (xfail), 1 possible infra issue, 0 skipped
+**Result:** NOT READY - 2 blocking finding(s) need attention
+**Totals:** 77 passed, 1 failed, 1 error, 0 known gap (xfail), 0 possible infra issue, 0 skipped
 
 ## Platform-role isolation (AUTHZ-05)
 
 | Result | Claim |
 |---|---|
-| FAIL | oscar (legacy Keycloak admin, member of no team) cannot read fredlab's agent catalog. |
-| FAIL | oscar (legacy Keycloak admin, member of no team) sees zero collaborative teams. |
-| PASS | derek (admin app role, real manager of northbridge only) can still read northbridge's catalog. |
-| PASS | priya (AUTHZ-05 platform_admin/platform_observer, zero teams) cannot read fredlab's catalog. |
-...
+| PASS | alice holds only a platform role and sees zero collaborative teams. |
+| PASS | gabriel holds only a platform role and cannot read fredlab's catalog. |
 
-## Content-scope bypass (known gap, not yet fixed)
+## Content-scope team isolation
 
 | Result | Claim |
 |---|---|
-| GAP | oscar (global admin, member of no team) must not read platform content capabilities. |
-| GAP | liam (viewer, swiftpost only) must not read content capabilities scoped to other teams. |
+| PASS | Corpus capabilities requires an explicit team_id instead of falling back to organization scope. |
+| PASS | A platform-only user cannot read a collaborative team's corpus capabilities. [username=alice] |
 ```
 
 This is the minimal version of the tag-bound evidence report already specced in
@@ -261,17 +257,12 @@ more. Attaching it to a git tag/commit with signed, retained artifacts
   runtime identity.
 - **Enrollment authorization**: a plain member cannot enroll an agent in a
   collaborative team; a user can enroll in their own personal space.
-- **Platform-role isolation (AUTHZ-05)**: a legacy Keycloak `admin` with no team
-  membership cannot read a team's catalog (`oscar`); the same admin who *is* a
-  legitimate manager of exactly one team keeps that access without it leaking to
-  others (`derek`); the new target `platform_admin`/`platform_observer` relations
-  grant zero team data on their own (`priya`, `quinn`). See
-  `scenarios/test_platform_role_isolation.py`.
-- **Organization-scoped content bypass (known gap, not yet fixed)**:
-  `scenarios/test_content_scope_bypass.py` demonstrates that
-  `can_read_content`/`can_process_content` are gated at organization scope, not
-  team scope, in knowledge-flow-backend today. Marked `xfail(strict=True,
-  raises=AssertionError)` on purpose - it is expected to fail (reproduce the gap)
-  until the upstream fix ships; an unexpected pass turns the run red instead of
-  silently going green on a fixed vulnerability nobody re-checked. Requires
-  knowledge-flow-backend running (see `FRED_KNOWLEDGE_FLOW_URL` above).
+- **Swift split-role authorization**: `team_admin` without `team_editor` cannot
+  enroll agents; `team_editor` without `team_admin` cannot administer members.
+- **Platform-role isolation**: `platform_admin` (`alice`) and `platform_observer`
+  (`gabriel`) grant platform authority only; they do not grant collaborative team
+  visibility or team content access.
+- **Content-scope team isolation**: knowledge-flow `corpus/capabilities` requires
+  an explicit `team_id`; members of that team are allowed, platform-only users and
+  members of other teams are denied. Requires knowledge-flow-backend running (see
+  `FRED_KNOWLEDGE_FLOW_URL` above).

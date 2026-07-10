@@ -60,7 +60,7 @@ class FactoryUser:
     username: str
     app_roles: tuple[str, ...]
     teams: tuple[str, ...]
-    team_roles: dict[str, str]  # team -> owner/manager (membership is implicit)
+    team_roles: dict[str, str]  # team -> legacy owner/manager or Swift team_admin/team_editor/team_analyst/team_member
     # AUTHZ-05 target model (fred FRED-AUTHORIZATION-TARGET-MODEL-RFC): stored-only
     # OpenFGA relations on the singleton organization, never derived from app_roles.
     # Values: "admin" -> platform_admin, "observer" -> platform_observer.
@@ -86,14 +86,13 @@ class FactoryUser:
         return "observer" in self.platform_roles
 
     def relation_in(self, team: str) -> str | None:
-        """owner > manager > member (member implied by membership in `teams`)."""
+        """Return the strongest direct team relation known from the factory config."""
         if team in self.team_roles:
             return self.team_roles[team]
-        return "member" if team in self.teams else None
+        return "team_member" if team in self.teams else None
 
     def can_enroll_in(self, team: str) -> bool:
-        # can_update_agents = manager or owner (docker OpenFGA: owner ⊃ manager).
-        return self.relation_in(team) in ("manager", "owner")
+        return self.relation_in(team) in ("manager", "owner", "team_admin", "team_editor")
 
 
 def load_users() -> dict[str, FactoryUser]:
@@ -116,3 +115,7 @@ def load_users() -> dict[str, FactoryUser]:
 
 USERS = load_users()
 ALL_TEAMS = sorted({t for u in USERS.values() for t in u.teams})
+TEAM_OPERATOR_USERNAME = next(
+    (username for username, user in sorted(USERS.items()) if user.can_enroll_in(TEST_TEAM)),
+    None,
+)

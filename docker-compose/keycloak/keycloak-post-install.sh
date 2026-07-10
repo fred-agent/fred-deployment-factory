@@ -445,6 +445,9 @@ demo_identity_config_validate() {
   [[ -f "$DEMO_IDENTITY_CONFIG_FILE" ]] || die "demo identity config file not found: ${DEMO_IDENTITY_CONFIG_FILE}"
 
   jq -e '
+    def role_array($name):
+      ((.team_roles[$name] // []) | type == "array") and
+      all((.team_roles[$name] // [])[]?; type == "string" and length > 0);
     (.teams | type == "array") and
     (.users | type == "array") and
     all(.teams[]?; type == "string" and length > 0) and
@@ -453,12 +456,13 @@ demo_identity_config_validate() {
       ((.teams // []) | type == "array") and
       all((.teams // [])[]?; type == "string" and length > 0) and
       ((.team_roles // {}) | type == "object") and
-      ((.team_roles.member // []) | type == "array") and
-      ((.team_roles.manager // []) | type == "array") and
-      ((.team_roles.owner // []) | type == "array") and
-      all((.team_roles.member // [])[]?; type == "string" and length > 0) and
-      all((.team_roles.manager // [])[]?; type == "string" and length > 0) and
-      all((.team_roles.owner // [])[]?; type == "string" and length > 0) and
+      role_array("member") and
+      role_array("manager") and
+      role_array("owner") and
+      role_array("team_member") and
+      role_array("team_editor") and
+      role_array("team_admin") and
+      role_array("team_analyst") and
       ((.app_roles // []) | type == "array") and
       all((.app_roles // [])[]?; type == "string" and length > 0)
     )
@@ -479,7 +483,11 @@ demo_identity_config_validate() {
           (.teams // [])[],
           (.team_roles.member // [])[],
           (.team_roles.manager // [])[],
-          (.team_roles.owner // [])[]
+          (.team_roles.owner // [])[],
+          (.team_roles.team_member // [])[],
+          (.team_roles.team_editor // [])[],
+          (.team_roles.team_admin // [])[],
+          (.team_roles.team_analyst // [])[]
         )
       | select(($teams | index(.)) == null)
       | [$u, .] | @tsv
@@ -664,7 +672,11 @@ ensure_demo_user_team_memberships() {
         (.teams // [])[],
         (.team_roles.member // [])[],
         (.team_roles.manager // [])[],
-        (.team_roles.owner // [])[]
+        (.team_roles.owner // [])[],
+        (.team_roles.team_member // [])[],
+        (.team_roles.team_editor // [])[],
+        (.team_roles.team_admin // [])[],
+        (.team_roles.team_analyst // [])[]
       ]
       | unique[]
       | "/" + .

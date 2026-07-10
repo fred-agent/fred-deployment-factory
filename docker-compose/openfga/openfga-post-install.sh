@@ -335,8 +335,20 @@ ensure_team_role_closure() {
       ensure_team_relation_tuple "$user" manager "$team"
       ensure_team_relation_tuple "$user" member "$team"
       ;;
+    team_member)
+      ensure_team_relation_tuple "$user" team_member "$team"
+      ;;
+    team_editor)
+      ensure_team_relation_tuple "$user" team_editor "$team"
+      ;;
+    team_admin)
+      ensure_team_relation_tuple "$user" team_admin "$team"
+      ;;
+    team_analyst)
+      ensure_team_relation_tuple "$user" team_analyst "$team"
+      ;;
     *)
-      die "unsupported team role '${role}' in demo identity config (supported: member, manager, owner)"
+      die "unsupported team role '${role}' in demo identity config (supported legacy: member, manager, owner; supported Swift: team_member, team_editor, team_admin, team_analyst)"
       ;;
   esac
 }
@@ -388,6 +400,21 @@ OPENFGA_API_TOKEN="${OPENFGA_API_TOKEN:-Azerty123_}"
 OPENFGA_STORE_NAME="${OPENFGA_STORE_NAME:-$(read_env_file_var OPENFGA_STORE_NAME)}"
 OPENFGA_STORE_NAME="${OPENFGA_STORE_NAME:-fred}"
 OPENFGA_MODEL_FILE="${OPENFGA_MODEL_FILE:-${SCRIPT_DIR}/openfga-model.json}"
+AUTHZ_MODE="${AUTHZ_MODE:-$(read_env_file_var AUTHZ_MODE)}"
+AUTHZ_MODE="${AUTHZ_MODE:-swift-clean}"
+case "${AUTHZ_MODE,,}" in
+  swift|swift-clean)
+    AUTHZ_MODE="swift-clean"
+    DEFAULT_TEAM_MEMBER_RELATION="team_member"
+    ;;
+  kea|kea-legacy)
+    AUTHZ_MODE="kea-legacy"
+    DEFAULT_TEAM_MEMBER_RELATION="member"
+    ;;
+  *)
+    die "unsupported AUTHZ_MODE='${AUTHZ_MODE}' (supported: swift-clean, kea-legacy)"
+    ;;
+esac
 if [[ -z "${DEMO_IDENTITY_CONFIG_FILE:-}" ]]; then
   DEMO_IDENTITY_CONFIG_FILE="$(read_env_file_var DEMO_IDENTITY_CONFIG_FILE)"
 fi
@@ -432,26 +459,27 @@ KC_BOOTSTRAP_ADMIN_PASSWORD="${KC_BOOTSTRAP_ADMIN_PASSWORD:-Azerty123_}"
 jq -e '.teams | type == "array"' "$DEMO_IDENTITY_CONFIG_FILE" >/dev/null || die "invalid demo identity config format: .teams must be an array"
 jq -e '.users | type == "array"' "$DEMO_IDENTITY_CONFIG_FILE" >/dev/null || die "invalid demo identity config format: .users must be an array"
 jq -e '
+  def role_array($name):
+    ((.team_roles[$name] // []) | type == "array") and
+    all((.team_roles[$name] // [])[]?; type == "string" and length > 0);
   all(.users[]?;
     (.username|type=="string") and
     ((.teams // [])|type=="array") and
     all((.teams // [])[]?; type == "string" and length > 0) and
-    (
-      (.team_roles // {}) | type == "object"
-    ) and
-    (
-      ((.team_roles.member // [])|type=="array") and
-      ((.team_roles.manager // [])|type=="array") and
-      ((.team_roles.owner // [])|type=="array")
-    ) and
-    all((.team_roles.member // [])[]?; type == "string" and length > 0) and
-    all((.team_roles.manager // [])[]?; type == "string" and length > 0) and
-    all((.team_roles.owner // [])[]?; type == "string" and length > 0) and
+    ((.team_roles // {}) | type == "object") and
+    role_array("member") and
+    role_array("manager") and
+    role_array("owner") and
+    role_array("team_member") and
+    role_array("team_editor") and
+    role_array("team_admin") and
+    role_array("team_analyst") and
     ((.platform_roles // [])|type=="array") and
     all((.platform_roles // [])[]?; type == "string" and (. == "admin" or . == "observer"))
   )
-' "$DEMO_IDENTITY_CONFIG_FILE" >/dev/null || die "invalid demo identity config format: each user must define username, optional teams[], optional team_roles.{member,manager,owner}[], and optional platform_roles[] (admin|observer only)"
+' "$DEMO_IDENTITY_CONFIG_FILE" >/dev/null || die "invalid demo identity config format: each user must define username, optional teams[], optional team_roles for legacy (member,manager,owner) or Swift (team_member,team_editor,team_admin,team_analyst), and optional platform_roles[] (admin|observer only)"
 
+log "using authz mode '${AUTHZ_MODE}' (default team membership relation: ${DEFAULT_TEAM_MEMBER_RELATION})"
 log "using demo identity config file '${DEMO_IDENTITY_CONFIG_FILE}'"
 
 CHANGED=0
@@ -501,14 +529,18 @@ while IFS=$'\t' read -r username relation team; do
     ensure_team_role_closure "user:${username}" "$relation" "$local_team_id"
   fi
 done < <(
-  jq -r '
+  jq -r --arg default_member_relation "$DEFAULT_TEAM_MEMBER_RELATION" '
     .users[]? as $u
     | ($u.username // empty) as $name
     | (
-        (($u.teams // [])[]? | [$name, "member", .]) ,
+        (($u.teams // [])[]? | [$name, $default_member_relation, .]) ,
         (($u.team_roles.member // [])[]? | [$name, "member", .]) ,
         (($u.team_roles.manager // [])[]? | [$name, "manager", .]) ,
-        (($u.team_roles.owner // [])[]? | [$name, "owner", .])
+        (($u.team_roles.owner // [])[]? | [$name, "owner", .]) ,
+        (($u.team_roles.team_member // [])[]? | [$name, "team_member", .]) ,
+        (($u.team_roles.team_editor // [])[]? | [$name, "team_editor", .]) ,
+        (($u.team_roles.team_admin // [])[]? | [$name, "team_admin", .]) ,
+        (($u.team_roles.team_analyst // [])[]? | [$name, "team_analyst", .])
       )
     | @tsv
   ' "$DEMO_IDENTITY_CONFIG_FILE"

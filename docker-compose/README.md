@@ -97,8 +97,8 @@ The Keycloak post-install script is idempotent and enforces:
 - clients `app`, `agentic`, `knowledge-flow`, `control-plane`
 - `agentic`, `knowledge-flow`, and `control-plane` as confidential clients with service accounts enabled
 - service account roles for `agentic`, `knowledge-flow`, and `control-plane` (`realm-management` + `account:view-groups`, including `manage-users` for Knowledge Flow when `KEYCLOAK_KF_ENABLE_MANAGE_USERS=true`)
-- client roles `app:admin/editor/viewer/service_agent` (plus any extra roles declared in `config/configuration.yaml`)
-- demo groups, demo users, app-role assignments, and group memberships from `config/configuration.yaml` (reconciled by post-install)
+- client roles `app:admin/editor/viewer/service_agent` (definitions remain for service/legacy compatibility; clean Swift demo users receive no app roles)
+- demo groups, demo users, optional app-role assignments, and group memberships from the active demo identity config (`config/configuration.yaml` by default, `config/configuration.kea.yaml` with `WITH_KEA=true`)
 - client scope `groups-scope` with `oidc-group-membership-mapper` (claim `groups`, full path, access/id/userinfo token claims, multivalued)
 - `groups-scope` attached to default scopes of the `app` client
 - forced user re-login after a Keycloak wipe (`KEYCLOAK_FORCE_RELOGIN=auto` or `true`)
@@ -111,13 +111,14 @@ bash docker-compose/openfga/openfga-post-install.sh
 
 The OpenFGA post-install script is idempotent and enforces:
 - store `OPENFGA_STORE_NAME` (default: `fred`)
-- authorization model from `docker-compose/openfga/openfga-model.json`
-- seeded team memberships from `config/configuration.yaml`
-- user tuples based on Keycloak users declared in `config/configuration.yaml` using their realm user IDs
+- authorization model from the active model file (`docker-compose/openfga/openfga-model.json` by default, `docker-compose/openfga/openfga-model.kea.json` with `WITH_KEA=true`)
+- seeded team/platform tuples from the active demo identity config
+- user tuples based on Keycloak users declared in the active demo identity config using their realm user IDs
 - optional additional tuples with username subjects when `OPENFGA_SEED_INCLUDE_USERNAME_USERS=true`
 
 To change demo users / roles / teams, edit:
-- `config/configuration.yaml`
+- `config/configuration.yaml` for the clean Swift default
+- `config/configuration.kea.yaml` for the legacy Kea rehearsal (`WITH_KEA=true`)
 
 The docker post-install scripts also support `DEMO_IDENTITY_CONFIG_FILE=/custom/path.json` if you need a temporary override.
 
@@ -180,11 +181,15 @@ Grafana is pre-provisioned with a Prometheus datasource pointing to `http://app-
 
 > :key: For development purposes, the password for nominative or service accounts is `Azerty123_`
 
-Hereunder these are _the nominative SSO accounts_ registered into the Keycloak realm and their roles:
+Hereunder these are examples of _the nominative SSO accounts_ registered into the Keycloak realm.
+In the clean Swift default, user authorization roles are seeded in OpenFGA, not as Keycloak app roles:
 
-  - ``alice`` (role: ``admin``)
-  - ``bob`` (roles: ``editor``, ``viewer``)
-  - ``phil`` (role: ``viewer``)
+  - ``alice``: OpenFGA ``platform_admin``, no team membership
+  - ``gabriel``: OpenFGA ``platform_observer``, no team membership
+  - ``bob``: OpenFGA ``team_editor`` for ``northbridge`` and ``fredlab``
+  - ``marc``: OpenFGA ``team_admin`` for ``fredlab``
+
+Run ``make docker-up WITH_KEA=true`` for the legacy rehearsal seed with Keycloak ``admin/editor/viewer`` app roles.
 
 Hereunder, these are the information to connect to each service with their _local service accounts_.
 

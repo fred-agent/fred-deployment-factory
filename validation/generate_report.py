@@ -35,7 +35,7 @@ CLAIM_GROUPS_FILE = Path(__file__).parent / ".claim_groups.json"
 # section, just an unpolished one, instead of being silently dropped.
 GROUP_LABELS = {
     "test_platform_role_isolation.py": "Platform-role isolation (AUTHZ-05)",
-    "test_content_scope_bypass.py": "Content-scope bypass (known gap, not yet fixed)",
+    "test_content_scope_bypass.py": "Content-scope team isolation",
     "test_runtime_team_isolation.py": "Team isolation (cross-team + runtime)",
 }
 
@@ -121,8 +121,13 @@ def generate_report(junit_xml_path: Path) -> str:
         for _, status, _ in entries:
             counts[status] += 1
 
-    real_findings = counts["failed"] + counts["error"]
-    verdict = "READY - no unexplained findings" if real_findings == 0 else f"NOT READY - {real_findings} finding(s) need attention"
+    blocking_findings = counts["failed"] + counts["error"] + counts["infra"]
+    if blocking_findings:
+        verdict = f"NOT READY - {blocking_findings} blocking finding(s) need attention"
+    elif counts["xfail"]:
+        verdict = f"READY WITH ACCEPTED GAPS - {counts['xfail']} known xfail(s) remain"
+    else:
+        verdict = "READY - no unexplained findings"
 
     lines: list[str] = []
     lines.append("# Fred Authorization Validation Report")

@@ -69,14 +69,14 @@ ClickHouse `:8123`. `make k3d-up` prefetches images, retries transient pull fail
 Tear down: `make k3d-down` (uninstall release) · `make k3d-delete` (delete cluster) ·
 `make k3d-wipe` (both).
 
-## Working modes: swift-only vs kea→swift migration
+## Working modes: clean Swift vs Kea migration rehearsal
 
 | Mode | Command | Provisions |
 | --- | --- | --- |
-| **swift only** (default) | `make docker-up` / `make k3d-up` | the `fred` DB only — day-to-day swift work |
-| **kea→swift migration** | `make docker-up WITH_KEA=true` | also a `fred_kea` DB, to test migrating a kea instance into swift |
+| **clean Swift** (default) | `make docker-up` / `make k3d-up` | identity-only Keycloak users from `config/configuration.yaml`, the Swift OpenFGA model, and direct Swift tuples (`alice=platform_admin`, `gabriel=platform_observer`, `team_admin`/`team_editor`/`team_member`) |
+| **Kea legacy rehearsal** | `make docker-up WITH_KEA=true` | `config/configuration.kea.yaml`, the legacy OpenFGA model (`member`/`manager`/`owner`), and an extra `fred_kea` DB so the migration script has an old-world source to translate |
 
-Databases created in swift mode: `fred` (Fred), `keycloak`, `data` (tabular/vector),
+Databases created in clean Swift mode: `fred` (Fred), `keycloak`, `data` (tabular/vector),
 `openfga`, `temporal`, `temporal_visibility`. `WITH_KEA=true` adds `fred_kea` (a temporary
 migration aid; removed once the kea migration tooling is retired).
 

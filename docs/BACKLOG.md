@@ -47,42 +47,28 @@ Status: `[ ]` todo · `[~]` in progress · `[x]` done. IDs are referenced from t
 
 ## VALID — auth/isolation validation (release gate)
 
-- [x] **VALID-1** Extend `validation/` with the AUTHZ-05 complete role matrix (2026-07-09):
-      5 new demo users (`oscar`, `nina`, `derek`, `priya`, `quinn`) in `configuration.yaml`
-      covering platform-admin-without-team, the floor case, legitimate-admin-plus-one-team,
-      and the new target `platform_admin`/`platform_observer` relations in isolation.
-      New `platform_roles` config field + `openfga-post-install.sh` seeding. New
-      `scenarios/test_platform_role_isolation.py`. All 5 users live-verified against the
-      running local OpenFGA store via direct `/check` calls before any HTTP-level test was
-      written. See `validation/README.md` "The complete-matrix demo users".
+- [x] **VALID-1** Swift clean demo identity matrix (2026-07-10):
+      `config/configuration.yaml` is now the clean Swift seed: Keycloak carries identities
+      and groups, while OpenFGA carries `platform_admin`/`platform_observer` and
+      `team_admin`/`team_editor`/`team_member` tuples. `alice` is the platform admin,
+      `gabriel` the platform observer, both with zero team membership. The old Kea
+      vocabulary is preserved separately in `config/configuration.kea.yaml` for
+      `WITH_KEA=true` migration rehearsal.
 - [x] **VALID-2** Fixed real drift: `docker-compose/openfga/openfga-model.json` was a
       hand-maintained copy that had diverged from `fred-core`'s actual `schema.fga` (missing
       most organization capabilities, missing `can_read_conversations`). Synced it and added
       `make sync-openfga-model` (manual, not CI) to prevent recurrence.
-- [x] **VALID-3** Added `scenarios/test_content_scope_bypass.py`: a deliberate
-      `xfail(strict=True, raises=AssertionError)` tripwire for the known, NOT YET FIXED
-      org-scoped `can_read_content`/`can_process_content` gap in knowledge-flow-backend
-      (fred's `FRED-AUTHORIZATION-TARGET-MODEL-RFC.md` §25a). Needs knowledge-flow-backend
-      reachable (`FRED_KNOWLEDGE_FLOW_URL`, new). Note: without `raises=AssertionError`,
-      xfail silently swallows "stack unreachable" as if it were the expected vulnerability —
-      found and fixed this during implementation; see the file's docstring.
-- [x] **VALID-3b** Fully corrected `bin/fred-preflight.sh` for the new role matrix — not a
-      one-off hack for the new users. It previously hardcoded "every demo user must hold a
-      legacy Keycloak app role in {admin, editor, viewer}", which is flatly wrong under
-      AUTHZ-05 (nina/priya/quinn are deliberately role-less or platform-only) and would have
-      hard-failed `make docker-up` for any release using this matrix. Now:
-      (1) a user's expected app_roles/platform_roles come from `configuration.yaml`, empty is
-      valid when declared, extra/unexpected roles are still flagged;
-      (2) the "does the claim mechanism work at all" check moved from per-user to a single
-      aggregate assertion (at least one demo user has an effective legacy role);
-      (3) new: validates `platform_roles` against real OpenFGA `platform_admin`/
-      `platform_observer` tuples, same UUID-critical/username-warning pattern as team roles;
-      (4) new: validates the shape of the LIVE authorization model pushed to OpenFGA itself —
-      asserts `organization` defines `platform_admin`/`platform_observer` and `team.owner` is
-      direct-only (no `admin`-from-`organization` escalation) — a standing regression guard
-      against exactly the drift found in VALID-2, not just a one-time fix. All new logic
-      verified against both the fixed and the pre-fix model shape (synthetic + live OpenFGA
-      `/check` calls) before being considered done.
+- [x] **VALID-3** Updated `scenarios/test_content_scope_bypass.py` into a Swift
+      content-scope gate: `corpus/capabilities` must require `team_id`, allow members of that
+      team, and deny platform-only users or members of other teams. This used to be an xfail
+      tripwire for the org-scoped `can_read_content` gap; it is now a blocking validation of
+      the fixed team-scoped contract. Needs knowledge-flow-backend reachable
+      (`FRED_KNOWLEDGE_FLOW_URL`).
+- [x] **VALID-3b** `bin/fred-preflight.sh` is mode-aware: clean Swift validates the
+      Swift OpenFGA model (`team_admin`/`team_editor`/`team_analyst`/`team_member`) and accepts
+      zero Keycloak app roles for users; `WITH_KEA=true` validates the legacy rehearsal model
+      (`member`/`manager`/`owner`) and old app-role seed. Both modes still validate platform
+      tuples, Keycloak groups, and the live model shape pushed to OpenFGA.
 - [ ] **VALID-4** Wire `make validate-auth-isolation-localhost` into CI (currently zero
       `.github/workflows` in this repo — this release gate is 100% manual today).
 - [x] **VALID-5a** Minimal version shipped: `make validation-report` runs the full suite
@@ -98,10 +84,12 @@ Status: `[ ]` todo · `[~]` in progress · `[x]` done. IDs are referenced from t
       `validation/RFC-C3-validation-extensions.md` Extension F (`pytest.xml`,
       `environment.json`, checksums, retention policy, tied to a git tag) — not built;
       VALID-5a is deliberately the smaller first step.
-- [ ] **VALID-6** Team-role vocabulary rename (`owner`→`team_manager`, `manager`→`team_editor`,
-      +`team_analyst`) has no fixture users yet — no control-plane endpoint assigns/checks
-      those relations today, so a demo user for them would be untestable. Add once `fred`'s
-      `teams/service.py` rename lands (tracked in `fred`'s `AUTHZ-MIGRATION-BACKLOG.md`).
+- [x] **VALID-6** Team-role vocabulary fixtures now exist in the clean Swift seed:
+      `bob`/`derek` exercise `team_editor`, `sophia`/`marc`/`nadia` exercise `team_admin`,
+      and ordinary members exercise `team_member`. `validation-report` now proves the
+      hard split: `team_admin` without `team_editor` cannot enroll agents, and `team_editor`
+      without `team_admin` cannot administer members. `team_analyst` remains model-ready but
+      has no high-signal black-box workflow in this local suite yet.
 
 ## ENV — multi-environment
 

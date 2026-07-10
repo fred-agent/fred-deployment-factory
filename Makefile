@@ -6,6 +6,21 @@ DOCKER_COMPOSE_BASE := docker compose -f docker-compose/docker-compose-
 WITH_KEA ?= false
 export WITH_KEA
 
+ifeq ($(WITH_KEA),true)
+AUTHZ_MODE ?= kea-legacy
+DEFAULT_DEMO_IDENTITY_CONFIG_FILE := $(CURDIR)/config/configuration.kea.yaml
+DEFAULT_OPENFGA_MODEL_FILE := $(CURDIR)/docker-compose/openfga/openfga-model.kea.json
+else
+AUTHZ_MODE ?= swift-clean
+DEFAULT_DEMO_IDENTITY_CONFIG_FILE := $(CURDIR)/config/configuration.yaml
+DEFAULT_OPENFGA_MODEL_FILE := $(CURDIR)/docker-compose/openfga/openfga-model.json
+endif
+DEMO_IDENTITY_CONFIG_FILE ?= $(DEFAULT_DEMO_IDENTITY_CONFIG_FILE)
+OPENFGA_MODEL_FILE ?= $(DEFAULT_OPENFGA_MODEL_FILE)
+export AUTHZ_MODE
+export DEMO_IDENTITY_CONFIG_FILE
+export OPENFGA_MODEL_FILE
+
 # SEED_DEMO=false brings the stack up EMPTY (the "freshly deployed s3ns" state):
 #   - Keycloak realm `app` gets clients + service accounts ONLY (no alice/bob/phil, no demo groups)
 #   - Keycloak/OpenFGA post-install seed NO demo users/groups/tuples (store + model still created)
@@ -196,7 +211,15 @@ preflight-check:
 	@echo "Running FRED preflight..."
 	bash bin/fred-preflight.sh
 
-docker-up: $(DOCKER_UP_SERVICES) ## Launch the Docker stack (STACK=base[default]: minimal; STACK=extended: full stack incl. ClickHouse, Langfuse, Redis, Prometheus, Grafana)
+docker-up: $(DOCKER_UP_SERVICES) ## Launch the Docker stack (default Swift clean authz; WITH_KEA=true for legacy Kea migration rehearsal)
+	@echo "Authz mode: $(AUTHZ_MODE)"
+	@echo "Demo identity config: $(DEMO_IDENTITY_CONFIG_FILE)"
+	@echo "OpenFGA model file: $(OPENFGA_MODEL_FILE)"
+	@if [ "$(AUTHZ_MODE)" = "swift-clean" ]; then \
+	  echo "Swift clean seed: alice=platform_admin, gabriel=platform_observer, team roles live only in OpenFGA."; \
+	else \
+	  echo "Kea legacy seed: old app/team roles, intended for migration-script rehearsal."; \
+	fi
 	@if [ "$(SEED_DEMO)" = "false" ]; then \
 	  echo "[SEED_DEMO=false] empty mode — skipping preflight (no demo users to verify)."; \
 	else \
@@ -642,12 +665,16 @@ validation-report: check-swift-src ## Run the full validation suite (no -x) and 
 	@echo "▶ installing deps (shared Fred libs editable + test app)"
 	@$(VALIDATION_VENV)/bin/pip install -q -e $(FRED_CORE_SRC) -e $(FRED_SDK_SRC) -e $(FRED_RUNTIME_SRC) -e $(VALIDATION_DIR)
 	@echo "▶ running the full suite (no -x, so one failure doesn't hide the rest)"
-	-cd $(VALIDATION_DIR) && \
-	  FRED_CONTROL_PLANE_URL="$(FRED_CONTROL_PLANE_URL)" \
-	  FRED_RUNTIME_PUBLIC_BASE="$(FRED_RUNTIME_PUBLIC_BASE)" \
-	  .venv/bin/pytest --junitxml=report.xml
-	@$(VALIDATION_VENV)/bin/python $(VALIDATION_DIR)/generate_report.py $(VALIDATION_JUNIT_XML) | tee $(VALIDATION_REPORT)
-	@echo ""
-	@echo "✓ Report written to $(VALIDATION_REPORT)"
+	@set +e; \
+	  cd $(VALIDATION_DIR) && \
+	    FRED_CONTROL_PLANE_URL="$(FRED_CONTROL_PLANE_URL)" \
+	    FRED_RUNTIME_PUBLIC_BASE="$(FRED_RUNTIME_PUBLIC_BASE)" \
+	    .venv/bin/pytest --junitxml=report.xml; \
+	  rc=$$?; \
+	  cd "$(CURDIR)" || exit $$rc; \
+	  $(VALIDATION_VENV)/bin/python $(VALIDATION_DIR)/generate_report.py $(VALIDATION_JUNIT_XML) | tee $(VALIDATION_REPORT); \
+	  echo ""; \
+	  echo "✓ Report written to $(VALIDATION_REPORT)"; \
+	  exit $$rc
 
 .PHONY: help network-create env-setup keycloak-post-install postgres-up keycloak-up seaweedfs-up opensearch-up clickhouse-up langfuse-up prometheus-up grafana-up openfga-post-install openfga-up temporal-up preflight-check docker-up docker-down all-down docker-wipe docker-destroy k3d-create k3d-up k3d-deploy k3d-restart k3d-redeploy k3d-logs k3d-down k3d-uninstall k3d-delete k3d-wipe k3d-status k3d-airgap-on k3d-airgap-off k3d-airgap-status checkpoint-save checkpoint-restore docker-restart-from-checkpoint checkpoint-list checkpoint-delete kea-identity-dump kea-identity-restore kea-data-dump kea-data-restore kea-snapshot migration-reset check-swift-src sync-openfga-model validate-auth-isolation-localhost validate-auth-isolation-k3d validation-report

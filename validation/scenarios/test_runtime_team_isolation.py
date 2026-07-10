@@ -24,6 +24,7 @@ The concrete agent and team are a single source of truth in factory_config
 
 from __future__ import annotations
 
+import base64
 import json
 import uuid
 from collections.abc import Iterator
@@ -37,6 +38,7 @@ from fred_sdk.contracts.execution import RuntimeExecuteRequest
 from factory_config import (
     AGENT_TAG,
     RUNTIME_PUBLIC_BASE,
+    TEAM_OPERATOR_USERNAME,
     TEST_AGENT_ID,
     TEST_TEAM,
     USERS,
@@ -51,6 +53,16 @@ def _identifiers(team_item: dict) -> set[str]:
 MEMBERS = sorted(u for u, fu in USERS.items() if TEST_TEAM in fu.teams)
 NON_MEMBERS = sorted(u for u, fu in USERS.items() if TEST_TEAM not in fu.teams)
 PLAIN_MEMBERS = sorted(u for u in MEMBERS if not USERS[u].can_enroll_in(TEST_TEAM))
+TEAM_ADMINS = sorted(
+    u for u in MEMBERS if USERS[u].relation_in(TEST_TEAM) in ("owner", "team_admin")
+)
+TEAM_EDITORS = sorted(
+    u for u in MEMBERS if USERS[u].relation_in(TEST_TEAM) in ("manager", "team_editor")
+)
+IDENTITY_ONLY_USERNAMES = sorted(
+    u for u, fu in USERS.items() if not fu.teams and not fu.app_roles and not fu.platform_roles
+)
+
 
 
 def _json_or_text(resp: httpx.Response) -> object:
@@ -92,6 +104,16 @@ def _runtime_url(path: str) -> str:
     return urljoin(RUNTIME_PUBLIC_BASE, path)
 
 
+def _jwt_sub(token: str) -> str:
+    """Extract the Keycloak subject from a JWT without verifying it; validation already obtained it from Keycloak."""
+    payload = token.split(".")[1]
+    payload += "=" * (-len(payload) % 4)
+    decoded = json.loads(base64.urlsafe_b64decode(payload.encode()).decode())
+    subject = str(decoded.get("sub") or "")
+    assert subject, "Keycloak token has no sub claim"
+    return subject
+
+
 # --- 1. ReBAC team membership (per user) -------------------------------------
 
 
@@ -117,12 +139,18 @@ def test_user_sees_exactly_their_teams(username: str, cp, users) -> None:
 
 
 def _resolve_team_id(admin) -> str:
+    if TEAM_OPERATOR_USERNAME is None:
+        pytest.fail(
+            f"No user in configuration.yaml can administer/enroll in {TEST_TEAM!r}; "
+            f"grant team_admin/team_editor (Swift) or owner/manager (Kea) to one fixture user.",
+            pytrace=False,
+        )
     teams = admin.get("/teams").json()
     by_name = {t.get("name"): t for t in teams}
     item = by_name.get(TEST_TEAM)
     if item is None:
         pytest.fail(
-            f"Test team {TEST_TEAM!r} is not visible to alice in /teams.\n"
+            f"Test team {TEST_TEAM!r} is not visible to the configured team operator in /teams.\n"
             f"Teams returned: {sorted(n for n in by_name if n)}\n"
             f"-> Is configuration.yaml seeded (make docker-up)? Did the team get "
             f"renamed? Update TEST_TEAM in factory_config.py if so.",
@@ -163,14 +191,16 @@ def _resolve_test_template(admin) -> tuple[str, dict]:
 
 def test_expected_test_agent_is_visible_in_catalog(cp) -> None:
     """Check that the configured test agent is visible and deployable in the team catalog."""
-    _team_id, template = _resolve_test_template(cp("alice"))
+    assert TEAM_OPERATOR_USERNAME is not None
+    _team_id, template = _resolve_test_template(cp(TEAM_OPERATOR_USERNAME))
     assert template.get("template_id"), f"{AGENT_TAG} template has no template_id: {template!r}"
 
 
 @pytest.fixture(scope="module")
 def enrolled_agent(cp):
-    """Enroll the test agent into the test team as a manager (alice), yield its ids, clean up after."""
-    admin = cp("alice")
+    """Enroll the test agent into the test team as the configured team operator, yield its ids, clean up after."""
+    assert TEAM_OPERATOR_USERNAME is not None
+    admin = cp(TEAM_OPERATOR_USERNAME)
     team_id, template = _resolve_test_template(admin)
     template_id = template["template_id"]
 
@@ -180,7 +210,7 @@ def enrolled_agent(cp):
         json={"template_id": template_id, "display_name": name},
     )
     assert created.status_code in (200, 201), (
-        f"Manager (alice) could not enroll {AGENT_TAG} into {TEST_TEAM!r}: "
+        f"Team operator ({TEAM_OPERATOR_USERNAME}) could not enroll {AGENT_TAG} into {TEST_TEAM!r}: "
         f"{created.status_code} {created.text[:200]}"
     )
     instance_id = created.json().get("agent_instance_id") or created.json().get("id")
@@ -329,14 +359,64 @@ def test_runtime_ignores_forged_context_user_id(enrolled_agent, token_for, cp) -
 @pytest.mark.parametrize("username", PLAIN_MEMBERS)
 def test_plain_member_cannot_enroll_agent_in_collaborative_team(username: str, cp) -> None:
     """A plain team member cannot enroll an agent in the collaborative test team."""
-    admin = cp("alice")
-    team_id, template = _resolve_test_template(admin)
+    assert TEAM_OPERATOR_USERNAME is not None
+    operator = cp(TEAM_OPERATOR_USERNAME)
+    team_id, template = _resolve_test_template(operator)
     resp = cp(username).post(
         f"/teams/{team_id}/agent-instances",
         json={"template_id": template["template_id"], "display_name": f"deny-{uuid.uuid4().hex[:6]}"},
     )
     assert resp.status_code in (403, 404), (
         f"{username} unexpectedly enrolled {AGENT_TAG} into {TEST_TEAM}: "
+        f"{resp.status_code} {_json_or_text(resp)!r}"
+    )
+
+
+@pytest.mark.parametrize("username", TEAM_ADMINS)
+def test_team_admin_cannot_enroll_agent_without_editor_role(username: str, cp) -> None:
+    """A team_admin without team_editor cannot enroll an agent in the collaborative test team."""
+    if USERS[username].relation_in(TEST_TEAM) in ("manager", "team_editor"):
+        pytest.skip(f"{username} also has editor authority in {TEST_TEAM}; not a split-role fixture")
+    assert TEAM_OPERATOR_USERNAME is not None
+    operator = cp(TEAM_OPERATOR_USERNAME)
+    team_id, template = _resolve_test_template(operator)
+    resp = cp(username).post(
+        f"/teams/{team_id}/agent-instances",
+        json={
+            "template_id": template["template_id"],
+            "display_name": f"deny-admin-{uuid.uuid4().hex[:6]}",
+        },
+    )
+    instance_id = None
+    if resp.status_code in (200, 201):
+        instance_id = resp.json().get("agent_instance_id") or resp.json().get("id")
+        if instance_id:
+            operator.delete(f"/teams/{team_id}/agent-instances/{instance_id}")
+    assert resp.status_code in (403, 404), (
+        f"{username} is team_admin of {TEST_TEAM} but not team_editor, yet enrolled {AGENT_TAG}: "
+        f"{resp.status_code} {_json_or_text(resp)!r}"
+    )
+
+
+@pytest.mark.parametrize("username", TEAM_EDITORS)
+def test_team_editor_cannot_administer_members_without_admin_role(username: str, cp, token_for) -> None:
+    """A team_editor without team_admin cannot add members to the collaborative test team."""
+    if USERS[username].relation_in(TEST_TEAM) in ("owner", "team_admin"):
+        pytest.skip(f"{username} also has admin authority in {TEST_TEAM}; not a split-role fixture")
+    assert TEAM_OPERATOR_USERNAME is not None
+    assert IDENTITY_ONLY_USERNAMES, "Need at least one identity-only user outside the test team"
+    operator = cp(TEAM_OPERATOR_USERNAME)
+    team_id = _resolve_team_id(operator)
+    target_username = IDENTITY_ONLY_USERNAMES[0]
+    target_user_id = _jwt_sub(token_for(target_username))
+    resp = cp(username).post(
+        f"/teams/{team_id}/members",
+        json={"user_id": target_user_id, "relation": "team_member"},
+    )
+    if resp.status_code in (200, 201, 202, 204):
+        operator.delete(f"/teams/{team_id}/members/{target_user_id}")
+    assert resp.status_code in (403, 404), (
+        f"{username} is team_editor of {TEST_TEAM} but not team_admin, yet added {target_username}: "
         f"{resp.status_code} {_json_or_text(resp)!r}"
     )
 

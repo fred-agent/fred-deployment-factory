@@ -33,6 +33,13 @@ FGA="${FGA:-http://localhost:9080}"
 REALM="${REALM:-app}"
 OPENFGA_STORE_NAME="${OPENFGA_STORE_NAME:-fred}"
 DEMO_IDENTITY_CONFIG_FILE="${DEMO_IDENTITY_CONFIG_FILE:-${REPO_ROOT}/config/configuration.yaml}"
+AUTHZ_MODE="${AUTHZ_MODE:-swift-clean}"
+case "${AUTHZ_MODE,,}" in
+  swift|swift-clean) AUTHZ_MODE="swift-clean" ;;
+  kea|kea-legacy) AUTHZ_MODE="kea-legacy" ;;
+  *) printf '%s
+' "Unsupported AUTHZ_MODE='${AUTHZ_MODE}' (expected swift-clean or kea-legacy)" >&2; exit 1 ;;
+esac
 
 KC_ADMIN_USER="${KC_ADMIN_USER:-admin}"
 KC_ADMIN_PASS="${KC_ADMIN_PASS:-Azerty123_}"
@@ -86,6 +93,9 @@ REQUIRED_GROUPS=()
 declare -A EXPECTED_TEAMS=()
 declare -A EXPECTED_MANAGER_TEAMS=()
 declare -A EXPECTED_OWNER_TEAMS=()
+declare -A EXPECTED_TEAM_ADMIN_TEAMS=()
+declare -A EXPECTED_TEAM_EDITOR_TEAMS=()
+declare -A EXPECTED_TEAM_ANALYST_TEAMS=()
 declare -A EXPECTED_APP_ROLES=()
 declare -A EXPECTED_PLATFORM_ROLES=()
 declare -A KEYCLOAK_GROUP_NAME_BY_ID=()
@@ -347,6 +357,9 @@ load_demo_identity_expectations() {
   [[ -f "$DEMO_IDENTITY_CONFIG_FILE" ]] || die "Demo identity config file not found: ${DEMO_IDENTITY_CONFIG_FILE}"
 
   jq -e '
+    def role_array($name):
+      ((.team_roles[$name] // []) | type == "array") and
+      all((.team_roles[$name] // [])[]?; type == "string" and length > 0);
     (.teams | type == "array") and
     (.users | type == "array") and
     all(.teams[]?; type == "string" and length > 0) and
@@ -355,12 +368,13 @@ load_demo_identity_expectations() {
       ((.teams // []) | type == "array") and
       all((.teams // [])[]?; type == "string" and length > 0) and
       ((.team_roles // {}) | type == "object") and
-      ((.team_roles.member // []) | type == "array") and
-      ((.team_roles.manager // []) | type == "array") and
-      ((.team_roles.owner // []) | type == "array") and
-      all((.team_roles.member // [])[]?; type == "string" and length > 0) and
-      all((.team_roles.manager // [])[]?; type == "string" and length > 0) and
-      all((.team_roles.owner // [])[]?; type == "string" and length > 0) and
+      role_array("member") and
+      role_array("manager") and
+      role_array("owner") and
+      role_array("team_member") and
+      role_array("team_editor") and
+      role_array("team_admin") and
+      role_array("team_analyst") and
       ((.app_roles // []) | type == "array") and
       all((.app_roles // [])[]?; type == "string" and length > 0) and
       ((.platform_roles // []) | type == "array") and
@@ -384,7 +398,11 @@ load_demo_identity_expectations() {
           (.teams // [])[],
           (.team_roles.member // [])[],
           (.team_roles.manager // [])[],
-          (.team_roles.owner // [])[]
+          (.team_roles.owner // [])[],
+          (.team_roles.team_member // [])[],
+          (.team_roles.team_editor // [])[],
+          (.team_roles.team_admin // [])[],
+          (.team_roles.team_analyst // [])[]
         )
       | select(($teams | index(.)) == null)
       | [$u, .] | @tsv
@@ -405,11 +423,14 @@ load_demo_identity_expectations() {
   EXPECTED_TEAMS=()
   EXPECTED_MANAGER_TEAMS=()
   EXPECTED_OWNER_TEAMS=()
+  EXPECTED_TEAM_ADMIN_TEAMS=()
+  EXPECTED_TEAM_EDITOR_TEAMS=()
+  EXPECTED_TEAM_ANALYST_TEAMS=()
   EXPECTED_APP_ROLES=()
   EXPECTED_PLATFORM_ROLES=()
   while IFS= read -r user_json; do
     [[ -n "$user_json" ]] || continue
-    local username team_words manager_words owner_words role_words platform_role_words
+    local username team_words manager_words owner_words team_admin_words team_editor_words team_analyst_words role_words platform_role_words
     username="$(jq -r '.username' <<<"$user_json")"
     team_words="$(
       jq -r '
@@ -417,7 +438,11 @@ load_demo_identity_expectations() {
           (.teams // [])[],
           (.team_roles.member // [])[],
           (.team_roles.manager // [])[],
-          (.team_roles.owner // [])[]
+          (.team_roles.owner // [])[],
+          (.team_roles.team_member // [])[],
+          (.team_roles.team_editor // [])[],
+          (.team_roles.team_admin // [])[],
+          (.team_roles.team_analyst // [])[]
         ] | unique | join(" ")
       ' <<<"$user_json"
     )"
@@ -430,11 +455,17 @@ load_demo_identity_expectations() {
       ' <<<"$user_json"
     )"
     owner_words="$(jq -r '(.team_roles.owner // []) | unique | join(" ")' <<<"$user_json")"
+    team_admin_words="$(jq -r '(.team_roles.team_admin // []) | unique | join(" ")' <<<"$user_json")"
+    team_editor_words="$(jq -r '(.team_roles.team_editor // []) | unique | join(" ")' <<<"$user_json")"
+    team_analyst_words="$(jq -r '(.team_roles.team_analyst // []) | unique | join(" ")' <<<"$user_json")"
     role_words="$(jq -r '(.app_roles // []) | join(" ")' <<<"$user_json")"
     platform_role_words="$(jq -r '(.platform_roles // []) | join(" ")' <<<"$user_json")"
     EXPECTED_TEAMS["$username"]="$team_words"
     EXPECTED_MANAGER_TEAMS["$username"]="$manager_words"
     EXPECTED_OWNER_TEAMS["$username"]="$owner_words"
+    EXPECTED_TEAM_ADMIN_TEAMS["$username"]="$team_admin_words"
+    EXPECTED_TEAM_EDITOR_TEAMS["$username"]="$team_editor_words"
+    EXPECTED_TEAM_ANALYST_TEAMS["$username"]="$team_analyst_words"
     EXPECTED_APP_ROLES["$username"]="$role_words"
     EXPECTED_PLATFORM_ROLES["$username"]="$platform_role_words"
   done < <(jq -c '.users[]?' "$DEMO_IDENTITY_CONFIG_FILE")
@@ -709,8 +740,12 @@ if [[ -n "${ADM}" ]]; then
     # AUTHZ-05 (some legacy-role-gated capabilities still exist - see fred's
     # RFC §25a); a stack where SOME users legitimately have none is not.
     if [[ "$ANY_USER_HAS_REQUIRED_APP_ROLE" -eq 0 ]]; then
-      ((APP_USER_PERMISSION_GAPS+=1))
-      mark_critical "No demo user has an effective app role in {admin, editor, viewer}; token claim resource_access.app.roles would never be populated for anyone"
+      if [[ "$AUTHZ_MODE" == "swift-clean" ]]; then
+        ok "No demo user has a legacy app role in Swift clean mode - Keycloak is identity-only for users"
+      else
+        ((APP_USER_PERMISSION_GAPS+=1))
+        mark_critical "No demo user has an effective app role in {admin, editor, viewer}; Kea legacy mode should still exercise resource_access.app.roles"
+      fi
     else
       ok "At least one demo user has an effective app role in {admin, editor, viewer} - resource_access.app.roles claim mechanism confirmed working"
     fi
@@ -937,8 +972,8 @@ fi
 
 MODEL_SHAPE_GAPS=0
 if [[ -n "${STORE_ID}" ]]; then
-  step "Validate authorization-model shape (AUTHZ-05)"
-  info "Checking the LIVE model actually pushed to OpenFGA, not just fred-core's schema.fga.json source"
+  step "Validate authorization-model shape (${AUTHZ_MODE})"
+  info "Checking the LIVE model actually pushed to OpenFGA, not just a source file"
   if latest_models_payload="$(curl -fsS -H "Authorization: Bearer ${OPENFGA_TOKEN}" "${FGA}/stores/${STORE_ID}/authorization-models?page_size=1" 2>/dev/null)"; then
     current_model="$(jq -c '.authorization_models[0] // empty' <<<"$latest_models_payload")"
     if [[ -z "$current_model" ]]; then
@@ -946,20 +981,36 @@ if [[ -n "${STORE_ID}" ]]; then
       mark_critical "OpenFGA store '${OPENFGA_STORE_NAME}' has no authorization model at all"
     else
       org_relations="$(jq -r '.type_definitions[]? | select(.type=="organization") | .relations // {} | keys[]?' <<<"$current_model" | sort -u)"
-      team_owner_def="$(jq -c '.type_definitions[]? | select(.type=="team") | .relations.owner // {}' <<<"$current_model")"
+      team_relations="$(jq -r '.type_definitions[]? | select(.type=="team") | .relations // {} | keys[]?' <<<"$current_model" | sort -u)"
 
       if contains_line "platform_admin" "$org_relations" && contains_line "platform_observer" "$org_relations"; then
-        ok "organization type defines platform_admin and platform_observer (AUTHZ-05 target relations present)"
+        ok "organization type defines platform_admin and platform_observer"
       else
         ((MODEL_SHAPE_GAPS+=1))
-        mark_critical "organization type is missing platform_admin/platform_observer - the live OpenFGA model predates AUTHZ-05. Run 'make sync-openfga-model' then re-run 'make openfga-post-install'."
+        mark_critical "organization type is missing platform_admin/platform_observer"
       fi
 
-      if [[ "$team_owner_def" == '{"this":{}}' ]]; then
-        ok "team.owner is a direct-only relation (no organization-admin escalation into team ownership)"
+      if [[ "$AUTHZ_MODE" == "swift-clean" ]]; then
+        missing_swift_relations=""
+        for rel in team_member team_editor team_admin team_analyst; do
+          if ! contains_line "$rel" "$team_relations"; then
+            missing_swift_relations+="${rel}"$'\n'
+          fi
+        done
+        if [[ -z "$missing_swift_relations" ]]; then
+          ok "team type defines Swift target relations team_member/team_editor/team_admin/team_analyst"
+        else
+          ((MODEL_SHAPE_GAPS+=1))
+          mark_critical "team type is missing Swift target relations: $(sorted_lines_to_csv "$missing_swift_relations")"
+        fi
       else
-        ((MODEL_SHAPE_GAPS+=1))
-        mark_critical "team.owner is NOT direct-only (got: ${team_owner_def}) - this is the exact escalation bug fixed in AUTHZ-05 (FRED-AUTHORIZATION-TARGET-MODEL-RFC.md §24.2): a Keycloak admin would be an implicit owner of every team. Run 'make sync-openfga-model' then re-run 'make openfga-post-install'."
+        team_owner_def="$(jq -c '.type_definitions[]? | select(.type=="team") | .relations.owner // {}' <<<"$current_model")"
+        if [[ "$team_owner_def" == '{"this":{}}' ]]; then
+          ok "team.owner is a direct-only relation (no organization-admin escalation into team ownership)"
+        else
+          ((MODEL_SHAPE_GAPS+=1))
+          mark_critical "team.owner is NOT direct-only (got: ${team_owner_def}) - Kea legacy mode should be migration-ready without platform-to-team escalation"
+        fi
       fi
     fi
   else
@@ -981,10 +1032,16 @@ FGA_UUID_MANAGER_MISSING=0
 FGA_USERNAME_MANAGER_MISSING=0
 FGA_UUID_OWNER_MISSING=0
 FGA_USERNAME_OWNER_MISSING=0
+FGA_UUID_TEAM_ADMIN_MISSING=0
+FGA_USERNAME_TEAM_ADMIN_MISSING=0
+FGA_UUID_TEAM_EDITOR_MISSING=0
+FGA_USERNAME_TEAM_EDITOR_MISSING=0
+FGA_UUID_TEAM_ANALYST_MISSING=0
+FGA_USERNAME_TEAM_ANALYST_MISSING=0
 FGA_UUID_PLATFORM_ROLE_MISSING=0
 FGA_USERNAME_PLATFORM_ROLE_MISSING=0
 
-step "Starting situation: team membership matrix"
+step "Starting situation: team membership matrix (${AUTHZ_MODE})"
 for u in "${REQUIRED_USERS[@]}"; do
   printf "\n%sUser: %s%s\n" "${BOLD}" "$u" "${RESET}"
   uid="${USER_IDS[$u]:-}"
@@ -996,13 +1053,22 @@ for u in "${REQUIRED_USERS[@]}"; do
   expected_teams="$(words_to_sorted_lines "${EXPECTED_TEAMS[$u]:-}")"
   expected_manager_teams="$(words_to_sorted_lines "${EXPECTED_MANAGER_TEAMS[$u]:-}")"
   expected_owner_teams="$(words_to_sorted_lines "${EXPECTED_OWNER_TEAMS[$u]:-}")"
+  expected_team_admin_teams="$(words_to_sorted_lines "${EXPECTED_TEAM_ADMIN_TEAMS[$u]:-}")"
+  expected_team_editor_teams="$(words_to_sorted_lines "${EXPECTED_TEAM_EDITOR_TEAMS[$u]:-}")"
+  expected_team_analyst_teams="$(words_to_sorted_lines "${EXPECTED_TEAM_ANALYST_TEAMS[$u]:-}")"
   expected_platform_roles="$(words_to_sorted_lines "${EXPECTED_PLATFORM_ROLES[$u]:-}")"
   expected_groups="$(to_keycloak_group_lines "$expected_teams")"
   info "Keycloak UID: ${uid}"
   info "Expected teams: $(sorted_lines_to_csv "$expected_teams")"
-  info "Expected manager teams: $(sorted_lines_to_csv "$expected_manager_teams")"
-  info "Expected owner teams: $(sorted_lines_to_csv "$expected_owner_teams")"
-  info "Expected platform roles (AUTHZ-05): $(sorted_lines_to_csv "$expected_platform_roles")"
+  if [[ "$AUTHZ_MODE" == "swift-clean" ]]; then
+    info "Expected team_admin teams: $(sorted_lines_to_csv "$expected_team_admin_teams")"
+    info "Expected team_editor teams: $(sorted_lines_to_csv "$expected_team_editor_teams")"
+    info "Expected team_analyst teams: $(sorted_lines_to_csv "$expected_team_analyst_teams")"
+  else
+    info "Expected manager teams: $(sorted_lines_to_csv "$expected_manager_teams")"
+    info "Expected owner teams: $(sorted_lines_to_csv "$expected_owner_teams")"
+  fi
+  info "Expected platform roles: $(sorted_lines_to_csv "$expected_platform_roles")"
 
   kc_groups="$(
     curl -fsS -H "Authorization: Bearer ${ADM}" \
@@ -1021,61 +1087,118 @@ for u in "${REQUIRED_USERS[@]}"; do
   fi
 
   if [[ -n "${ALL_TUPLES}" ]]; then
-    fga_username_teams="$(fga_team_relation_lines "user:${u}" member)"
-    fga_uuid_teams="$(fga_team_relation_lines "user:${uid}" member)"
-    fga_username_manager_teams="$(fga_team_relation_lines "user:${u}" manager)"
-    fga_uuid_manager_teams="$(fga_team_relation_lines "user:${uid}" manager)"
-    fga_username_owner_teams="$(fga_team_relation_lines "user:${u}" owner)"
-    fga_uuid_owner_teams="$(fga_team_relation_lines "user:${uid}" owner)"
+    if [[ "$AUTHZ_MODE" == "swift-clean" ]]; then
+      fga_uuid_teams="$(fga_team_relation_lines "user:${uid}" team_member)"
+      fga_username_teams="$(fga_team_relation_lines "user:${u}" team_member)"
+      fga_uuid_team_admin_teams="$(fga_team_relation_lines "user:${uid}" team_admin)"
+      fga_username_team_admin_teams="$(fga_team_relation_lines "user:${u}" team_admin)"
+      fga_uuid_team_editor_teams="$(fga_team_relation_lines "user:${uid}" team_editor)"
+      fga_username_team_editor_teams="$(fga_team_relation_lines "user:${u}" team_editor)"
+      fga_uuid_team_analyst_teams="$(fga_team_relation_lines "user:${uid}" team_analyst)"
+      fga_username_team_analyst_teams="$(fga_team_relation_lines "user:${u}" team_analyst)"
 
-    info "OpenFGA member teams (user:${u}): $(sorted_lines_to_csv "$fga_username_teams")"
-    info "OpenFGA member teams (user:${uid}): $(sorted_lines_to_csv "$fga_uuid_teams")"
-    info "OpenFGA manager teams (user:${u}): $(sorted_lines_to_csv "$fga_username_manager_teams")"
-    info "OpenFGA manager teams (user:${uid}): $(sorted_lines_to_csv "$fga_uuid_manager_teams")"
-    info "OpenFGA owner teams (user:${u}): $(sorted_lines_to_csv "$fga_username_owner_teams")"
-    info "OpenFGA owner teams (user:${uid}): $(sorted_lines_to_csv "$fga_uuid_owner_teams")"
+      info "OpenFGA team_member teams (user:${u}): $(sorted_lines_to_csv "$fga_username_teams")"
+      info "OpenFGA team_member teams (user:${uid}): $(sorted_lines_to_csv "$fga_uuid_teams")"
+      info "OpenFGA team_admin teams (user:${u}): $(sorted_lines_to_csv "$fga_username_team_admin_teams")"
+      info "OpenFGA team_admin teams (user:${uid}): $(sorted_lines_to_csv "$fga_uuid_team_admin_teams")"
+      info "OpenFGA team_editor teams (user:${u}): $(sorted_lines_to_csv "$fga_username_team_editor_teams")"
+      info "OpenFGA team_editor teams (user:${uid}): $(sorted_lines_to_csv "$fga_uuid_team_editor_teams")"
+      info "OpenFGA team_analyst teams (user:${u}): $(sorted_lines_to_csv "$fga_username_team_analyst_teams")"
+      info "OpenFGA team_analyst teams (user:${uid}): $(sorted_lines_to_csv "$fga_uuid_team_analyst_teams")"
 
-    missing_fga_uuid="$(missing_lines "$expected_teams" "$fga_uuid_teams")"
-    if [[ -n "$missing_fga_uuid" ]]; then
-      ((FGA_UUID_MEMBERSHIP_MISSING+=1))
-      mark_critical "OpenFGA UUID-subject tuples missing for '${u}': $(sorted_lines_to_csv "$missing_fga_uuid")"
-    fi
-
-    missing_fga_uuid_manager="$(missing_lines "$expected_manager_teams" "$fga_uuid_manager_teams")"
-    if [[ -n "$missing_fga_uuid_manager" ]]; then
-      ((FGA_UUID_MANAGER_MISSING+=1))
-      mark_critical "OpenFGA UUID-subject manager tuples missing for '${u}': $(sorted_lines_to_csv "$missing_fga_uuid_manager")"
-    fi
-
-    missing_fga_uuid_owner="$(missing_lines "$expected_owner_teams" "$fga_uuid_owner_teams")"
-    if [[ -n "$missing_fga_uuid_owner" ]]; then
-      ((FGA_UUID_OWNER_MISSING+=1))
-      mark_critical "OpenFGA UUID-subject owner tuples missing for '${u}': $(sorted_lines_to_csv "$missing_fga_uuid_owner")"
-    fi
-
-    if [[ "${OPENFGA_EXPECT_USERNAME_SUBJECTS,,}" == "true" ]]; then
-      missing_fga_user="$(missing_lines "$expected_teams" "$fga_username_teams")"
-      if [[ -n "$missing_fga_user" ]]; then
-        ((FGA_USERNAME_MEMBERSHIP_MISSING+=1))
-        mark_warning "OpenFGA username-subject tuples missing for '${u}': $(sorted_lines_to_csv "$missing_fga_user")"
+      missing_fga_uuid="$(missing_lines "$expected_teams" "$fga_uuid_teams")"
+      if [[ -n "$missing_fga_uuid" ]]; then
+        ((FGA_UUID_MEMBERSHIP_MISSING+=1))
+        mark_critical "OpenFGA UUID-subject team_member tuples missing for '${u}': $(sorted_lines_to_csv "$missing_fga_uuid")"
+      fi
+      missing_fga_uuid_team_admin="$(missing_lines "$expected_team_admin_teams" "$fga_uuid_team_admin_teams")"
+      if [[ -n "$missing_fga_uuid_team_admin" ]]; then
+        ((FGA_UUID_TEAM_ADMIN_MISSING+=1))
+        mark_critical "OpenFGA UUID-subject team_admin tuples missing for '${u}': $(sorted_lines_to_csv "$missing_fga_uuid_team_admin")"
+      fi
+      missing_fga_uuid_team_editor="$(missing_lines "$expected_team_editor_teams" "$fga_uuid_team_editor_teams")"
+      if [[ -n "$missing_fga_uuid_team_editor" ]]; then
+        ((FGA_UUID_TEAM_EDITOR_MISSING+=1))
+        mark_critical "OpenFGA UUID-subject team_editor tuples missing for '${u}': $(sorted_lines_to_csv "$missing_fga_uuid_team_editor")"
+      fi
+      missing_fga_uuid_team_analyst="$(missing_lines "$expected_team_analyst_teams" "$fga_uuid_team_analyst_teams")"
+      if [[ -n "$missing_fga_uuid_team_analyst" ]]; then
+        ((FGA_UUID_TEAM_ANALYST_MISSING+=1))
+        mark_critical "OpenFGA UUID-subject team_analyst tuples missing for '${u}': $(sorted_lines_to_csv "$missing_fga_uuid_team_analyst")"
       fi
 
-      missing_fga_user_manager="$(missing_lines "$expected_manager_teams" "$fga_username_manager_teams")"
-      if [[ -n "$missing_fga_user_manager" ]]; then
-        ((FGA_USERNAME_MANAGER_MISSING+=1))
-        mark_warning "OpenFGA username-subject manager tuples missing for '${u}': $(sorted_lines_to_csv "$missing_fga_user_manager")"
+      if [[ "${OPENFGA_EXPECT_USERNAME_SUBJECTS,,}" == "true" ]]; then
+        missing_fga_user="$(missing_lines "$expected_teams" "$fga_username_teams")"
+        if [[ -n "$missing_fga_user" ]]; then
+          ((FGA_USERNAME_MEMBERSHIP_MISSING+=1))
+          mark_warning "OpenFGA username-subject team_member tuples missing for '${u}': $(sorted_lines_to_csv "$missing_fga_user")"
+        fi
+        missing_fga_user_team_admin="$(missing_lines "$expected_team_admin_teams" "$fga_username_team_admin_teams")"
+        if [[ -n "$missing_fga_user_team_admin" ]]; then
+          ((FGA_USERNAME_TEAM_ADMIN_MISSING+=1))
+          mark_warning "OpenFGA username-subject team_admin tuples missing for '${u}': $(sorted_lines_to_csv "$missing_fga_user_team_admin")"
+        fi
+        missing_fga_user_team_editor="$(missing_lines "$expected_team_editor_teams" "$fga_username_team_editor_teams")"
+        if [[ -n "$missing_fga_user_team_editor" ]]; then
+          ((FGA_USERNAME_TEAM_EDITOR_MISSING+=1))
+          mark_warning "OpenFGA username-subject team_editor tuples missing for '${u}': $(sorted_lines_to_csv "$missing_fga_user_team_editor")"
+        fi
+        missing_fga_user_team_analyst="$(missing_lines "$expected_team_analyst_teams" "$fga_username_team_analyst_teams")"
+        if [[ -n "$missing_fga_user_team_analyst" ]]; then
+          ((FGA_USERNAME_TEAM_ANALYST_MISSING+=1))
+          mark_warning "OpenFGA username-subject team_analyst tuples missing for '${u}': $(sorted_lines_to_csv "$missing_fga_user_team_analyst")"
+        fi
+      fi
+    else
+      fga_username_teams="$(fga_team_relation_lines "user:${u}" member)"
+      fga_uuid_teams="$(fga_team_relation_lines "user:${uid}" member)"
+      fga_username_manager_teams="$(fga_team_relation_lines "user:${u}" manager)"
+      fga_uuid_manager_teams="$(fga_team_relation_lines "user:${uid}" manager)"
+      fga_username_owner_teams="$(fga_team_relation_lines "user:${u}" owner)"
+      fga_uuid_owner_teams="$(fga_team_relation_lines "user:${uid}" owner)"
+
+      info "OpenFGA member teams (user:${u}): $(sorted_lines_to_csv "$fga_username_teams")"
+      info "OpenFGA member teams (user:${uid}): $(sorted_lines_to_csv "$fga_uuid_teams")"
+      info "OpenFGA manager teams (user:${u}): $(sorted_lines_to_csv "$fga_username_manager_teams")"
+      info "OpenFGA manager teams (user:${uid}): $(sorted_lines_to_csv "$fga_uuid_manager_teams")"
+      info "OpenFGA owner teams (user:${u}): $(sorted_lines_to_csv "$fga_username_owner_teams")"
+      info "OpenFGA owner teams (user:${uid}): $(sorted_lines_to_csv "$fga_uuid_owner_teams")"
+
+      missing_fga_uuid="$(missing_lines "$expected_teams" "$fga_uuid_teams")"
+      if [[ -n "$missing_fga_uuid" ]]; then
+        ((FGA_UUID_MEMBERSHIP_MISSING+=1))
+        mark_critical "OpenFGA UUID-subject tuples missing for '${u}': $(sorted_lines_to_csv "$missing_fga_uuid")"
+      fi
+      missing_fga_uuid_manager="$(missing_lines "$expected_manager_teams" "$fga_uuid_manager_teams")"
+      if [[ -n "$missing_fga_uuid_manager" ]]; then
+        ((FGA_UUID_MANAGER_MISSING+=1))
+        mark_critical "OpenFGA UUID-subject manager tuples missing for '${u}': $(sorted_lines_to_csv "$missing_fga_uuid_manager")"
+      fi
+      missing_fga_uuid_owner="$(missing_lines "$expected_owner_teams" "$fga_uuid_owner_teams")"
+      if [[ -n "$missing_fga_uuid_owner" ]]; then
+        ((FGA_UUID_OWNER_MISSING+=1))
+        mark_critical "OpenFGA UUID-subject owner tuples missing for '${u}': $(sorted_lines_to_csv "$missing_fga_uuid_owner")"
       fi
 
-      missing_fga_user_owner="$(missing_lines "$expected_owner_teams" "$fga_username_owner_teams")"
-      if [[ -n "$missing_fga_user_owner" ]]; then
-        ((FGA_USERNAME_OWNER_MISSING+=1))
-        mark_warning "OpenFGA username-subject owner tuples missing for '${u}': $(sorted_lines_to_csv "$missing_fga_user_owner")"
+      if [[ "${OPENFGA_EXPECT_USERNAME_SUBJECTS,,}" == "true" ]]; then
+        missing_fga_user="$(missing_lines "$expected_teams" "$fga_username_teams")"
+        if [[ -n "$missing_fga_user" ]]; then
+          ((FGA_USERNAME_MEMBERSHIP_MISSING+=1))
+          mark_warning "OpenFGA username-subject tuples missing for '${u}': $(sorted_lines_to_csv "$missing_fga_user")"
+        fi
+        missing_fga_user_manager="$(missing_lines "$expected_manager_teams" "$fga_username_manager_teams")"
+        if [[ -n "$missing_fga_user_manager" ]]; then
+          ((FGA_USERNAME_MANAGER_MISSING+=1))
+          mark_warning "OpenFGA username-subject manager tuples missing for '${u}': $(sorted_lines_to_csv "$missing_fga_user_manager")"
+        fi
+        missing_fga_user_owner="$(missing_lines "$expected_owner_teams" "$fga_username_owner_teams")"
+        if [[ -n "$missing_fga_user_owner" ]]; then
+          ((FGA_USERNAME_OWNER_MISSING+=1))
+          mark_warning "OpenFGA username-subject owner tuples missing for '${u}': $(sorted_lines_to_csv "$missing_fga_user_owner")"
+        fi
       fi
     fi
 
-    # AUTHZ-05 platform roles (platform_admin/platform_observer): stored-only
-    # OpenFGA relations on organization:fred, seeded by openfga-post-install.sh
-    # from configuration.yaml's platform_roles - independent of app_roles.
     while IFS= read -r platform_role; do
       [[ -n "$platform_role" ]] || continue
       fga_relation="${PLATFORM_ROLE_TO_FGA_RELATION[$platform_role]:-}"
@@ -1297,37 +1420,39 @@ fi
 info "Team membership gaps (Keycloak): ${KC_MEMBERSHIP_MISSING}"
 if [[ -n "${ALL_TUPLES}" ]]; then
   info "Team membership gaps (OpenFGA UUID-subject): ${FGA_UUID_MEMBERSHIP_MISSING}"
-  info "Team manager-role gaps (OpenFGA UUID-subject): ${FGA_UUID_MANAGER_MISSING}"
-  info "Team owner-role gaps (OpenFGA UUID-subject): ${FGA_UUID_OWNER_MISSING}"
+  if [[ "$AUTHZ_MODE" == "swift-clean" ]]; then
+    info "Team admin-role gaps (OpenFGA UUID-subject): ${FGA_UUID_TEAM_ADMIN_MISSING}"
+    info "Team editor-role gaps (OpenFGA UUID-subject): ${FGA_UUID_TEAM_EDITOR_MISSING}"
+    info "Team analyst-role gaps (OpenFGA UUID-subject): ${FGA_UUID_TEAM_ANALYST_MISSING}"
+  else
+    info "Team manager-role gaps (OpenFGA UUID-subject): ${FGA_UUID_MANAGER_MISSING}"
+    info "Team owner-role gaps (OpenFGA UUID-subject): ${FGA_UUID_OWNER_MISSING}"
+  fi
 elif [[ "${OPENFGA_STATUS}" == "present" ]]; then
   info "Team membership gaps (OpenFGA UUID-subject): not evaluated (tuple read failed)"
-  info "Team manager-role gaps (OpenFGA UUID-subject): not evaluated (tuple read failed)"
-  info "Team owner-role gaps (OpenFGA UUID-subject): not evaluated (tuple read failed)"
 else
   info "Team membership gaps (OpenFGA UUID-subject): not evaluated (OpenFGA unavailable)"
-  info "Team manager-role gaps (OpenFGA UUID-subject): not evaluated (OpenFGA unavailable)"
-  info "Team owner-role gaps (OpenFGA UUID-subject): not evaluated (OpenFGA unavailable)"
 fi
 if [[ "${OPENFGA_EXPECT_USERNAME_SUBJECTS,,}" == "true" ]]; then
   if [[ -n "${ALL_TUPLES}" ]]; then
     info "Team membership gaps (OpenFGA username-subject): ${FGA_USERNAME_MEMBERSHIP_MISSING}"
-    info "Team manager-role gaps (OpenFGA username-subject): ${FGA_USERNAME_MANAGER_MISSING}"
-    info "Team owner-role gaps (OpenFGA username-subject): ${FGA_USERNAME_OWNER_MISSING}"
+    if [[ "$AUTHZ_MODE" == "swift-clean" ]]; then
+      info "Team admin-role gaps (OpenFGA username-subject): ${FGA_USERNAME_TEAM_ADMIN_MISSING}"
+      info "Team editor-role gaps (OpenFGA username-subject): ${FGA_USERNAME_TEAM_EDITOR_MISSING}"
+      info "Team analyst-role gaps (OpenFGA username-subject): ${FGA_USERNAME_TEAM_ANALYST_MISSING}"
+    else
+      info "Team manager-role gaps (OpenFGA username-subject): ${FGA_USERNAME_MANAGER_MISSING}"
+      info "Team owner-role gaps (OpenFGA username-subject): ${FGA_USERNAME_OWNER_MISSING}"
+    fi
   elif [[ "${OPENFGA_STATUS}" == "present" ]]; then
     info "Team membership gaps (OpenFGA username-subject): not evaluated (tuple read failed)"
-    info "Team manager-role gaps (OpenFGA username-subject): not evaluated (tuple read failed)"
-    info "Team owner-role gaps (OpenFGA username-subject): not evaluated (tuple read failed)"
   else
     info "Team membership gaps (OpenFGA username-subject): not evaluated (OpenFGA unavailable)"
-    info "Team manager-role gaps (OpenFGA username-subject): not evaluated (OpenFGA unavailable)"
-    info "Team owner-role gaps (OpenFGA username-subject): not evaluated (OpenFGA unavailable)"
   fi
 else
   info "Team membership gaps (OpenFGA username-subject): skipped by config"
-  info "Team manager-role gaps (OpenFGA username-subject): skipped by config"
-  info "Team owner-role gaps (OpenFGA username-subject): skipped by config"
 fi
-info "Authorization-model shape gaps (AUTHZ-05 relations, no escalation): ${MODEL_SHAPE_GAPS}"
+info "Authorization-model shape gaps (${AUTHZ_MODE}): ${MODEL_SHAPE_GAPS}"
 if [[ -n "${ALL_TUPLES}" ]]; then
   info "Platform-role gaps (OpenFGA UUID-subject): ${FGA_UUID_PLATFORM_ROLE_MISSING}"
   if [[ "${OPENFGA_EXPECT_USERNAME_SUBJECTS,,}" == "true" ]]; then
