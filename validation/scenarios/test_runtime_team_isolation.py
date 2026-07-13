@@ -53,12 +53,8 @@ def _identifiers(team_item: dict) -> set[str]:
 MEMBERS = sorted(u for u, fu in USERS.items() if TEST_TEAM in fu.teams)
 NON_MEMBERS = sorted(u for u, fu in USERS.items() if TEST_TEAM not in fu.teams)
 PLAIN_MEMBERS = sorted(u for u in MEMBERS if not USERS[u].can_enroll_in(TEST_TEAM))
-TEAM_ADMINS = sorted(
-    u for u in MEMBERS if USERS[u].relation_in(TEST_TEAM) in ("owner", "team_admin")
-)
-TEAM_EDITORS = sorted(
-    u for u in MEMBERS if USERS[u].relation_in(TEST_TEAM) in ("manager", "team_editor")
-)
+TEAM_ADMINS = sorted(u for u in MEMBERS if USERS[u].is_team_admin_in(TEST_TEAM))
+TEAM_EDITORS = sorted(u for u in MEMBERS if USERS[u].is_team_editor_in(TEST_TEAM))
 IDENTITY_ONLY_USERNAMES = sorted(
     u for u, fu in USERS.items() if not fu.teams and not fu.app_roles and not fu.platform_roles
 )
@@ -375,7 +371,7 @@ def test_plain_member_cannot_enroll_agent_in_collaborative_team(username: str, c
 @pytest.mark.parametrize("username", TEAM_ADMINS)
 def test_team_admin_cannot_enroll_agent_without_editor_role(username: str, cp) -> None:
     """A team_admin without team_editor cannot enroll an agent in the collaborative test team."""
-    if USERS[username].relation_in(TEST_TEAM) in ("manager", "team_editor"):
+    if USERS[username].is_team_editor_in(TEST_TEAM):
         pytest.skip(f"{username} also has editor authority in {TEST_TEAM}; not a split-role fixture")
     assert TEAM_OPERATOR_USERNAME is not None
     operator = cp(TEAM_OPERATOR_USERNAME)
@@ -401,7 +397,7 @@ def test_team_admin_cannot_enroll_agent_without_editor_role(username: str, cp) -
 @pytest.mark.parametrize("username", TEAM_EDITORS)
 def test_team_editor_cannot_administer_members_without_admin_role(username: str, cp, token_for) -> None:
     """A team_editor without team_admin cannot add members to the collaborative test team."""
-    if USERS[username].relation_in(TEST_TEAM) in ("owner", "team_admin"):
+    if USERS[username].is_team_admin_in(TEST_TEAM):
         pytest.skip(f"{username} also has admin authority in {TEST_TEAM}; not a split-role fixture")
     assert TEAM_OPERATOR_USERNAME is not None
     assert IDENTITY_ONLY_USERNAMES, "Need at least one identity-only user outside the test team"

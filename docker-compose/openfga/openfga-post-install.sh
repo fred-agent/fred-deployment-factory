@@ -509,42 +509,53 @@ done < <(jq -r '.teams[]? // empty' "$DEMO_IDENTITY_CONFIG_FILE")
 log "authenticating with Keycloak admin API"
 KEYCLOAK_ADMIN_TOKEN="$(kc_admin_token)"
 
-while IFS=$'\t' read -r username relation team; do
-  local_user_id=""
-  local_team_id=""
-  [[ -n "$username" ]] || continue
-  [[ -n "$relation" ]] || continue
-  [[ -n "$team" ]] || continue
+if [[ "$AUTHZ_MODE" == "swift-clean" ]]; then
+  # Swift teams are never Keycloak groups (AUTHZ-05/06): a team is a team_metadata
+  # row created later via POST /teams by the control-plane, and OpenFGA team_id
+  # values are the control-plane's own ids, not Keycloak group ids. Resolving
+  # `team:${kc_group_id}` here would write tuples on an object no team_metadata
+  # row will ever match. Team roles for the Swift demo matrix are instead
+  # bootstrapped through the real control-plane APIs by
+  # validation/conftest.py::_bootstrap_collaborative_teams.
+  log "swift-clean: skipping team-role tuple seeding (no team:<id> derived from a Keycloak group) - team roles are bootstrapped via control-plane APIs, see validation/conftest.py::_bootstrap_collaborative_teams"
+else
+  while IFS=$'\t' read -r username relation team; do
+    local_user_id=""
+    local_team_id=""
+    [[ -n "$username" ]] || continue
+    [[ -n "$relation" ]] || continue
+    [[ -n "$team" ]] || continue
 
-  if [[ -z "${TEAM_EXISTS[$team]:-}" ]]; then
-    warn "team '${team}' is referenced by user '${username}' but missing from .teams list"
-    TEAM_EXISTS["$team"]=1
-  fi
+    if [[ -z "${TEAM_EXISTS[$team]:-}" ]]; then
+      warn "team '${team}' is referenced by user '${username}' but missing from .teams list"
+      TEAM_EXISTS["$team"]=1
+    fi
 
-  local_user_id="$(kc_user_id_by_username "$username")"
-  local_team_id="$(kc_group_id_by_team_name "$team")"
-  ensure_team_role_closure "user:${local_user_id}" "$relation" "$local_team_id"
+    local_user_id="$(kc_user_id_by_username "$username")"
+    local_team_id="$(kc_group_id_by_team_name "$team")"
+    ensure_team_role_closure "user:${local_user_id}" "$relation" "$local_team_id"
 
-  if is_truthy "$OPENFGA_SEED_INCLUDE_USERNAME_USERS"; then
-    ensure_team_role_closure "user:${username}" "$relation" "$local_team_id"
-  fi
-done < <(
-  jq -r --arg default_member_relation "$DEFAULT_TEAM_MEMBER_RELATION" '
-    .users[]? as $u
-    | ($u.username // empty) as $name
-    | (
-        (($u.teams // [])[]? | [$name, $default_member_relation, .]) ,
-        (($u.team_roles.member // [])[]? | [$name, "member", .]) ,
-        (($u.team_roles.manager // [])[]? | [$name, "manager", .]) ,
-        (($u.team_roles.owner // [])[]? | [$name, "owner", .]) ,
-        (($u.team_roles.team_member // [])[]? | [$name, "team_member", .]) ,
-        (($u.team_roles.team_editor // [])[]? | [$name, "team_editor", .]) ,
-        (($u.team_roles.team_admin // [])[]? | [$name, "team_admin", .]) ,
-        (($u.team_roles.team_analyst // [])[]? | [$name, "team_analyst", .])
-      )
-    | @tsv
-  ' "$DEMO_IDENTITY_CONFIG_FILE"
-)
+    if is_truthy "$OPENFGA_SEED_INCLUDE_USERNAME_USERS"; then
+      ensure_team_role_closure "user:${username}" "$relation" "$local_team_id"
+    fi
+  done < <(
+    jq -r --arg default_member_relation "$DEFAULT_TEAM_MEMBER_RELATION" '
+      .users[]? as $u
+      | ($u.username // empty) as $name
+      | (
+          (($u.teams // [])[]? | [$name, $default_member_relation, .]) ,
+          (($u.team_roles.member // [])[]? | [$name, "member", .]) ,
+          (($u.team_roles.manager // [])[]? | [$name, "manager", .]) ,
+          (($u.team_roles.owner // [])[]? | [$name, "owner", .]) ,
+          (($u.team_roles.team_member // [])[]? | [$name, "team_member", .]) ,
+          (($u.team_roles.team_editor // [])[]? | [$name, "team_editor", .]) ,
+          (($u.team_roles.team_admin // [])[]? | [$name, "team_admin", .]) ,
+          (($u.team_roles.team_analyst // [])[]? | [$name, "team_analyst", .])
+        )
+      | @tsv
+    ' "$DEMO_IDENTITY_CONFIG_FILE"
+  )
+fi
 
 while IFS=$'\t' read -r username role; do
   local_user_id=""

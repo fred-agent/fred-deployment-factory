@@ -159,20 +159,27 @@ automatically) - see `test_platform_role_isolation.py` and
 
 ## Keeping the OpenFGA model in sync
 
-`docker-compose/openfga/openfga-model.json` is a **hand-maintained copy**, not
-generated from `fred`. On 2026-07-09 it was found to have drifted significantly
-from `fred-core`'s actual `schema.fga` - missing most organization capabilities,
-missing `can_read_conversations`, and (fortunately, by omission) missing a live
-escalation bug that existed in `fred` at the time. It has now been synced.
+`docker-compose/openfga/openfga-model.json` and
+`helm/fred-stack/files/openfga/openfga-model.json` are **hand-maintained copies**, not
+generated from `fred`. On 2026-07-09 the Docker copy was found to have drifted
+significantly from `fred-core`'s actual `schema.fga` - missing most organization
+capabilities, missing `can_read_conversations`, and (fortunately, by omission) missing a
+live escalation bug that existed in `fred` at the time. On 2026-07-13 the Helm copy was
+found to have drifted too (`can_observe_platform`/`platform_observer` vs a stale
+`can_read_kpi_global`/`platform_admin` shape). Both are now synced and covered by a static
+guard:
 
 ```bash
-make sync-openfga-model                    # uses SWIFT_SRC (default ../Work/swift)
+make sync-openfga-model                    # regenerates BOTH copies; uses SWIFT_SRC (default ../fred)
 make sync-openfga-model SWIFT_SRC=/path/to/fred
+make check-openfga-model-sync              # fails fast if either copy has drifted from fred-core - run in CI/pre-flight
 ```
 
-Run this (manually - not wired into CI) after any change to
+Run `sync-openfga-model` (manually - not wired into CI) after any change to
 `fred-core/fred_core/security/rebac/schema.fga`, then re-run
 `make openfga-post-install` (or `make docker-up`) to push the updated model.
+`docker-compose/openfga/openfga-model.kea.json` is never touched by either target - Kea
+stays on its own, separately-maintained legacy model.
 
 ## Run
 
@@ -266,3 +273,17 @@ more. Attaching it to a git tag/commit with signed, retained artifacts
   an explicit `team_id`; members of that team are allowed, platform-only users and
   members of other teams are denied. Requires knowledge-flow-backend running (see
   `FRED_KNOWLEDGE_FLOW_URL` above).
+- **AUTHZ-06 cumulative team roles** (`scenarios/test_cumulative_team_roles.py`):
+  marc/bob/elena each hold exactly one of `team_admin`/`team_editor`/`team_analyst` on
+  `fredlab` and only that role's capabilities; priya holds all three at once and gets
+  their union, including exercising a genuine admin-gated operation (add/remove a member)
+  and editor-gated operation (create/delete a prompt) through her cumulative grant.
+- **Team-registry governance** (`scenarios/test_team_registry_authz.py`): team
+  bootstrap/list-all/delete/rescue-admin are platform-admin-only, registry-scoped
+  capabilities independent of any relation on the team itself; the last-`team_admin`
+  guard applies to the granular role-revoke endpoint symmetrically with full removal.
+
+Offline unit tests for the harness itself (`factory_config.py`'s role-resolution logic -
+simple role, cumulative role, the `teams[]` -> `team_member` fallback, admin/editor/analyst
+distinction, a neutral identity with no role) live in `tests/`, not `scenarios/`, and need no
+running stack: `make validation-unit-tests`.

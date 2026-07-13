@@ -148,6 +148,25 @@ KEYCLOAK_KF_ENABLE_MANAGE_USERS="${KEYCLOAK_KF_ENABLE_MANAGE_USERS:-true}"
 KEYCLOAK_FORCE_RELOGIN="${KEYCLOAK_FORCE_RELOGIN:-$(read_env_file_var KEYCLOAK_FORCE_RELOGIN)}"
 KEYCLOAK_FORCE_RELOGIN="${KEYCLOAK_FORCE_RELOGIN:-auto}"
 
+# AUTHZ-05/06: swift-clean never represents a Swift team as a Keycloak group -
+# a team is a team_metadata row + OpenFGA relations, created later via the
+# control-plane APIs. kea-legacy keeps Keycloak groups so the migration
+# rehearsal has an old-world source to translate. Mirrors the same case
+# statement in ../openfga/openfga-post-install.sh.
+AUTHZ_MODE="${AUTHZ_MODE:-$(read_env_file_var AUTHZ_MODE)}"
+AUTHZ_MODE="${AUTHZ_MODE:-swift-clean}"
+case "${AUTHZ_MODE,,}" in
+  swift|swift-clean)
+    AUTHZ_MODE="swift-clean"
+    ;;
+  kea|kea-legacy)
+    AUTHZ_MODE="kea-legacy"
+    ;;
+  *)
+    die "unsupported AUTHZ_MODE='${AUTHZ_MODE}' (supported: swift-clean, kea-legacy)"
+    ;;
+esac
+
 DEMO_IDENTITY_CONFIG_FILE="${DEMO_IDENTITY_CONFIG_FILE:-$(read_env_file_var DEMO_IDENTITY_CONFIG_FILE)}"
 DEMO_IDENTITY_CONFIG_FILE="${DEMO_IDENTITY_CONFIG_FILE:-${REPO_ROOT}/config/configuration.yaml}"
 DEMO_IDENTITY_DEFAULT_PASSWORD="${DEMO_IDENTITY_DEFAULT_PASSWORD:-$(read_env_file_var DEMO_IDENTITY_DEFAULT_PASSWORD)}"
@@ -797,33 +816,51 @@ reconcile_demo_groups_exact() {
 
 apply_demo_identity_config() {
   local app_client_uuid="$1"
-  local user_json user_id
+  local user_json user_id existing_groups_json
 
   demo_identity_config_validate
   demo_identity_load_managed_teams
   demo_identity_load_managed_users
-  log "applying demo identity config '${DEMO_IDENTITY_CONFIG_FILE}'"
+  log "applying demo identity config '${DEMO_IDENTITY_CONFIG_FILE}' (authz mode: ${AUTHZ_MODE})"
 
   DEMO_GROUP_IDS=()
   DEMO_APP_ROLE_JSON_CACHE=()
 
   reconcile_demo_users_exact
 
-  while IFS= read -r team; do
-    [[ -n "$team" ]] || continue
-    ensure_demo_team_group "$team"
-  done < <(printf '%s\n' "${DEMO_MANAGED_TEAMS[@]}")
+  if [[ "$AUTHZ_MODE" == "kea-legacy" ]]; then
+    while IFS= read -r team; do
+      [[ -n "$team" ]] || continue
+      ensure_demo_team_group "$team"
+    done < <(printf '%s\n' "${DEMO_MANAGED_TEAMS[@]}")
+  else
+    log "swift-clean: not creating Keycloak groups for teams - a Swift team is a team_metadata row + OpenFGA relations, bootstrapped later via the control-plane APIs (see validation/conftest.py::_bootstrap_collaborative_teams)"
+  fi
 
   ensure_demo_app_role_definitions
 
   while IFS= read -r user_json; do
     [[ -n "$user_json" ]] || continue
     user_id="$(ensure_demo_user_profile "$user_json")"
-    ensure_demo_user_team_memberships "$user_id" "$user_json"
+    if [[ "$AUTHZ_MODE" == "kea-legacy" ]]; then
+      ensure_demo_user_team_memberships "$user_id" "$user_json"
+    fi
     ensure_demo_user_app_roles "$app_client_uuid" "$user_id" "$user_json"
   done < <(jq -c '.users[]?' "$DEMO_IDENTITY_CONFIG_FILE")
 
-  reconcile_demo_groups_exact
+  if [[ "$AUTHZ_MODE" == "kea-legacy" ]]; then
+    reconcile_demo_groups_exact
+  else
+    # A previously kea-legacy-provisioned (or hand-provisioned) realm may still
+    # carry demo team groups. swift-clean does not delete them automatically -
+    # bulk-deleting groups in a shared realm is exactly the "blindly wipe every
+    # group" failure mode we must not risk. For a provably clean swift-clean
+    # state, `make docker-wipe && make docker-up` (fresh realm import).
+    existing_groups_json="$(kc_http_get "/groups?first=0&max=1")"
+    if [[ -n "$existing_groups_json" && "$existing_groups_json" != "[]" ]]; then
+      warn "swift-clean: pre-existing Keycloak groups were found and are left untouched (not read by any Swift authorization path); run 'make docker-wipe && make docker-up' for a from-scratch swift-clean proof"
+    fi
+  fi
 }
 
 groups_mapper_payload() {
@@ -903,6 +940,23 @@ ensure_app_default_scope() {
   mark_changed
 }
 
+ensure_app_default_scope_detached() {
+  local app_uuid="$1"
+  local scope_name="groups-scope"
+  local scope_uuid
+
+  scope_uuid="$(client_scope_uuid "$scope_name")"
+  [[ -n "$scope_uuid" ]] || return 0
+
+  if ! kc get "clients/${app_uuid}/default-client-scopes" -r "$KEYCLOAK_REALM" -c \
+    | jq -e --arg scope_name "$scope_name" '.[] | select(.name == $scope_name)' >/dev/null; then
+    return 0
+  fi
+
+  kc_http_delete_empty "/clients/${app_uuid}/default-client-scopes/${scope_uuid}"
+  mark_changed
+}
+
 should_force_relogin() {
   case "${KEYCLOAK_FORCE_RELOGIN,,}" in
     true|1|yes|on|always) return 0 ;;
@@ -952,27 +1006,35 @@ agentic_service_user="$(wait_for_service_account_username agentic)"
 knowledge_flow_service_user="$(wait_for_service_account_username knowledge-flow)"
 control_plane_service_user="$(wait_for_service_account_username control-plane)"
 
+# Neither agentic (fred-agents), knowledge-flow, nor control-plane call any
+# Keycloak group-admin API (a_get_groups/a_get_group_members) - confirmed
+# against the fred product code (AUTHZ-05/06). Only user-scoped realm-management
+# roles are granted; kea-legacy's group->team resolution in
+# openfga-post-install.sh authenticates as the bootstrap admin, not as these
+# service accounts, so this is safe in both authz modes.
 ensure_user_client_role "$agentic_service_user" realm-management query-users
-ensure_user_client_role "$agentic_service_user" realm-management query-groups
 ensure_user_client_role "$agentic_service_user" realm-management view-users
-ensure_user_client_role "$agentic_service_user" account view-groups
 
 ensure_user_client_role "$knowledge_flow_service_user" realm-management query-users
-ensure_user_client_role "$knowledge_flow_service_user" realm-management query-groups
 ensure_user_client_role "$knowledge_flow_service_user" realm-management view-users
-ensure_user_client_role "$knowledge_flow_service_user" account view-groups
 if is_truthy "$KEYCLOAK_KF_ENABLE_MANAGE_USERS"; then
   ensure_user_client_role "$knowledge_flow_service_user" realm-management manage-users
 fi
 
 ensure_user_client_role "$control_plane_service_user" realm-management query-users
-ensure_user_client_role "$control_plane_service_user" realm-management query-groups
 ensure_user_client_role "$control_plane_service_user" realm-management view-users
 ensure_user_client_role "$control_plane_service_user" realm-management manage-users
-ensure_user_client_role "$control_plane_service_user" account view-groups
 
-groups_scope_uuid="$(ensure_groups_scope)"
-ensure_app_default_scope "$app_client_uuid" "$groups_scope_uuid"
+if [[ "$AUTHZ_MODE" == "kea-legacy" ]]; then
+  groups_scope_uuid="$(ensure_groups_scope)"
+  ensure_app_default_scope "$app_client_uuid" "$groups_scope_uuid"
+else
+  # swift-clean: no groups claim is required or consumed by any Swift
+  # authorization path. Detach groups-scope from the app client if a prior
+  # kea-legacy run (or hand provisioning) attached it; its absence is the
+  # expected, not an error, state.
+  ensure_app_default_scope_detached "$app_client_uuid"
+fi
 apply_demo_identity_config "$app_client_uuid"
 
 if should_force_relogin; then

@@ -93,14 +93,29 @@ docker compose -f docker-compose/docker-compose-keycloak.yml -p keycloak up -d
 bash docker-compose/keycloak/keycloak-post-install.sh
 ```
 
-The Keycloak post-install script is idempotent and enforces:
+The Keycloak post-install script is idempotent, mode-aware (`AUTHZ_MODE=swift-clean` by
+default, `AUTHZ_MODE=kea-legacy` with `WITH_KEA=true`), and enforces:
 - clients `app`, `agentic`, `knowledge-flow`, `control-plane`
 - `agentic`, `knowledge-flow`, and `control-plane` as confidential clients with service accounts enabled
-- service account roles for `agentic`, `knowledge-flow`, and `control-plane` (`realm-management` + `account:view-groups`, including `manage-users` for Knowledge Flow when `KEYCLOAK_KF_ENABLE_MANAGE_USERS=true`)
+- service account roles for `agentic`, `knowledge-flow`, and `control-plane`: `realm-management`
+  `query-users`/`view-users` (plus `manage-users` for `control-plane` always, and for
+  `knowledge-flow` when `KEYCLOAK_KF_ENABLE_MANAGE_USERS=true`). No group-scoped role
+  (`query-groups`/`view-groups`) is granted in either mode - no app calls a Keycloak
+  group-admin API (AUTHZ-05/06: OpenFGA is the sole authorization source).
 - client roles `app:admin/editor/viewer/service_agent` (definitions remain for service/legacy compatibility; clean Swift demo users receive no app roles)
-- demo groups, demo users, optional app-role assignments, and group memberships from the active demo identity config (`config/configuration.yaml` by default, `config/configuration.kea.yaml` with `WITH_KEA=true`)
-- client scope `groups-scope` with `oidc-group-membership-mapper` (claim `groups`, full path, access/id/userinfo token claims, multivalued)
-- `groups-scope` attached to default scopes of the `app` client
+- demo users from the active demo identity config (`config/configuration.yaml` by default,
+  `config/configuration.kea.yaml` with `WITH_KEA=true`)
+- **`AUTHZ_MODE=swift-clean` (default):** no Keycloak group is created for a team - a Swift
+  team is a `team_metadata` row + OpenFGA relations, created later via the control-plane
+  APIs (see `validation/README.md`). No `groups-scope` client scope or
+  `oidc-group-membership-mapper` is created or attached to the `app` client; if a prior
+  `WITH_KEA=true` run left one attached, it is detached (its absence is expected, not an
+  error).
+- **`AUTHZ_MODE=kea-legacy` (`WITH_KEA=true`):** demo groups (one per team) and group
+  memberships from the active demo identity config, plus the `groups-scope` client scope
+  with `oidc-group-membership-mapper` (claim `groups`, full path, access/id/userinfo token
+  claims, multivalued) attached to the `app` client's default scopes - the old world the
+  migration rehearsal translates from.
 - forced user re-login after a Keycloak wipe (`KEYCLOAK_FORCE_RELOGIN=auto` or `true`)
 
 - OpenFGA
@@ -109,11 +124,25 @@ docker compose -f docker-compose/docker-compose-openfga.yml -p openfga up -d
 bash docker-compose/openfga/openfga-post-install.sh
 ```
 
-The OpenFGA post-install script is idempotent and enforces:
+The OpenFGA post-install script is idempotent, mode-aware (`AUTHZ_MODE=swift-clean` by
+default, `AUTHZ_MODE=kea-legacy` with `WITH_KEA=true`), and enforces:
 - store `OPENFGA_STORE_NAME` (default: `fred`)
-- authorization model from the active model file (`docker-compose/openfga/openfga-model.json` by default, `docker-compose/openfga/openfga-model.kea.json` with `WITH_KEA=true`)
-- seeded team/platform tuples from the active demo identity config
-- user tuples based on Keycloak users declared in the active demo identity config using their realm user IDs
+- authorization model from the active model file (`docker-compose/openfga/openfga-model.json`
+  by default - kept byte-identical to `fred-core`'s `schema.fga.json` by `make
+  sync-openfga-model` / `make check-openfga-model-sync` - or
+  `docker-compose/openfga/openfga-model.kea.json` with `WITH_KEA=true`)
+- platform tuples (`platform_admin`/`platform_observer` on `organization:fred`) from the
+  active demo identity config's `platform_roles`, in both modes
+- **`AUTHZ_MODE=swift-clean` (default):** no team-role tuple is seeded here. A Swift
+  `team:<id>` only exists once the control-plane creates the `team_metadata` row
+  (`POST /teams`), so there is no Keycloak group to resolve a team id from at this stage -
+  team roles (`team_admin`/`team_editor`/`team_analyst`/`team_member`) are bootstrapped
+  later via the real control-plane APIs by
+  `validation/conftest.py::_bootstrap_collaborative_teams`, never derived from a Keycloak
+  group.
+- **`AUTHZ_MODE=kea-legacy` (`WITH_KEA=true`):** team tuples (`member`/`manager`/`owner`)
+  seeded from the active demo identity config, resolving each team name to its Keycloak
+  group id - the old world the migration rehearsal translates from.
 - optional additional tuples with username subjects when `OPENFGA_SEED_INCLUDE_USERNAME_USERS=true`
 
 To change demo users / roles / teams, edit:
@@ -182,14 +211,21 @@ Grafana is pre-provisioned with a Prometheus datasource pointing to `http://app-
 > :key: For development purposes, the password for nominative or service accounts is `Azerty123_`
 
 Hereunder these are examples of _the nominative SSO accounts_ registered into the Keycloak realm.
-In the clean Swift default, user authorization roles are seeded in OpenFGA, not as Keycloak app roles:
+In the clean Swift default, Keycloak only carries the identity (username/email/password);
+user authorization roles are seeded in OpenFGA, never as Keycloak app roles or groups:
 
-  - ``alice``: OpenFGA ``platform_admin``, no team membership
-  - ``gabriel``: OpenFGA ``platform_observer``, no team membership
+  - ``alice``: OpenFGA ``platform_admin``, no team membership - seeded directly by
+    `make docker-up` (platform tuples only need a Keycloak `sub`, no team to exist yet).
+  - ``gabriel``: OpenFGA ``platform_observer``, no team membership - same as alice.
   - ``bob``: OpenFGA ``team_editor`` for ``northbridge`` and ``fredlab``
   - ``marc``: OpenFGA ``team_admin`` for ``fredlab``
 
-Run ``make docker-up WITH_KEA=true`` for the legacy rehearsal seed with Keycloak ``admin/editor/viewer`` app roles.
+Unlike the platform tuples, `bob`'s and `marc`'s team-role tuples above are **not** written by
+`make docker-up` itself: a Swift team only exists once the control-plane creates its
+`team_metadata` row, so they appear the first time the validation harness (or any control-plane
+client) bootstraps `fredlab`/`northbridge` through `POST /teams` and the team-role APIs - see
+[`../validation/README.md`](../validation/README.md). Run ``make docker-up WITH_KEA=true`` for
+the legacy rehearsal seed with Keycloak groups and ``admin/editor/viewer`` app roles.
 
 Hereunder, these are the information to connect to each service with their _local service accounts_.
 

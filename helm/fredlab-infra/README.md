@@ -76,8 +76,8 @@ Deploying Keycloak only starts the identity server. Fred still needs a provision
 - public frontend client `app`
 - confidential machine client `control-plane`
 - matching `keycloak.clients.controlPlane.secret`
-- service-account roles required by Control Plane: `realm-management` user/group read/write basics, `account:view-groups`, and `app:service_agent`
-- users and team/group mapping for the Fred Swift identity model
+- service-account roles required by Control Plane: `realm-management` `manage-users`/`view-users`/`query-users` and `app:service_agent`. No group-scoped role (`query-groups`/`account:view-groups`) - Control Plane never calls a Keycloak group-admin API; OpenFGA is the sole authorization source (AUTHZ-05/06).
+- users for the Fred Swift identity model - a Swift team is never a Keycloak group; team roles are created later through the control-plane team APIs, not by this bootstrap
 
 The chart provisions the realm and clients with the `keycloak-provision` Helm hook. The control-plane reads the machine client secret from the exact env var `KEYCLOAK_CONTROL_PLANE_CLIENT_SECRET`.
 
@@ -93,6 +93,13 @@ bin/fredlab-keycloak-identity.sh
 ```
 
 The real `config/fredlab-keycloak-identity.json` file is ignored by Git. The script creates Keycloak groups, users, app client roles, group membership, and the `groups` token claim. It does not yet create Fred/OpenFGA team ownership tuples.
+
+Note: this manual onboarding script still uses the pre-AUTHZ-05 Keycloak-groups-as-teams
+model, unlike the automated `keycloak-provision` hook above and the local `swift-clean`
+Docker Compose/k3d profiles (`docs/LOCAL-DEVELOPMENT.md`), which never create a team as a
+Keycloak group. It was intentionally left as-is pending an established way to grant real
+GKE users their OpenFGA team roles without it (tracked as a follow-up, not yet in
+`docs/BACKLOG.md`).
 
 If a user entry contains `temporaryPassword`, the script applies it only when creating that user. Existing users keep their current password unless the entry also has `resetPassword: true`.
 

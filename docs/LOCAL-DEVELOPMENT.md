@@ -73,7 +73,7 @@ Tear down: `make k3d-down` (uninstall release) · `make k3d-delete` (delete clus
 
 | Mode | Command | Provisions |
 | --- | --- | --- |
-| **clean Swift** (default) | `make docker-up` / `make k3d-up` | identity-only Keycloak users from `config/configuration.yaml`, the Swift OpenFGA model, and direct Swift tuples (`alice=platform_admin`, `gabriel=platform_observer`, `team_admin`/`team_editor`/`team_member`) |
+| **clean Swift** (default) | `make docker-up` / `make k3d-up` | identity-only Keycloak users from `config/configuration.yaml` (no groups, no app roles, no `groups-scope`), the Swift OpenFGA model, and direct platform tuples only (`alice=platform_admin`, `gabriel=platform_observer`). Team-role tuples (`team_admin`/`team_editor`/`team_analyst`/`team_member`) are **not** seeded by `docker-up` - a Swift team only exists once its `team_metadata` row is created via the control-plane `POST /teams` API, done by the validation harness or any control-plane client, never derived from a Keycloak group. |
 | **Kea legacy rehearsal** | `make docker-up WITH_KEA=true` | `config/configuration.kea.yaml`, the legacy OpenFGA model (`member`/`manager`/`owner`), and an extra `fred_kea` DB so the migration script has an old-world source to translate |
 
 Databases created in clean Swift mode: `fred` (Fred), `keycloak`, `data` (tabular/vector),

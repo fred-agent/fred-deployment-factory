@@ -573,7 +573,15 @@ Responsibility:
 - creates/assigns app client roles such as `admin`, `editor`, `viewer`
 - configures the `groups` OIDC claim on the public app client
 
-Important boundary: Keycloak groups prepare identity and login claims. Team ownership and application permissions inside Fred/OpenFGA remain a separate application-domain provisioning step until Swift exposes the official team bootstrap path.
+Important boundary: Keycloak groups prepare identity and login claims here, but this is the
+**pre-AUTHZ-05 flow** kept for the cloud reference pending a replacement onboarding path.
+Team ownership and application permissions inside Fred/OpenFGA are a separate
+application-domain step, and Swift's official team bootstrap path now exists
+(`POST /teams`, `POST/DELETE /teams/{team_id}/members/{user_id}/roles/{relation}` -
+control-plane API, exercised end-to-end by
+`validation/conftest.py::_bootstrap_collaborative_teams` in this repo's local validation
+harness): it does not derive a team from a Keycloak group, and this script does not yet
+call it.
 
 Final browser validation:
 

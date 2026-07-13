@@ -106,14 +106,17 @@ declare -A KEYCLOAK_GROUP_NAME_BY_ID=()
 # maps to the OpenFGA relation "platform_admin", "observer" to "platform_observer".
 declare -A PLATFORM_ROLE_TO_FGA_RELATION=( [admin]="platform_admin" [observer]="platform_observer" )
 
-EXPECTED_AGENTIC_RM_ROLES="query-groups query-users view-users"
-EXPECTED_AGENTIC_ACCOUNT_ROLES="view-groups"
+# No app calls a Keycloak group-admin API (AUTHZ-05/06: OpenFGA is the sole
+# authorization source), so no service account needs query-groups/view-groups
+# in either authz mode - see docs/swift/platform/KEYCLOAK.md.
+EXPECTED_AGENTIC_RM_ROLES="query-users view-users"
+EXPECTED_AGENTIC_ACCOUNT_ROLES=""
 
-EXPECTED_KF_RM_ROLES_BASE="query-groups query-users view-users"
-EXPECTED_KF_RM_ROLES_WITH_MANAGE="query-groups query-users view-users manage-users"
-EXPECTED_KF_ACCOUNT_ROLES="view-groups"
-EXPECTED_CP_RM_ROLES="query-groups query-users view-users manage-users"
-EXPECTED_CP_ACCOUNT_ROLES="view-groups"
+EXPECTED_KF_RM_ROLES_BASE="query-users view-users"
+EXPECTED_KF_RM_ROLES_WITH_MANAGE="query-users view-users manage-users"
+EXPECTED_KF_ACCOUNT_ROLES=""
+EXPECTED_CP_RM_ROLES="query-users view-users manage-users"
+EXPECTED_CP_ACCOUNT_ROLES=""
 
 # Colors (disabled when not a TTY)
 if [[ -t 1 ]]; then
@@ -602,17 +605,31 @@ fi
 
 FOUND_GROUPS=0
 if [[ -n "${ADM}" ]]; then
-  step "Validate required Keycloak groups"
-  for g in "${REQUIRED_GROUPS[@]}"; do
-    enc="$(uri_encode "$g")"
-    if curl -fsS -H "Authorization: Bearer ${ADM}" \
-      "$KC/admin/realms/${REALM}/group-by-path/${enc}" >/dev/null; then
-      ok "Group '${g}' present"
-      ((FOUND_GROUPS+=1))
-    else
-      mark_critical "Group '${g}' missing"
-    fi
-  done
+  if [[ "$AUTHZ_MODE" == "swift-clean" ]]; then
+    step "Keycloak groups (swift-clean: none required - AUTHZ-05/06, a team is never a Keycloak group)"
+    for g in "${REQUIRED_GROUPS[@]}"; do
+      enc="$(uri_encode "$g")"
+      if curl -fsS -H "Authorization: Bearer ${ADM}" \
+        "$KC/admin/realms/${REALM}/group-by-path/${enc}" >/dev/null; then
+        mark_warning "swift-clean: group '${g}' exists (residual state, not read by any Swift authorization path)"
+      else
+        ok "Group '${g}' absent, as expected in swift-clean mode"
+        ((FOUND_GROUPS+=1))
+      fi
+    done
+  else
+    step "Validate required Keycloak groups"
+    for g in "${REQUIRED_GROUPS[@]}"; do
+      enc="$(uri_encode "$g")"
+      if curl -fsS -H "Authorization: Bearer ${ADM}" \
+        "$KC/admin/realms/${REALM}/group-by-path/${enc}" >/dev/null; then
+        ok "Group '${g}' present"
+        ((FOUND_GROUPS+=1))
+      else
+        mark_critical "Group '${g}' missing"
+      fi
+    done
+  fi
 fi
 
 AGENTIC_ROLE_GAPS=0
@@ -661,7 +678,11 @@ if [[ -n "${ADM}" ]]; then
     expected_app_roles_lines="$(printf '%s\n' "${REQUIRED_APP_CLIENT_ROLES[@]}" | sort -u)"
     required_user_permissions_lines="$expected_app_roles_lines"
     info "Token claim prerequisite: resource_access.app.roles comes from effective app client roles"
-    info "Token claim prerequisite: groups comes from '${EXPECTED_GROUPS_SCOPE_NAME}' mapper on app default scopes"
+    if [[ "$AUTHZ_MODE" == "kea-legacy" ]]; then
+      info "Token claim prerequisite: groups comes from '${EXPECTED_GROUPS_SCOPE_NAME}' mapper on app default scopes"
+    else
+      info "swift-clean: no groups claim is required or consumed by any Swift authorization path (AUTHZ-05/06 - OpenFGA is the sole authorization source)"
+    fi
 
     if app_client_roles="$(curl -fsS -H "Authorization: Bearer ${ADM}" "$KC/admin/realms/${REALM}/clients/${APP_CLIENT_UUID}/roles?first=0&max=200" 2>/dev/null | jq -r '.[].name' | sort -u)"; then
       info "App client roles: $(sorted_lines_to_csv "$app_client_roles")"
@@ -751,7 +772,25 @@ if [[ -n "${ADM}" ]]; then
     fi
 
     groups_scope_uuid="$(keycloak_client_scope_uuid "$EXPECTED_GROUPS_SCOPE_NAME" 2>/dev/null || true)"
-    if [[ -z "$groups_scope_uuid" ]]; then
+    if [[ "$AUTHZ_MODE" == "swift-clean" ]]; then
+      # swift-clean never requires a groups claim (AUTHZ-05/06). Its absence is
+      # the expected state, not a gap. A leftover scope from a prior kea-legacy
+      # run (or hand provisioning) is only a residual-state warning, not a
+      # failure: nothing in the Swift authorization path reads it.
+      if [[ -z "$groups_scope_uuid" ]]; then
+        ok "Client scope '${EXPECTED_GROUPS_SCOPE_NAME}' absent, as expected in swift-clean mode"
+      else
+        app_default_scopes="$(
+          curl -fsS -H "Authorization: Bearer ${ADM}" "$KC/admin/realms/${REALM}/clients/${APP_CLIENT_UUID}/default-client-scopes" 2>/dev/null \
+            | jq -r '.[].name' | sort -u || true
+        )"
+        if contains_line "$EXPECTED_GROUPS_SCOPE_NAME" "$app_default_scopes"; then
+          mark_warning "swift-clean: client scope '${EXPECTED_GROUPS_SCOPE_NAME}' is still attached to the app client's default scopes (residual state from a prior kea-legacy run or hand provisioning) - not read by any Swift authorization path, but 'make docker-wipe && make docker-up' gives a from-scratch proof"
+        else
+          ok "Client scope '${EXPECTED_GROUPS_SCOPE_NAME}' exists but is not attached to app default scopes, as expected in swift-clean mode"
+        fi
+      fi
+    elif [[ -z "$groups_scope_uuid" ]]; then
       ((APP_GROUPS_SCOPE_GAPS+=1))
       mark_critical "Client scope '${EXPECTED_GROUPS_SCOPE_NAME}' is missing"
     else
@@ -1076,18 +1115,36 @@ for u in "${REQUIRED_USERS[@]}"; do
   )"
   info "Keycloak groups: $(sorted_lines_to_csv "$kc_groups")"
 
-  missing_kc_groups="$(missing_lines "$expected_groups" "$kc_groups")"
-  extra_kc_groups="$(extra_lines "$expected_groups" "$kc_groups")"
-  if [[ -n "$missing_kc_groups" ]]; then
-    ((KC_MEMBERSHIP_MISSING+=1))
-    mark_critical "Keycloak missing expected groups for '${u}': $(sorted_lines_to_csv "$missing_kc_groups")"
-  fi
-  if [[ -n "$extra_kc_groups" ]]; then
-    mark_warning "Keycloak extra groups for '${u}': $(sorted_lines_to_csv "$extra_kc_groups")"
+  if [[ "$AUTHZ_MODE" == "swift-clean" ]]; then
+    # swift-clean never represents a team as a Keycloak group (AUTHZ-05/06) -
+    # team membership lives only in OpenFGA/team_metadata. Any group here is
+    # residual state (e.g. a prior kea-legacy run), never a requirement.
+    if [[ -n "$kc_groups" ]]; then
+      mark_warning "swift-clean: '${u}' still has Keycloak group memberships (residual state, not read by any Swift authorization path): $(sorted_lines_to_csv "$kc_groups")"
+    else
+      ok "'${u}' has no Keycloak group memberships, as expected in swift-clean mode"
+    fi
+  else
+    missing_kc_groups="$(missing_lines "$expected_groups" "$kc_groups")"
+    extra_kc_groups="$(extra_lines "$expected_groups" "$kc_groups")"
+    if [[ -n "$missing_kc_groups" ]]; then
+      ((KC_MEMBERSHIP_MISSING+=1))
+      mark_critical "Keycloak missing expected groups for '${u}': $(sorted_lines_to_csv "$missing_kc_groups")"
+    fi
+    if [[ -n "$extra_kc_groups" ]]; then
+      mark_warning "Keycloak extra groups for '${u}': $(sorted_lines_to_csv "$extra_kc_groups")"
+    fi
   fi
 
   if [[ -n "${ALL_TUPLES}" ]]; then
     if [[ "$AUTHZ_MODE" == "swift-clean" ]]; then
+      # swift-clean team-role tuples (team_member/team_admin/team_editor/
+      # team_analyst) are NOT part of the docker-up starting state: they are
+      # written later by the control-plane APIs when the validation harness
+      # bootstraps the collaborative teams (validation/conftest.py::
+      # _bootstrap_collaborative_teams), because a Swift team_id only exists
+      # once team_metadata is created there. Report presence informationally;
+      # only `make validation-report` can authoritatively prove team roles.
       fga_uuid_teams="$(fga_team_relation_lines "user:${uid}" team_member)"
       fga_username_teams="$(fga_team_relation_lines "user:${u}" team_member)"
       fga_uuid_team_admin_teams="$(fga_team_relation_lines "user:${uid}" team_admin)"
@@ -1108,46 +1165,19 @@ for u in "${REQUIRED_USERS[@]}"; do
 
       missing_fga_uuid="$(missing_lines "$expected_teams" "$fga_uuid_teams")"
       if [[ -n "$missing_fga_uuid" ]]; then
-        ((FGA_UUID_MEMBERSHIP_MISSING+=1))
-        mark_critical "OpenFGA UUID-subject team_member tuples missing for '${u}': $(sorted_lines_to_csv "$missing_fga_uuid")"
+        info "swift-clean: '${u}' has no team_member tuple yet for: $(sorted_lines_to_csv "$missing_fga_uuid") - expected before the control-plane bootstrap runs (validation harness or 'make validation-report'), not at docker-up time"
       fi
       missing_fga_uuid_team_admin="$(missing_lines "$expected_team_admin_teams" "$fga_uuid_team_admin_teams")"
       if [[ -n "$missing_fga_uuid_team_admin" ]]; then
-        ((FGA_UUID_TEAM_ADMIN_MISSING+=1))
-        mark_critical "OpenFGA UUID-subject team_admin tuples missing for '${u}': $(sorted_lines_to_csv "$missing_fga_uuid_team_admin")"
+        info "swift-clean: '${u}' has no team_admin tuple yet for: $(sorted_lines_to_csv "$missing_fga_uuid_team_admin") - expected before the control-plane bootstrap runs, not at docker-up time"
       fi
       missing_fga_uuid_team_editor="$(missing_lines "$expected_team_editor_teams" "$fga_uuid_team_editor_teams")"
       if [[ -n "$missing_fga_uuid_team_editor" ]]; then
-        ((FGA_UUID_TEAM_EDITOR_MISSING+=1))
-        mark_critical "OpenFGA UUID-subject team_editor tuples missing for '${u}': $(sorted_lines_to_csv "$missing_fga_uuid_team_editor")"
+        info "swift-clean: '${u}' has no team_editor tuple yet for: $(sorted_lines_to_csv "$missing_fga_uuid_team_editor") - expected before the control-plane bootstrap runs, not at docker-up time"
       fi
       missing_fga_uuid_team_analyst="$(missing_lines "$expected_team_analyst_teams" "$fga_uuid_team_analyst_teams")"
       if [[ -n "$missing_fga_uuid_team_analyst" ]]; then
-        ((FGA_UUID_TEAM_ANALYST_MISSING+=1))
-        mark_critical "OpenFGA UUID-subject team_analyst tuples missing for '${u}': $(sorted_lines_to_csv "$missing_fga_uuid_team_analyst")"
-      fi
-
-      if [[ "${OPENFGA_EXPECT_USERNAME_SUBJECTS,,}" == "true" ]]; then
-        missing_fga_user="$(missing_lines "$expected_teams" "$fga_username_teams")"
-        if [[ -n "$missing_fga_user" ]]; then
-          ((FGA_USERNAME_MEMBERSHIP_MISSING+=1))
-          mark_warning "OpenFGA username-subject team_member tuples missing for '${u}': $(sorted_lines_to_csv "$missing_fga_user")"
-        fi
-        missing_fga_user_team_admin="$(missing_lines "$expected_team_admin_teams" "$fga_username_team_admin_teams")"
-        if [[ -n "$missing_fga_user_team_admin" ]]; then
-          ((FGA_USERNAME_TEAM_ADMIN_MISSING+=1))
-          mark_warning "OpenFGA username-subject team_admin tuples missing for '${u}': $(sorted_lines_to_csv "$missing_fga_user_team_admin")"
-        fi
-        missing_fga_user_team_editor="$(missing_lines "$expected_team_editor_teams" "$fga_username_team_editor_teams")"
-        if [[ -n "$missing_fga_user_team_editor" ]]; then
-          ((FGA_USERNAME_TEAM_EDITOR_MISSING+=1))
-          mark_warning "OpenFGA username-subject team_editor tuples missing for '${u}': $(sorted_lines_to_csv "$missing_fga_user_team_editor")"
-        fi
-        missing_fga_user_team_analyst="$(missing_lines "$expected_team_analyst_teams" "$fga_username_team_analyst_teams")"
-        if [[ -n "$missing_fga_user_team_analyst" ]]; then
-          ((FGA_USERNAME_TEAM_ANALYST_MISSING+=1))
-          mark_warning "OpenFGA username-subject team_analyst tuples missing for '${u}': $(sorted_lines_to_csv "$missing_fga_user_team_analyst")"
-        fi
+        info "swift-clean: '${u}' has no team_analyst tuple yet for: $(sorted_lines_to_csv "$missing_fga_uuid_team_analyst") - expected before the control-plane bootstrap runs, not at docker-up time"
       fi
     else
       fga_username_teams="$(fga_team_relation_lines "user:${u}" member)"

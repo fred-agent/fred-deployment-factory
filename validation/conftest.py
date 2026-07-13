@@ -115,16 +115,12 @@ def _team_identifiers(team_item: dict) -> set[str]:
     }
 
 
-def _configured_relation(username: str, team_name: str) -> str | None:
-    return USERS[username].relation_in(team_name)
+def _configured_relations(username: str, team_name: str) -> frozenset[str]:
+    return USERS[username].relations_in(team_name)
 
 
 def _configured_team_admins(team_name: str) -> list[str]:
-    return sorted(
-        username
-        for username in USERS
-        if _configured_relation(username, team_name) in ("owner", "team_admin")
-    )
+    return sorted(username for username in USERS if USERS[username].is_team_admin_in(team_name))
 
 
 def _platform_admin_username() -> str:
@@ -224,23 +220,69 @@ def _bootstrap_collaborative_teams(_require_stack) -> None:
                 timeout=15.0,
             )
             try:
+                members_resp = team_admin_client.get(f"/teams/{team_id}/members")
+                members_resp.raise_for_status()
+                current_relations_by_user: dict[str, set[str]] = {}
+                for member in members_resp.json():
+                    user_id = str((member.get("user") or {}).get("id") or "")
+                    if user_id:
+                        current_relations_by_user[user_id] = set(member.get("relations") or [])
+
+                # Roles are cumulative (AUTHZ-06): grant EVERY configured relation for
+                # this user on this team, not just one. `team_admin`/`owner` are already
+                # covered by `initial_team_admin_ids` at team creation above.
                 for username in sorted(USERS):
-                    relation = _configured_relation(username, team_name)
-                    if relation is None or relation in ("owner", "team_admin"):
+                    relations = sorted(_configured_relations(username, team_name) - {"owner", "team_admin"})
+                    if not relations:
                         continue
-                    add_resp = team_admin_client.post(
-                        f"/teams/{team_id}/members",
-                        json={
-                            "user_id": _jwt_sub(login(username)),
-                            "relation": relation,
-                        },
-                    )
-                    if add_resp.status_code not in (204, 409):
-                        pytest.fail(
-                            f"Could not add {username!r} as {relation!r} to {team_name!r} "
-                            f"({team_id}): HTTP {add_resp.status_code} {add_resp.text[:500]}",
-                            pytrace=False,
-                        )
+                    user_id = _jwt_sub(login(username))
+                    held = current_relations_by_user.get(user_id, set())
+                    for relation in relations:
+                        if relation in held:
+                            continue
+                        if user_id in current_relations_by_user:
+                            grant_resp = team_admin_client.post(
+                                f"/teams/{team_id}/members/{user_id}/roles",
+                                json={"relation": relation},
+                            )
+                        else:
+                            grant_resp = team_admin_client.post(
+                                f"/teams/{team_id}/members",
+                                json={"user_id": user_id, "relation": relation},
+                            )
+                        if grant_resp.status_code not in (200, 201, 202, 204, 409):
+                            pytest.fail(
+                                f"Could not grant {username!r} the {relation!r} relation on "
+                                f"{team_name!r} ({team_id}): HTTP {grant_resp.status_code} "
+                                f"{grant_resp.text[:500]}",
+                                pytrace=False,
+                            )
+                        if grant_resp.status_code == 409:
+                            # A 409 here is ambiguous: it means "the relation is
+                            # already held" ONLY if that is actually true. Re-read
+                            # the confirmed state instead of assuming - a 409 for
+                            # any other reason (e.g. a validation error reported as
+                            # a conflict) must fail loudly, not be swallowed.
+                            refreshed_members_resp = team_admin_client.get(f"/teams/{team_id}/members")
+                            refreshed_members_resp.raise_for_status()
+                            refreshed_relations: set[str] = set()
+                            for member in refreshed_members_resp.json():
+                                if str((member.get("user") or {}).get("id") or "") == user_id:
+                                    refreshed_relations = set(member.get("relations") or [])
+                                    break
+                            if relation not in refreshed_relations:
+                                pytest.fail(
+                                    f"Granting {username!r} the {relation!r} relation on "
+                                    f"{team_name!r} ({team_id}) returned 409, but re-reading "
+                                    f"/teams/{team_id}/members shows {username!r} holds "
+                                    f"{sorted(refreshed_relations)!r} - the 409 was not "
+                                    "'already held', it hid a real failure: "
+                                    f"{grant_resp.text[:500]}",
+                                    pytrace=False,
+                                )
+                            current_relations_by_user[user_id] = refreshed_relations
+                        else:
+                            current_relations_by_user.setdefault(user_id, set()).add(relation)
             finally:
                 team_admin_client.close()
     finally:
@@ -269,6 +311,12 @@ class CP:
 
     def post(self, path: str, **kw) -> httpx.Response:
         return self._client.post(path, **kw)
+
+    def put(self, path: str, **kw) -> httpx.Response:
+        return self._client.put(path, **kw)
+
+    def patch(self, path: str, **kw) -> httpx.Response:
+        return self._client.patch(path, **kw)
 
     def delete(self, path: str, **kw) -> httpx.Response:
         return self._client.delete(path, **kw)
