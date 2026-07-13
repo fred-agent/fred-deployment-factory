@@ -507,7 +507,14 @@ kubectl logs deploy/control-plane-backend --tail=200
 
 If logs mention `KEYCLOAK_CONTROL_PLANE_CLIENT_SECRET is not set`, the control-plane pod is missing the exact env var named by `security.m2m.secret_env_var`.
 
-## 14. Provision Initial Keycloak Users And Teams
+## 14. Provision Initial Keycloak Users (Kea-legacy script - not the Swift path)
+
+**KEA-LEGACY ONLY.** This step's script (`bin/fredlab-keycloak-identity.sh`) provisions
+Keycloak groups/app-roles - the pre-AUTHZ-05 shape. It is kept only because there is not yet
+a Swift-native onboarding path for real GKE users (**SEC-3**, `docs/BACKLOG.md`). In Swift,
+Keycloak creates identity only; a team is a `team_metadata` row + OpenFGA relations created
+via the control-plane team APIs (see the boundary note after step 14 below) - never a
+Keycloak group.
 
 Keycloak identity provisioning is driven by a local JSON file, not by names hard-coded in a script.
 
@@ -573,7 +580,15 @@ Responsibility:
 - creates/assigns app client roles such as `admin`, `editor`, `viewer`
 - configures the `groups` OIDC claim on the public app client
 
-Important boundary: Keycloak groups prepare identity and login claims. Team ownership and application permissions inside Fred/OpenFGA remain a separate application-domain provisioning step until Swift exposes the official team bootstrap path.
+Important boundary: Keycloak groups prepare identity and login claims here, but this is the
+**pre-AUTHZ-05 flow** kept for the cloud reference pending a replacement onboarding path.
+Team ownership and application permissions inside Fred/OpenFGA are a separate
+application-domain step, and Swift's official team bootstrap path now exists
+(`POST /teams`, `POST/DELETE /teams/{team_id}/members/{user_id}/roles/{relation}` -
+control-plane API, exercised end-to-end by
+`validation/conftest.py::_bootstrap_collaborative_teams` in this repo's local validation
+harness): it does not derive a team from a Keycloak group, and this script does not yet
+call it.
 
 Final browser validation:
 

@@ -76,8 +76,8 @@ Deploying Keycloak only starts the identity server. Fred still needs a provision
 - public frontend client `app`
 - confidential machine client `control-plane`
 - matching `keycloak.clients.controlPlane.secret`
-- service-account roles required by Control Plane: `realm-management` user/group read/write basics, `account:view-groups`, and `app:service_agent`
-- users and team/group mapping for the Fred Swift identity model
+- service-account roles required by Control Plane: `realm-management` `manage-users`/`view-users`/`query-users` and `app:service_agent`. No group-scoped role (`query-groups`/`account:view-groups`) - Control Plane never calls a Keycloak group-admin API; OpenFGA is the sole authorization source (AUTHZ-05/06).
+- users for the Fred Swift identity model - a Swift team is never a Keycloak group; team roles are created later through the control-plane team APIs, not by this bootstrap
 
 The chart provisions the realm and clients with the `keycloak-provision` Helm hook. The control-plane reads the machine client secret from the exact env var `KEYCLOAK_CONTROL_PLANE_CLIENT_SECRET`.
 
@@ -85,14 +85,30 @@ User and team/group provisioning remains a separate application-domain step. Do 
 
 For the current Fredlab phase, only the `control-plane` service client is provisioned. Future deployments of `knowledge-flow-backend` and `fred-agents` must add their own confidential clients and secrets (`knowledge-flow` / `KEYCLOAK_KNOWLEDGE_FLOW_CLIENT_SECRET`, `agentic` / `KEYCLOAK_AGENTIC_CLIENT_SECRET`) before those services are enabled.
 
-Initial Keycloak users and groups can be provisioned from a local identity file:
+**KEA-LEGACY ONLY - not the Swift onboarding path.** `bin/fredlab-keycloak-identity.sh` can
+provision Keycloak groups/users/app-roles for the *pre-AUTHZ-05* shape, from a local identity
+file:
 
 ```bash
 cp config/fredlab-keycloak-identity.example.json config/fredlab-keycloak-identity.json
 bin/fredlab-keycloak-identity.sh
 ```
 
-The real `config/fredlab-keycloak-identity.json` file is ignored by Git. The script creates Keycloak groups, users, app client roles, group membership, and the `groups` token claim. It does not yet create Fred/OpenFGA team ownership tuples.
+The real `config/fredlab-keycloak-identity.json` file is ignored by Git. The script creates Keycloak groups, users, app client roles, group membership, and the `groups` token claim. It does not create any Fred/OpenFGA team ownership tuple, and it never will for a *Swift* team - team ownership is not a Keycloak-group concept in the Swift target model.
+
+In Swift, Keycloak creates identity ONLY. A team is a `team_metadata` row + OpenFGA
+relations, created via the control-plane APIs: `POST /teams` (platform-admin bootstrap with
+an explicit `initial_team_admin_ids`), then
+`POST /teams/{team_id}/members/{user_id}/roles` / `DELETE
+/teams/{team_id}/members/{user_id}/roles/{relation}` to grant/revoke individual, cumulative
+roles (`team_admin`/`team_editor`/`team_analyst`/`team_member`) - the same contract
+`validation/conftest.py::_bootstrap_collaborative_teams` exercises against the local stack.
+Platform roles (`platform_admin`/`platform_observer`) are stored-only OpenFGA relations on
+`organization:fred`, seeded directly (never derived from a Keycloak group or app role).
+
+This script is kept only because there is not yet a Swift-native equivalent for onboarding
+real GKE users - tracked as **SEC-3** in `docs/BACKLOG.md`. Do not present it, or a script
+like it that writes OpenFGA tuples directly, as the Swift onboarding path.
 
 If a user entry contains `temporaryPassword`, the script applies it only when creating that user. Existing users keep their current password unless the entry also has `resetPassword: true`.
 

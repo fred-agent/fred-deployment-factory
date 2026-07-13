@@ -6,6 +6,21 @@ DOCKER_COMPOSE_BASE := docker compose -f docker-compose/docker-compose-
 WITH_KEA ?= false
 export WITH_KEA
 
+ifeq ($(WITH_KEA),true)
+AUTHZ_MODE ?= kea-legacy
+DEFAULT_DEMO_IDENTITY_CONFIG_FILE := $(CURDIR)/config/configuration.kea.yaml
+DEFAULT_OPENFGA_MODEL_FILE := $(CURDIR)/docker-compose/openfga/openfga-model.kea.json
+else
+AUTHZ_MODE ?= swift-clean
+DEFAULT_DEMO_IDENTITY_CONFIG_FILE := $(CURDIR)/config/configuration.yaml
+DEFAULT_OPENFGA_MODEL_FILE := $(CURDIR)/docker-compose/openfga/openfga-model.json
+endif
+DEMO_IDENTITY_CONFIG_FILE ?= $(DEFAULT_DEMO_IDENTITY_CONFIG_FILE)
+OPENFGA_MODEL_FILE ?= $(DEFAULT_OPENFGA_MODEL_FILE)
+export AUTHZ_MODE
+export DEMO_IDENTITY_CONFIG_FILE
+export OPENFGA_MODEL_FILE
+
 # SEED_DEMO=false brings the stack up EMPTY (the "freshly deployed s3ns" state):
 #   - Keycloak realm `app` gets clients + service accounts ONLY (no alice/bob/phil, no demo groups)
 #   - Keycloak/OpenFGA post-install seed NO demo users/groups/tuples (store + model still created)
@@ -196,7 +211,15 @@ preflight-check:
 	@echo "Running FRED preflight..."
 	bash bin/fred-preflight.sh
 
-docker-up: $(DOCKER_UP_SERVICES) ## Launch the Docker stack (STACK=base[default]: minimal; STACK=extended: full stack incl. ClickHouse, Langfuse, Redis, Prometheus, Grafana)
+docker-up: $(DOCKER_UP_SERVICES) ## Launch the Docker stack (default Swift clean authz; WITH_KEA=true for legacy Kea migration rehearsal)
+	@echo "Authz mode: $(AUTHZ_MODE)"
+	@echo "Demo identity config: $(DEMO_IDENTITY_CONFIG_FILE)"
+	@echo "OpenFGA model file: $(OPENFGA_MODEL_FILE)"
+	@if [ "$(AUTHZ_MODE)" = "swift-clean" ]; then \
+	  echo "Swift clean seed: alice=platform_admin, gabriel=platform_observer, team roles live only in OpenFGA."; \
+	else \
+	  echo "Kea legacy seed: old app/team roles, intended for migration-script rehearsal."; \
+	fi
 	@if [ "$(SEED_DEMO)" = "false" ]; then \
 	  echo "[SEED_DEMO=false] empty mode — skipping preflight (no demo users to verify)."; \
 	else \
@@ -603,10 +626,81 @@ FRED_RUNTIME_PUBLIC_BASE ?= http://localhost:8000
 #   make validate-auth-isolation-localhost PYTEST_ARGS=""
 PYTEST_ARGS ?= -x
 
-sync-openfga-model: check-swift-src ## Regenerate docker-compose/openfga/openfga-model.json from the swift fred-core schema (manual - run after any fred-core rebac/schema.fga change)
+sync-openfga-model: check-swift-src ## Regenerate BOTH Swift OpenFGA model copies (docker-compose + helm/fred-stack) from the swift fred-core schema (manual - run after any fred-core rebac/schema.fga change). Never touches the Kea model.
 	@python3 -m json.tool $(FRED_CORE_SRC)/fred_core/security/rebac/schema.fga.json docker-compose/openfga/openfga-model.json
-	@echo "✓ synced docker-compose/openfga/openfga-model.json from $(FRED_CORE_SRC)/fred_core/security/rebac/schema.fga.json"
+	@python3 -m json.tool $(FRED_CORE_SRC)/fred_core/security/rebac/schema.fga.json helm/fred-stack/files/openfga/openfga-model.json
+	@echo "✓ synced docker-compose/openfga/openfga-model.json and helm/fred-stack/files/openfga/openfga-model.json"
+	@echo "  from $(FRED_CORE_SRC)/fred_core/security/rebac/schema.fga.json"
+	@echo "  (docker-compose/openfga/openfga-model.kea.json is untouched - Kea stays on the legacy model)"
 	@echo "  Re-run 'make openfga-post-install' (or 'make docker-up') to push the updated model to the running store."
+
+check-openfga-model-sync: check-swift-src ## Fail fast if either Swift OpenFGA model copy has drifted from the fred-core canonical schema (normalized JSON compare)
+	@canonical="$$(python3 -c "import json,sys; print(json.dumps(json.load(open('$(FRED_CORE_SRC)/fred_core/security/rebac/schema.fga.json')), sort_keys=True))")"; \
+	for copy in docker-compose/openfga/openfga-model.json helm/fred-stack/files/openfga/openfga-model.json; do \
+	  actual="$$(python3 -c "import json; print(json.dumps(json.load(open('$$copy')), sort_keys=True))")"; \
+	  if [ "$$canonical" != "$$actual" ]; then \
+	    echo "✗ $$copy has drifted from $(FRED_CORE_SRC)/fred_core/security/rebac/schema.fga.json"; \
+	    echo "  Fix: make sync-openfga-model SWIFT_SRC=$(SWIFT_SRC)"; \
+	    exit 1; \
+	  fi; \
+	done
+	@echo "✓ docker-compose and helm Swift OpenFGA models match the fred-core canonical schema"
+
+sync-k3d-demo-config: ## Regenerate the k3d/Helm chart's demo identity + Kea model copies from the same canonical sources Docker Compose uses (manual - run after any config/configuration*.yaml or docker-compose/openfga/openfga-model.kea.json change)
+	@python3 -c "import json,yaml; json.dump(yaml.safe_load(open('config/configuration.yaml')), open('helm/fred-stack/files/openfga/openfga-seed.json','w'), indent=2); open('helm/fred-stack/files/openfga/openfga-seed.json','a').write('\n')"
+	@python3 -c "import json,yaml; json.dump(yaml.safe_load(open('config/configuration.kea.yaml')), open('helm/fred-stack/files/openfga/openfga-seed.kea.json','w'), indent=2); open('helm/fred-stack/files/openfga/openfga-seed.kea.json','a').write('\n')"
+	@python3 -m json.tool docker-compose/openfga/openfga-model.kea.json helm/fred-stack/files/openfga/openfga-model.kea.json
+	@echo "✓ synced helm/fred-stack/files/openfga/openfga-seed.json from config/configuration.yaml"
+	@echo "✓ synced helm/fred-stack/files/openfga/openfga-seed.kea.json from config/configuration.kea.yaml"
+	@echo "✓ synced helm/fred-stack/files/openfga/openfga-model.kea.json from docker-compose/openfga/openfga-model.kea.json"
+	@echo "  Re-run 'make k3d-up' (or 'helm upgrade') to push the updated data to the running cluster."
+
+check-k3d-demo-config-sync: ## Fail fast if the k3d/Helm chart's demo identity or Kea model copies have drifted from their canonical sources
+	@swift_seed_canonical="$$(python3 -c "import json,yaml; print(json.dumps(yaml.safe_load(open('config/configuration.yaml')), sort_keys=True))")"; \
+	swift_seed_actual="$$(python3 -c "import json; print(json.dumps(json.load(open('helm/fred-stack/files/openfga/openfga-seed.json')), sort_keys=True))")"; \
+	if [ "$$swift_seed_canonical" != "$$swift_seed_actual" ]; then \
+	  echo "✗ helm/fred-stack/files/openfga/openfga-seed.json has drifted from config/configuration.yaml"; \
+	  echo "  Fix: make sync-k3d-demo-config"; \
+	  exit 1; \
+	fi; \
+	kea_seed_canonical="$$(python3 -c "import json,yaml; print(json.dumps(yaml.safe_load(open('config/configuration.kea.yaml')), sort_keys=True))")"; \
+	kea_seed_actual="$$(python3 -c "import json; print(json.dumps(json.load(open('helm/fred-stack/files/openfga/openfga-seed.kea.json')), sort_keys=True))")"; \
+	if [ "$$kea_seed_canonical" != "$$kea_seed_actual" ]; then \
+	  echo "✗ helm/fred-stack/files/openfga/openfga-seed.kea.json has drifted from config/configuration.kea.yaml"; \
+	  echo "  Fix: make sync-k3d-demo-config"; \
+	  exit 1; \
+	fi; \
+	kea_model_canonical="$$(python3 -c "import json; print(json.dumps(json.load(open('docker-compose/openfga/openfga-model.kea.json')), sort_keys=True))")"; \
+	kea_model_actual="$$(python3 -c "import json; print(json.dumps(json.load(open('helm/fred-stack/files/openfga/openfga-model.kea.json')), sort_keys=True))")"; \
+	if [ "$$kea_model_canonical" != "$$kea_model_actual" ]; then \
+	  echo "✗ helm/fred-stack/files/openfga/openfga-model.kea.json has drifted from docker-compose/openfga/openfga-model.kea.json"; \
+	  echo "  Fix: make sync-k3d-demo-config"; \
+	  exit 1; \
+	fi
+	@echo "✓ k3d/Helm demo identity + Kea model copies match their canonical sources"
+
+check-k3d-authz-mode-render: ## Fail fast if `helm template` doesn't select the Swift path for withKea=false and the Kea path for withKea=true (no cluster contact)
+	@swift_authz_mode="$$(helm template check-render helm/fred-stack --set withKea=false 2>/dev/null | grep -A1 'name: AUTHZ_MODE' | grep 'value:' | sort -u)"; \
+	if ! printf '%s' "$$swift_authz_mode" | grep -q 'value: swift-clean'; then \
+	  echo "✗ helm template --set withKea=false did not select AUTHZ_MODE=swift-clean (got: $$swift_authz_mode)"; \
+	  exit 1; \
+	fi
+	@swift_files="$$(helm template check-render helm/fred-stack --set withKea=false 2>/dev/null | grep 'value: /opt/openfga/' | sort -u)"; \
+	if printf '%s' "$$swift_files" | grep -q '\.kea\.json'; then \
+	  echo "✗ helm template --set withKea=false references a .kea.json file: $$swift_files"; \
+	  exit 1; \
+	fi
+	@kea_authz_mode="$$(helm template check-render helm/fred-stack --set withKea=true 2>/dev/null | grep -A1 'name: AUTHZ_MODE' | grep 'value:' | sort -u)"; \
+	if ! printf '%s' "$$kea_authz_mode" | grep -q 'value: kea-legacy'; then \
+	  echo "✗ helm template --set withKea=true did not select AUTHZ_MODE=kea-legacy (got: $$kea_authz_mode)"; \
+	  exit 1; \
+	fi
+	@kea_files="$$(helm template check-render helm/fred-stack --set withKea=true 2>/dev/null | grep 'value: /opt/openfga/openfga-seed.json\|value: /opt/openfga/openfga-model.json')"; \
+	if [ -n "$$kea_files" ]; then \
+	  echo "✗ helm template --set withKea=true references a Swift (non-.kea) demo/model file: $$kea_files"; \
+	  exit 1; \
+	fi
+	@echo "✓ helm template selects swift-clean for withKea=false and kea-legacy for withKea=true"
 
 validate-auth-isolation-localhost: check-swift-src ## Black-box auth/security team-isolation validation against localhost Fred apps + Docker infra
 	@test -x $(VALIDATION_VENV)/bin/python || { \
@@ -623,6 +717,17 @@ validate-auth-isolation-localhost: check-swift-src ## Black-box auth/security te
 	  FRED_CONTROL_PLANE_URL="$(FRED_CONTROL_PLANE_URL)" \
 	  FRED_RUNTIME_PUBLIC_BASE="$(FRED_RUNTIME_PUBLIC_BASE)" \
 	  .venv/bin/pytest $(PYTEST_ARGS)
+
+validation-unit-tests: ## Offline unit tests for the validation harness itself (factory_config.py) - no running stack required
+	@test -x $(VALIDATION_VENV)/bin/python || { \
+	  echo "▶ creating venv $(VALIDATION_VENV) (python3 -m venv)"; \
+	  $(PYTHON_BIN) -m venv $(VALIDATION_VENV) && \
+	  $(VALIDATION_VENV)/bin/pip install -q --upgrade pip; \
+	}
+	@echo "▶ installing deps (shared Fred libs editable + test app)"
+	@$(VALIDATION_VENV)/bin/pip install -q -e $(FRED_CORE_SRC) -e $(FRED_SDK_SRC) -e $(FRED_RUNTIME_SRC) -e $(VALIDATION_DIR)
+	@echo "▶ running offline unit tests (no live stack)"
+	cd $(VALIDATION_DIR) && .venv/bin/pytest tests -q
 
 validate-auth-isolation-k3d: ## Black-box auth/security team-isolation validation against full k3d deployment (not implemented)
 	@echo "validate-auth-isolation-k3d is not yet implemented."
@@ -642,12 +747,16 @@ validation-report: check-swift-src ## Run the full validation suite (no -x) and 
 	@echo "▶ installing deps (shared Fred libs editable + test app)"
 	@$(VALIDATION_VENV)/bin/pip install -q -e $(FRED_CORE_SRC) -e $(FRED_SDK_SRC) -e $(FRED_RUNTIME_SRC) -e $(VALIDATION_DIR)
 	@echo "▶ running the full suite (no -x, so one failure doesn't hide the rest)"
-	-cd $(VALIDATION_DIR) && \
-	  FRED_CONTROL_PLANE_URL="$(FRED_CONTROL_PLANE_URL)" \
-	  FRED_RUNTIME_PUBLIC_BASE="$(FRED_RUNTIME_PUBLIC_BASE)" \
-	  .venv/bin/pytest --junitxml=report.xml
-	@$(VALIDATION_VENV)/bin/python $(VALIDATION_DIR)/generate_report.py $(VALIDATION_JUNIT_XML) | tee $(VALIDATION_REPORT)
-	@echo ""
-	@echo "✓ Report written to $(VALIDATION_REPORT)"
+	@set +e; \
+	  cd $(VALIDATION_DIR) && \
+	    FRED_CONTROL_PLANE_URL="$(FRED_CONTROL_PLANE_URL)" \
+	    FRED_RUNTIME_PUBLIC_BASE="$(FRED_RUNTIME_PUBLIC_BASE)" \
+	    .venv/bin/pytest --junitxml=report.xml; \
+	  rc=$$?; \
+	  cd "$(CURDIR)" || exit $$rc; \
+	  $(VALIDATION_VENV)/bin/python $(VALIDATION_DIR)/generate_report.py $(VALIDATION_JUNIT_XML) | tee $(VALIDATION_REPORT); \
+	  echo ""; \
+	  echo "✓ Report written to $(VALIDATION_REPORT)"; \
+	  exit $$rc
 
-.PHONY: help network-create env-setup keycloak-post-install postgres-up keycloak-up seaweedfs-up opensearch-up clickhouse-up langfuse-up prometheus-up grafana-up openfga-post-install openfga-up temporal-up preflight-check docker-up docker-down all-down docker-wipe docker-destroy k3d-create k3d-up k3d-deploy k3d-restart k3d-redeploy k3d-logs k3d-down k3d-uninstall k3d-delete k3d-wipe k3d-status k3d-airgap-on k3d-airgap-off k3d-airgap-status checkpoint-save checkpoint-restore docker-restart-from-checkpoint checkpoint-list checkpoint-delete kea-identity-dump kea-identity-restore kea-data-dump kea-data-restore kea-snapshot migration-reset check-swift-src sync-openfga-model validate-auth-isolation-localhost validate-auth-isolation-k3d validation-report
+.PHONY: help network-create env-setup keycloak-post-install postgres-up keycloak-up seaweedfs-up opensearch-up clickhouse-up langfuse-up prometheus-up grafana-up openfga-post-install openfga-up temporal-up preflight-check docker-up docker-down all-down docker-wipe docker-destroy k3d-create k3d-up k3d-deploy k3d-restart k3d-redeploy k3d-logs k3d-down k3d-uninstall k3d-delete k3d-wipe k3d-status k3d-airgap-on k3d-airgap-off k3d-airgap-status checkpoint-save checkpoint-restore docker-restart-from-checkpoint checkpoint-list checkpoint-delete kea-identity-dump kea-identity-restore kea-data-dump kea-data-restore kea-snapshot migration-reset check-swift-src sync-openfga-model check-openfga-model-sync sync-k3d-demo-config check-k3d-demo-config-sync check-k3d-authz-mode-render validation-unit-tests validate-auth-isolation-localhost validate-auth-isolation-k3d validation-report

@@ -7,15 +7,34 @@
         {
             "metadata": {
                 "relations": {
+                    "admin": {
+                        "directly_related_user_types": [
+                            {
+                                "type": "user"
+                            }
+                        ]
+                    },
                     "can_administer_users": {},
+                    "can_create_agent": {},
                     "can_create_team": {},
-                    "can_delete_team": {},
                     "can_edit_agent_class_path": {},
-                    "can_list_all_teams": {},
                     "can_manage_platform": {},
-                    "can_observe_platform": {},
-                    "can_rescue_team_admin": {},
+                    "can_process_content": {},
+                    "can_read_content": {},
+                    "can_read_knowledge_graph": {},
+                    "can_read_kpi": {},
+                    "can_read_kpi_global": {},
+                    "can_read_logs": {},
+                    "can_read_metrics": {},
+                    "can_read_opensearch": {},
                     "can_run_benchmark": {},
+                    "editor": {
+                        "directly_related_user_types": [
+                            {
+                                "type": "user"
+                            }
+                        ]
+                    },
                     "platform_admin": {
                         "directly_related_user_types": [
                             {
@@ -29,53 +48,201 @@
                                 "type": "user"
                             }
                         ]
+                    },
+                    "viewer": {
+                        "directly_related_user_types": [
+                            {
+                                "type": "user"
+                            }
+                        ]
                     }
                 }
             },
             "relations": {
+                "admin": {
+                    "this": {}
+                },
                 "can_administer_users": {
+                    "union": {
+                        "child": [
+                            {
+                                "computedUserset": {
+                                    "relation": "admin"
+                                }
+                            },
+                            {
+                                "computedUserset": {
+                                    "relation": "platform_admin"
+                                }
+                            }
+                        ]
+                    }
+                },
+                "can_create_agent": {
                     "computedUserset": {
-                        "relation": "platform_admin"
+                        "relation": "editor"
                     }
                 },
                 "can_create_team": {
                     "computedUserset": {
-                        "relation": "platform_admin"
-                    }
-                },
-                "can_delete_team": {
-                    "computedUserset": {
-                        "relation": "platform_admin"
+                        "relation": "admin"
                     }
                 },
                 "can_edit_agent_class_path": {
                     "computedUserset": {
-                        "relation": "platform_admin"
-                    }
-                },
-                "can_list_all_teams": {
-                    "computedUserset": {
-                        "relation": "platform_admin"
+                        "relation": "admin"
                     }
                 },
                 "can_manage_platform": {
-                    "computedUserset": {
-                        "relation": "platform_admin"
+                    "union": {
+                        "child": [
+                            {
+                                "computedUserset": {
+                                    "relation": "admin"
+                                }
+                            },
+                            {
+                                "computedUserset": {
+                                    "relation": "platform_admin"
+                                }
+                            }
+                        ]
                     }
                 },
-                "can_observe_platform": {
+                "can_process_content": {
                     "computedUserset": {
-                        "relation": "platform_observer"
+                        "relation": "editor"
                     }
                 },
-                "can_rescue_team_admin": {
+                "can_read_content": {
                     "computedUserset": {
-                        "relation": "platform_admin"
+                        "relation": "viewer"
+                    }
+                },
+                "can_read_knowledge_graph": {
+                    "union": {
+                        "child": [
+                            {
+                                "computedUserset": {
+                                    "relation": "viewer"
+                                }
+                            },
+                            {
+                                "computedUserset": {
+                                    "relation": "platform_observer"
+                                }
+                            }
+                        ]
+                    }
+                },
+                "can_read_kpi": {
+                    "union": {
+                        "child": [
+                            {
+                                "computedUserset": {
+                                    "relation": "viewer"
+                                }
+                            },
+                            {
+                                "computedUserset": {
+                                    "relation": "platform_observer"
+                                }
+                            }
+                        ]
+                    }
+                },
+                "can_read_kpi_global": {
+                    "union": {
+                        "child": [
+                            {
+                                "computedUserset": {
+                                    "relation": "admin"
+                                }
+                            },
+                            {
+                                "computedUserset": {
+                                    "relation": "platform_admin"
+                                }
+                            }
+                        ]
+                    }
+                },
+                "can_read_logs": {
+                    "union": {
+                        "child": [
+                            {
+                                "computedUserset": {
+                                    "relation": "viewer"
+                                }
+                            },
+                            {
+                                "computedUserset": {
+                                    "relation": "platform_observer"
+                                }
+                            }
+                        ]
+                    }
+                },
+                "can_read_metrics": {
+                    "union": {
+                        "child": [
+                            {
+                                "computedUserset": {
+                                    "relation": "viewer"
+                                }
+                            },
+                            {
+                                "computedUserset": {
+                                    "relation": "platform_observer"
+                                }
+                            }
+                        ]
+                    }
+                },
+                "can_read_opensearch": {
+                    "union": {
+                        "child": [
+                            {
+                                "computedUserset": {
+                                    "relation": "viewer"
+                                }
+                            },
+                            {
+                                "computedUserset": {
+                                    "relation": "platform_observer"
+                                }
+                            }
+                        ]
                     }
                 },
                 "can_run_benchmark": {
-                    "computedUserset": {
-                        "relation": "platform_admin"
+                    "union": {
+                        "child": [
+                            {
+                                "computedUserset": {
+                                    "relation": "admin"
+                                }
+                            },
+                            {
+                                "computedUserset": {
+                                    "relation": "platform_admin"
+                                }
+                            }
+                        ]
+                    }
+                },
+                "editor": {
+                    "union": {
+                        "child": [
+                            {
+                                "this": {}
+                            },
+                            {
+                                "computedUserset": {
+                                    "relation": "admin"
+                                }
+                            }
+                        ]
                     }
                 },
                 "platform_admin": {
@@ -94,6 +261,20 @@
                             }
                         ]
                     }
+                },
+                "viewer": {
+                    "union": {
+                        "child": [
+                            {
+                                "this": {}
+                            },
+                            {
+                                "computedUserset": {
+                                    "relation": "editor"
+                                }
+                            }
+                        ]
+                    }
                 }
             },
             "type": "organization"
@@ -101,24 +282,40 @@
         {
             "metadata": {
                 "relations": {
-                    "can_administer_admins": {},
-                    "can_administer_analysts": {},
-                    "can_administer_editors": {},
+                    "can_administer_managers": {},
                     "can_administer_members": {},
-                    "can_manage_evaluation_corpus": {},
+                    "can_administer_owners": {},
                     "can_read": {},
                     "can_read_conversations": {},
-                    "can_read_conversations_for_evaluation": {},
                     "can_read_members": {},
-                    "can_run_evaluations": {},
                     "can_update_agents": {},
                     "can_update_info": {},
                     "can_update_resources": {},
-                    "can_use_team_agents": {},
+                    "manager": {
+                        "directly_related_user_types": [
+                            {
+                                "type": "user"
+                            }
+                        ]
+                    },
+                    "member": {
+                        "directly_related_user_types": [
+                            {
+                                "type": "user"
+                            }
+                        ]
+                    },
                     "organization": {
                         "directly_related_user_types": [
                             {
                                 "type": "organization"
+                            }
+                        ]
+                    },
+                    "owner": {
+                        "directly_related_user_types": [
+                            {
+                                "type": "user"
                             }
                         ]
                     },
@@ -129,69 +326,52 @@
                                 "wildcard": {}
                             }
                         ]
-                    },
-                    "team_admin": {
-                        "directly_related_user_types": [
-                            {
-                                "type": "user"
-                            }
-                        ]
-                    },
-                    "team_analyst": {
-                        "directly_related_user_types": [
-                            {
-                                "type": "user"
-                            }
-                        ]
-                    },
-                    "team_editor": {
-                        "directly_related_user_types": [
-                            {
-                                "type": "user"
-                            }
-                        ]
-                    },
-                    "team_member": {
-                        "directly_related_user_types": [
-                            {
-                                "type": "user"
-                            }
-                        ]
                     }
                 }
             },
             "relations": {
-                "can_administer_admins": {
-                    "computedUserset": {
-                        "relation": "team_admin"
-                    }
-                },
-                "can_administer_analysts": {
-                    "computedUserset": {
-                        "relation": "team_admin"
-                    }
-                },
-                "can_administer_editors": {
-                    "computedUserset": {
-                        "relation": "team_admin"
-                    }
-                },
-                "can_administer_members": {
-                    "computedUserset": {
-                        "relation": "team_admin"
-                    }
-                },
-                "can_manage_evaluation_corpus": {
+                "can_administer_managers": {
                     "union": {
                         "child": [
                             {
                                 "computedUserset": {
-                                    "relation": "team_analyst"
+                                    "relation": "owner"
                                 }
                             },
                             {
+                                "tupleToUserset": {
+                                    "computedUserset": {
+                                        "relation": "platform_admin"
+                                    },
+                                    "tupleset": {
+                                        "relation": "organization"
+                                    }
+                                }
+                            }
+                        ]
+                    }
+                },
+                "can_administer_members": {
+                    "computedUserset": {
+                        "relation": "owner"
+                    }
+                },
+                "can_administer_owners": {
+                    "union": {
+                        "child": [
+                            {
                                 "computedUserset": {
-                                    "relation": "team_admin"
+                                    "relation": "owner"
+                                }
+                            },
+                            {
+                                "tupleToUserset": {
+                                    "computedUserset": {
+                                        "relation": "platform_admin"
+                                    },
+                                    "tupleset": {
+                                        "relation": "organization"
+                                    }
                                 }
                             }
                         ]
@@ -202,7 +382,7 @@
                         "child": [
                             {
                                 "computedUserset": {
-                                    "relation": "team_member"
+                                    "relation": "member"
                                 }
                             },
                             {
@@ -215,71 +395,30 @@
                 },
                 "can_read_conversations": {
                     "computedUserset": {
-                        "relation": "team_member"
-                    }
-                },
-                "can_read_conversations_for_evaluation": {
-                    "computedUserset": {
-                        "relation": "team_analyst"
+                        "relation": "member"
                     }
                 },
                 "can_read_members": {
                     "computedUserset": {
-                        "relation": "team_member"
-                    }
-                },
-                "can_run_evaluations": {
-                    "union": {
-                        "child": [
-                            {
-                                "computedUserset": {
-                                    "relation": "team_analyst"
-                                }
-                            },
-                            {
-                                "computedUserset": {
-                                    "relation": "team_admin"
-                                }
-                            }
-                        ]
+                        "relation": "member"
                     }
                 },
                 "can_update_agents": {
                     "computedUserset": {
-                        "relation": "team_editor"
+                        "relation": "manager"
                     }
                 },
                 "can_update_info": {
                     "computedUserset": {
-                        "relation": "team_admin"
+                        "relation": "owner"
                     }
                 },
                 "can_update_resources": {
                     "computedUserset": {
-                        "relation": "team_editor"
+                        "relation": "manager"
                     }
                 },
-                "can_use_team_agents": {
-                    "computedUserset": {
-                        "relation": "team_member"
-                    }
-                },
-                "organization": {
-                    "this": {}
-                },
-                "public": {
-                    "this": {}
-                },
-                "team_admin": {
-                    "this": {}
-                },
-                "team_analyst": {
-                    "this": {}
-                },
-                "team_editor": {
-                    "this": {}
-                },
-                "team_member": {
+                "manager": {
                     "union": {
                         "child": [
                             {
@@ -287,21 +426,34 @@
                             },
                             {
                                 "computedUserset": {
-                                    "relation": "team_admin"
-                                }
-                            },
-                            {
-                                "computedUserset": {
-                                    "relation": "team_editor"
-                                }
-                            },
-                            {
-                                "computedUserset": {
-                                    "relation": "team_analyst"
+                                    "relation": "owner"
                                 }
                             }
                         ]
                     }
+                },
+                "member": {
+                    "union": {
+                        "child": [
+                            {
+                                "this": {}
+                            },
+                            {
+                                "computedUserset": {
+                                    "relation": "manager"
+                                }
+                            }
+                        ]
+                    }
+                },
+                "organization": {
+                    "this": {}
+                },
+                "owner": {
+                    "this": {}
+                },
+                "public": {
+                    "this": {}
                 }
             },
             "type": "team"
@@ -360,7 +512,7 @@
                             {
                                 "tupleToUserset": {
                                     "computedUserset": {
-                                        "relation": "team_member"
+                                        "relation": "member"
                                     },
                                     "tupleset": {
                                         "relation": "owner"
@@ -512,7 +664,7 @@
                             {
                                 "tupleToUserset": {
                                     "computedUserset": {
-                                        "relation": "team_member"
+                                        "relation": "member"
                                     },
                                     "tupleset": {
                                         "relation": "owner"

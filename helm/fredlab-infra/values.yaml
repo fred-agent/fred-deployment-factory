@@ -119,6 +119,11 @@ keycloak:
         webOrigins:
           - https://studio.playground.fredlab.dev
       controlPlane:
+        # Confidential M2M client for control-plane-backend. manage-users is required
+        # because control-plane creates/deletes Keycloak users (users/service.py);
+        # query-users/view-users cover its read paths. No group-scoped role: OpenFGA
+        # is the sole authorization source (AUTHZ-05/06) and control-plane never calls
+        # a Keycloak group-admin API.
         clientId: control-plane
         appRoles:
           - service_agent
@@ -126,14 +131,13 @@ keycloak:
           - manage-users
           - view-users
           - query-users
-          - query-groups
-        accountRoles:
-          - view-groups
+        accountRoles: []
       knowledgeFlow:
         # Confidential M2M client for knowledge-flow-backend. Needs the service_agent
         # app role so its M2M token is accepted by other Fred resource servers, plus
-        # read-only realm-management/account roles so it can resolve a user's Keycloak
-        # groups (a_get_group_by_path) when building ReBAC contextual relations.
+        # read-only realm-management roles for its user lookups (users_service.py:
+        # a_get_user/a_get_users). No group-scoped role: knowledge-flow never calls a
+        # Keycloak group-admin API (team membership is OpenFGA-only, AUTHZ-05/06).
         # Read-only: no manage-users (KF never modifies identities).
         clientId: knowledge-flow
         appRoles:
@@ -141,22 +145,19 @@ keycloak:
         realmManagementRoles:
           - view-users
           - query-users
-          - query-groups
-        accountRoles:
-          - view-groups
+        accountRoles: []
       agentic:
         # Confidential M2M client for fred-agents. Same shape as knowledge-flow:
-        # service_agent app role + read-only group/user roles for ReBAC contextual
-        # relations (proactively granted to avoid the group-read 403).
+        # service_agent app role + read-only user roles, reserved for background
+        # administration (not currently used for any runtime API call). No
+        # group-scoped role: fred-agents never calls a Keycloak group-admin API.
         clientId: agentic
         appRoles:
           - service_agent
         realmManagementRoles:
           - view-users
           - query-users
-          - query-groups
-        accountRoles:
-          - view-groups
+        accountRoles: []
       evaluation:
         # Confidential M2M client for the fred-agent-evaluator. Needs the service_agent
         # app role so its M2M token is accepted by the control plane and agent runtimes

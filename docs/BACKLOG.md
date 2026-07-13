@@ -44,45 +44,47 @@ Status: `[ ]` todo · `[~]` in progress · `[x]` done. IDs are referenced from t
       evaluate External-Secrets-Operator / Vault / SOPS-in-git. Pick one. (RFC Q2)
 - [ ] **SEC-2** Move Keycloak identity (`config/fredlab-keycloak-identity.json`) provisioning to
       the same governed source; define rotation.
+- [ ] **SEC-3** (2026-07-13) `bin/fredlab-keycloak-identity.sh` is Kea-legacy only (explicitly
+      marked as such in the script and `config/fredlab-keycloak-identity.example.json` -
+      see **VALID-7**): it provisions Keycloak groups/app-roles, never a Swift team. There is
+      still no Swift-native cloud onboarding path for real GKE users - build one that (a)
+      creates Keycloak users only (identity, no groups, no app roles) and (b) calls the real
+      control-plane team APIs (`POST /teams`, `POST/DELETE
+      /teams/{team_id}/members/{user_id}/roles/{relation}`) using a platform-admin session,
+      the same contract `validation/conftest.py::_bootstrap_collaborative_teams` already
+      exercises locally. Needs a decision on first-platform-admin bootstrap (who creates the
+      first team when the registry is empty) before implementation - do not shortcut this by
+      writing OpenFGA tuples directly from a script (bypasses `team_metadata`, exactly the
+      anti-pattern **VALID-7** removed from `openfga-post-install.sh`).
 
 ## VALID — auth/isolation validation (release gate)
 
-- [x] **VALID-1** Extend `validation/` with the AUTHZ-05 complete role matrix (2026-07-09):
-      5 new demo users (`oscar`, `nina`, `derek`, `priya`, `quinn`) in `configuration.yaml`
-      covering platform-admin-without-team, the floor case, legitimate-admin-plus-one-team,
-      and the new target `platform_admin`/`platform_observer` relations in isolation.
-      New `platform_roles` config field + `openfga-post-install.sh` seeding. New
-      `scenarios/test_platform_role_isolation.py`. All 5 users live-verified against the
-      running local OpenFGA store via direct `/check` calls before any HTTP-level test was
-      written. See `validation/README.md` "The complete-matrix demo users".
+- [x] **VALID-1** Swift clean demo identity matrix (2026-07-10, superseded by **VALID-7**
+      on 2026-07-13): `config/configuration.yaml` is the clean Swift seed. `alice` is the
+      platform admin, `gabriel` the platform observer, both with zero team membership. The
+      old Kea vocabulary is preserved separately in `config/configuration.kea.yaml` for
+      `WITH_KEA=true` migration rehearsal. As of VALID-7, Keycloak carries identities only
+      (no groups) in `swift-clean`, and OpenFGA carries `platform_admin`/`platform_observer`
+      directly from `docker-up`; `team_admin`/`team_editor`/`team_member`/`team_analyst`
+      tuples are bootstrapped later via the control-plane APIs, not seeded here.
 - [x] **VALID-2** Fixed real drift: `docker-compose/openfga/openfga-model.json` was a
       hand-maintained copy that had diverged from `fred-core`'s actual `schema.fga` (missing
       most organization capabilities, missing `can_read_conversations`). Synced it and added
       `make sync-openfga-model` (manual, not CI) to prevent recurrence.
-- [x] **VALID-3** Added `scenarios/test_content_scope_bypass.py`: a deliberate
-      `xfail(strict=True, raises=AssertionError)` tripwire for the known, NOT YET FIXED
-      org-scoped `can_read_content`/`can_process_content` gap in knowledge-flow-backend
-      (fred's `FRED-AUTHORIZATION-TARGET-MODEL-RFC.md` §25a). Needs knowledge-flow-backend
-      reachable (`FRED_KNOWLEDGE_FLOW_URL`, new). Note: without `raises=AssertionError`,
-      xfail silently swallows "stack unreachable" as if it were the expected vulnerability —
-      found and fixed this during implementation; see the file's docstring.
-- [x] **VALID-3b** Fully corrected `bin/fred-preflight.sh` for the new role matrix — not a
-      one-off hack for the new users. It previously hardcoded "every demo user must hold a
-      legacy Keycloak app role in {admin, editor, viewer}", which is flatly wrong under
-      AUTHZ-05 (nina/priya/quinn are deliberately role-less or platform-only) and would have
-      hard-failed `make docker-up` for any release using this matrix. Now:
-      (1) a user's expected app_roles/platform_roles come from `configuration.yaml`, empty is
-      valid when declared, extra/unexpected roles are still flagged;
-      (2) the "does the claim mechanism work at all" check moved from per-user to a single
-      aggregate assertion (at least one demo user has an effective legacy role);
-      (3) new: validates `platform_roles` against real OpenFGA `platform_admin`/
-      `platform_observer` tuples, same UUID-critical/username-warning pattern as team roles;
-      (4) new: validates the shape of the LIVE authorization model pushed to OpenFGA itself —
-      asserts `organization` defines `platform_admin`/`platform_observer` and `team.owner` is
-      direct-only (no `admin`-from-`organization` escalation) — a standing regression guard
-      against exactly the drift found in VALID-2, not just a one-time fix. All new logic
-      verified against both the fixed and the pre-fix model shape (synthetic + live OpenFGA
-      `/check` calls) before being considered done.
+- [x] **VALID-3** Updated `scenarios/test_content_scope_bypass.py` into a Swift
+      content-scope gate: `corpus/capabilities` must require `team_id`, allow members of that
+      team, and deny platform-only users or members of other teams. This used to be an xfail
+      tripwire for the org-scoped `can_read_content` gap; it is now a blocking validation of
+      the fixed team-scoped contract. Needs knowledge-flow-backend reachable
+      (`FRED_KNOWLEDGE_FLOW_URL`).
+- [x] **VALID-3b** `bin/fred-preflight.sh` is mode-aware: clean Swift validates the
+      Swift OpenFGA model (`team_admin`/`team_editor`/`team_analyst`/`team_member`) and accepts
+      zero Keycloak app roles for users; `WITH_KEA=true` validates the legacy rehearsal model
+      (`member`/`manager`/`owner`) and old app-role seed. Both modes still validate platform
+      tuples and the live model shape pushed to OpenFGA. Keycloak groups are validated only
+      in `WITH_KEA=true` (superseded by **VALID-7**, 2026-07-13): `swift-clean` requires zero
+      Keycloak team groups, no `groups-scope`/groups claim, and does not expect team-role
+      OpenFGA tuples to exist before the control-plane bootstrap runs.
 - [ ] **VALID-4** Wire `make validate-auth-isolation-localhost` into CI (currently zero
       `.github/workflows` in this repo — this release gate is 100% manual today).
 - [x] **VALID-5a** Minimal version shipped: `make validation-report` runs the full suite
@@ -98,10 +100,104 @@ Status: `[ ]` todo · `[~]` in progress · `[x]` done. IDs are referenced from t
       `validation/RFC-C3-validation-extensions.md` Extension F (`pytest.xml`,
       `environment.json`, checksums, retention policy, tied to a git tag) — not built;
       VALID-5a is deliberately the smaller first step.
-- [ ] **VALID-6** Team-role vocabulary rename (`owner`→`team_manager`, `manager`→`team_editor`,
-      +`team_analyst`) has no fixture users yet — no control-plane endpoint assigns/checks
-      those relations today, so a demo user for them would be untestable. Add once `fred`'s
-      `teams/service.py` rename lands (tracked in `fred`'s `AUTHZ-MIGRATION-BACKLOG.md`).
+- [x] **VALID-6** Team-role vocabulary fixtures now exist in the clean Swift seed:
+      `bob`/`derek` exercise `team_editor`, `sophia`/`marc`/`nadia` exercise `team_admin`,
+      and ordinary members exercise `team_member`. `validation-report` now proves the
+      hard split: `team_admin` without `team_editor` cannot enroll agents, and `team_editor`
+      without `team_admin` cannot administer members. `team_analyst` remains model-ready but
+      has no high-signal black-box workflow in this local suite yet.
+- [x] **VALID-7** (2026-07-13, #1912/AUTHZ-05) swift-clean vs kea-legacy convergence pass:
+      `make sync-openfga-model` now regenerates **both** Swift OpenFGA model copies
+      (`docker-compose/openfga/openfga-model.json` and
+      `helm/fred-stack/files/openfga/openfga-model.json`) from `fred-core`'s canonical
+      `schema.fga.json`; a new `make check-openfga-model-sync` static guard fails fast on
+      drift. `docker-compose/keycloak/keycloak-post-install.sh` and
+      `docker-compose/openfga/openfga-post-install.sh` are now `AUTHZ_MODE`-gated so
+      `swift-clean` creates zero Keycloak groups, attaches no `groups-scope`, and seeds zero
+      team-role OpenFGA tuple from a Keycloak group id (teams are bootstrapped later via the
+      control-plane APIs, never from `openfga-post-install`); `kea-legacy`
+      (`WITH_KEA=true`) keeps the prior group-based rehearsal behavior unchanged.
+      Service-account Keycloak client roles `query-groups`/`view-groups`/`account:view-groups`
+      were removed for `agentic`/`knowledge-flow`/`control-plane` in both
+      `docker-compose/keycloak/keycloak-post-install.sh` and the GKE `helm/fredlab-infra`
+      Foundation values (no app calls a Keycloak group-admin API - confirmed against
+      `fred`'s source). `bin/fred-preflight.sh` no longer requires a groups claim, a
+      `groups-scope` client scope, or Keycloak team groups for `swift-clean`, and no longer
+      expects team-role OpenFGA tuples to exist at `docker-up` time (they only exist once
+      the validation harness bootstraps them) - the GREEN verdict for `swift-clean` no
+      longer depends on any Keycloak group. Left out of this pass, closed by **VALID-9**:
+      the k3d `helm/fred-stack` chart was not yet `AUTHZ_MODE`-aware, and the shared
+      `app-realm.json.template` (both Compose and Helm copies) still carried orphaned demo
+      groups from an old, unrelated realm export.
+- [x] **VALID-8** (2026-07-13, #1912/AUTHZ-06) `validation/scenarios/test_team_registry_authz.py`
+      no longer calls the removed `PATCH /teams/{team_id}/members/{user_id}` endpoint; the
+      sole-admin self-demotion guard is now proven through the current granular
+      `DELETE /teams/{team_id}/members/{user_id}/roles/team_admin`. Added
+      `validation/scenarios/test_cumulative_team_roles.py`: an explicit, dedicated proof that
+      marc/bob/elena each hold exactly one team role on `fredlab` with only that role's
+      capabilities, priya holds all three (`team_admin`+`team_editor`+`team_analyst`) at
+      once with their union, and priya can exercise a genuine admin-gated operation
+      (add/remove a member) and editor-gated operation (create/delete a prompt) through her
+      cumulative grant. `validation/conftest.py::_bootstrap_collaborative_teams` no longer
+      treats every `409` on a role grant as success: it re-reads the member's confirmed
+      relations and fails loudly if the expected relation isn't actually held.
+      `validation/tests/test_factory_config.py` (offline, `make validation-unit-tests`, no
+      running stack) locks in `FactoryUser`'s role-resolution logic: a simple role, a
+      cumulative role, the `teams[]` -> `team_member` fallback, the admin/editor/analyst
+      distinction, and a neutral identity with no role at all.
+- [x] **VALID-9** (2026-07-13, #1912/AUTHZ-05/06) Closes the gap **VALID-7** left open, plus
+      four correctness fixes found while closing it:
+      - `docker-compose/keycloak/app-realm.json.template` and
+        `helm/fred-stack/files/keycloak/app-realm.json.template` (the shared realm-import
+        used by **both** authz modes) had **orphaned demo groups from an old, unrelated realm
+        export** (`bidgpt`/`kast`/`poltechng`/`thanos`, not `northbridge`/`fredlab`/`swiftpost`)
+        baked in, plus `query-groups`/`view-groups` granted directly to the
+        `knowledge-flow`/`control-plane` (and, in the Helm copy only, `agentic`) service
+        accounts, plus `groups-scope` in the `app` client's default scopes. All removed - the
+        import is now genuinely group-free for both modes; kea-legacy's post-install still
+        creates its own groups (and attaches groups-scope) at runtime from
+        `config/configuration.kea.yaml`, so nothing regresses for the migration rehearsal.
+      - `helm/fred-stack` (k3d) is now `AUTHZ_MODE`-aware end to end: the chart passes
+        `AUTHZ_MODE`/`DEMO_IDENTITY_CONFIG_FILE`/`OPENFGA_MODEL_FILE`/`OPENFGA_SEED_FILE` to
+        the post-install Jobs based on `.Values.withKea` (mirrors `WITH_KEA` in Docker
+        Compose); `keycloak-post-install-k8s.sh` and `openfga-post-install.sh` (k8s copies)
+        gained the same swift-clean/kea-legacy branch already in the Compose scripts.
+        Also fixed, found while making the k8s Keycloak script mode-aware: 7 functions called
+        an undefined `kc` (kcadm) wrapper - only ever defined in the Compose script, where it
+        wraps `docker exec`; there is no equivalent inside a k8s Job pod, so this script could
+        not have completed a real run before. Converted to the same `kc_http_*` REST calls the
+        rest of the file already used.
+      - `helm/fred-stack/files/openfga/openfga-seed.json` (the k3d Swift demo identity - was
+        hand-maintained and had drifted: missing elena, and priya missing her AUTHZ-06
+        cumulative roles) and a new `openfga-seed.kea.json` / `openfga-model.kea.json` (k3d
+        had no Kea-shaped data source at all before this) are now **generated copies** of
+        `config/configuration.yaml` / `config/configuration.kea.yaml` /
+        `docker-compose/openfga/openfga-model.kea.json` - `make sync-k3d-demo-config`
+        regenerates them, `make check-k3d-demo-config-sync` fails fast on drift (mirrors
+        `sync-openfga-model`/`check-openfga-model-sync` for the schema itself).
+      - `bin/fredlab-keycloak-identity.sh` (manual cloud onboarding, still pre-AUTHZ-05
+        Keycloak-groups-as-teams) is now unambiguously marked Kea-legacy-only: a runtime
+        banner, a `_notice` field in `config/fredlab-keycloak-identity.example.json`, and
+        `helm/fredlab-infra/README.md` / `DEPLOYMENT-STEPS.md` no longer present it as (or
+        near) the Swift onboarding path. **SEC-3** tracks building the real one.
+      - `validation/scenarios/test_cumulative_team_roles.py` and
+        `test_team_registry_authz.py`'s mutating fixtures/tests now use try/finally so a
+        disposable team, an added member, or a created prompt is cleaned up even when an
+        earlier assertion fails, refuse to mutate a persona found in an unexpected
+        pre-existing state instead of clobbering it, and check the cleanup call's own result
+        instead of firing it blind.
+      - `validation/README.md` no longer lists priya as an identity-only control (she is
+        AUTHZ-06's cumulative-role persona) and now documents elena explicitly; the earlier
+        "byte-identical" claim about the OpenFGA model sync in `docker-compose/README.md` is
+        corrected to "normalized-JSON-identical" (`check-openfga-model-sync` compares
+        `json.dumps(..., sort_keys=True)`, not raw bytes); `docs/LOCAL-DEVELOPMENT.md` no
+        longer claims k3d is unmigrated.
+      - New static regression guards, all offline: `validation/tests/test_swift_clean_no_groups.py`
+        (realm templates have zero groups/group-membership/default-groups-scope, no service
+        account has a group-admin role, both Kea models keep member/manager/owner, neither
+        Swift model leaks them) and `make check-k3d-authz-mode-render` (`helm template`
+        actually selects `AUTHZ_MODE=swift-clean` + Swift files for `withKea=false` and
+        `AUTHZ_MODE=kea-legacy` + Kea files for `withKea=true`).
 
 ## ENV — multi-environment
 

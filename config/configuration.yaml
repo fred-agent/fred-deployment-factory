@@ -12,21 +12,12 @@
       "email": "alice@app.com",
       "password": "Azerty123_",
       "enabled": true,
-      "app_roles": [
+      "_purpose": "Swift clean role model: platform_admin only. Must not see collaborative team data.",
+      "app_roles": [],
+      "platform_roles": [
         "admin"
       ],
-      "team_roles": {
-        "manager": [
-          "northbridge",
-          "fredlab",
-          "swiftpost"
-        ]
-      },
-      "teams": [
-        "northbridge",
-        "fredlab",
-        "swiftpost"
-      ]
+      "teams": []
     },
     {
       "username": "bob",
@@ -35,10 +26,13 @@
       "email": "bob@app.com",
       "password": "Azerty123_",
       "enabled": true,
-      "app_roles": [
-        "editor",
-        "viewer"
-      ],
+      "app_roles": [],
+      "team_roles": {
+        "team_editor": [
+          "northbridge",
+          "fredlab"
+        ]
+      },
       "teams": [
         "northbridge",
         "fredlab"
@@ -51,9 +45,13 @@
       "email": "phil@app.com",
       "password": "Azerty123_",
       "enabled": true,
-      "app_roles": [
-        "viewer"
-      ],
+      "app_roles": [],
+      "team_roles": {
+        "team_member": [
+          "northbridge",
+          "swiftpost"
+        ]
+      },
       "teams": [
         "northbridge",
         "swiftpost"
@@ -66,9 +64,12 @@
       "email": "zoe@app.com",
       "password": "Azerty123_",
       "enabled": true,
-      "app_roles": [
-        "viewer"
-      ],
+      "app_roles": [],
+      "team_roles": {
+        "team_member": [
+          "fredlab"
+        ]
+      },
       "teams": [
         "fredlab"
       ]
@@ -80,9 +81,12 @@
       "email": "liam@app.com",
       "password": "Azerty123_",
       "enabled": true,
-      "app_roles": [
-        "viewer"
-      ],
+      "app_roles": [],
+      "team_roles": {
+        "team_member": [
+          "swiftpost"
+        ]
+      },
       "teams": [
         "swiftpost"
       ]
@@ -94,11 +98,9 @@
       "email": "sophia@app.com",
       "password": "Azerty123_",
       "enabled": true,
-      "app_roles": [
-        "viewer"
-      ],
+      "app_roles": [],
       "team_roles": {
-        "owner": [
+        "team_admin": [
           "northbridge"
         ]
       },
@@ -113,11 +115,27 @@
       "email": "marc@app.com",
       "password": "Azerty123_",
       "enabled": true,
-      "app_roles": [
-        "viewer"
-      ],
+      "app_roles": [],
       "team_roles": {
-        "owner": [
+        "team_admin": [
+          "fredlab"
+        ]
+      },
+      "teams": [
+        "fredlab"
+      ]
+    },
+    {
+      "username": "elena",
+      "first_name": "Elena",
+      "last_name": "Cruz",
+      "email": "elena@app.com",
+      "password": "Azerty123_",
+      "enabled": true,
+      "_purpose": "Swift team_analyst of fredlab only; dedicated persona for evaluation-campaign capabilities (can_run_evaluations, can_manage_evaluation_corpus, can_read_conversations_for_evaluation) instead of an ad hoc team_admin grant.",
+      "app_roles": [],
+      "team_roles": {
+        "team_analyst": [
           "fredlab"
         ]
       },
@@ -132,11 +150,9 @@
       "email": "nadia@app.com",
       "password": "Azerty123_",
       "enabled": true,
-      "app_roles": [
-        "viewer"
-      ],
+      "app_roles": [],
       "team_roles": {
-        "owner": [
+        "team_admin": [
           "swiftpost"
         ]
       },
@@ -151,10 +167,8 @@
       "email": "oscar@app.com",
       "password": "Azerty123_",
       "enabled": true,
-      "_purpose": "Legacy Keycloak admin, member of NO team. Proves the AUTHZ-05 fix: unlike alice, oscar has no legitimate team role anywhere, so any team access he gets is pure escalation.",
-      "app_roles": [
-        "admin"
-      ],
+      "_purpose": "Swift floor/control user: identity only, no platform role and no team role.",
+      "app_roles": [],
       "teams": []
     },
     {
@@ -164,7 +178,7 @@
       "email": "nina@app.com",
       "password": "Azerty123_",
       "enabled": true,
-      "_purpose": "Authenticated, zero app_roles, zero teams - the floor case. Every platform capability must be denied; only the personal team is visible.",
+      "_purpose": "Freshly onboarded identity: zero platform role, zero team role.",
       "app_roles": [],
       "teams": []
     },
@@ -175,12 +189,10 @@
       "email": "derek@app.com",
       "password": "Azerty123_",
       "enabled": true,
-      "_purpose": "Legacy Keycloak admin who is ALSO a legitimate manager of northbridge only. Proves the fix doesn't overshoot: northbridge access must still work; fredlab/swiftpost must still be denied.",
-      "app_roles": [
-        "admin"
-      ],
+      "_purpose": "Swift team_editor of northbridge only; proves cross-team denial still holds.",
+      "app_roles": [],
       "team_roles": {
-        "manager": [
+        "team_editor": [
           "northbridge"
         ]
       },
@@ -195,12 +207,22 @@
       "email": "priya@app.com",
       "password": "Azerty123_",
       "enabled": true,
-      "_purpose": "AUTHZ-05 target model, pure form: OpenFGA platform_admin relation only - no legacy app_role, no team. Isolates the new relation from every legacy escalation path.",
+      "_purpose": "AUTHZ-06 cumulative-role persona (RFC Part 7 §33-39): holds team_admin + team_editor + team_analyst on fredlab at once - a small team where one person governs, edits content, and evaluates. Alongside marc/bob/elena (each a single, isolated role on fredlab) this proves the cumulative case gets the union of every role's capabilities.",
       "app_roles": [],
-      "platform_roles": [
-        "admin"
-      ],
-      "teams": []
+      "team_roles": {
+        "team_admin": [
+          "fredlab"
+        ],
+        "team_editor": [
+          "fredlab"
+        ],
+        "team_analyst": [
+          "fredlab"
+        ]
+      },
+      "teams": [
+        "fredlab"
+      ]
     },
     {
       "username": "quinn",
@@ -209,7 +231,18 @@
       "email": "quinn@app.com",
       "password": "Azerty123_",
       "enabled": true,
-      "_purpose": "AUTHZ-05 target model, pure form: OpenFGA platform_observer relation only - no legacy app_role, no team.",
+      "_purpose": "Neutral retained demo identity: no platform role and no team role.",
+      "app_roles": [],
+      "teams": []
+    },
+    {
+      "username": "gabriel",
+      "first_name": "Gabriel",
+      "last_name": "Moreau",
+      "email": "gabriel@app.com",
+      "password": "Azerty123_",
+      "enabled": true,
+      "_purpose": "Swift clean role model: platform_observer only. Must not see collaborative team data.",
       "app_roles": [],
       "platform_roles": [
         "observer"

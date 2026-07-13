@@ -56,6 +56,58 @@ spec:
 apiVersion: batch/v1
 kind: Job
 metadata:
+  name: keycloak-post-install
+  labels:
+    {{- include "fred-stack.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-weight: "25"
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        {{- include "fred-stack.selectorLabels" . | nindent 8 }}
+    spec:
+      enableServiceLinks: false
+      restartPolicy: OnFailure
+      containers:
+        - name: keycloak-post-install
+          image: {{ .Values.images.toolbox }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          envFrom:
+            - secretRef:
+                name: fred-secrets
+          env:
+            - name: KEYCLOAK_SERVER_URL
+              value: http://keycloak:8080
+            - name: AUTHZ_MODE
+              value: {{ if .Values.withKea }}kea-legacy{{ else }}swift-clean{{ end }}
+            - name: DEMO_IDENTITY_CONFIG_FILE
+              value: {{ if .Values.withKea }}/opt/openfga/openfga-seed.kea.json{{ else }}/opt/openfga/openfga-seed.json{{ end }}
+          command:
+            - /bin/sh
+            - -ec
+            - |
+              /scripts/keycloak-post-install-k8s.sh
+          volumeMounts:
+            - name: scripts
+              mountPath: /scripts
+            - name: openfga-config
+              mountPath: /opt/openfga
+      volumes:
+        - name: scripts
+          configMap:
+            name: fred-scripts
+            defaultMode: 0755
+        - name: openfga-config
+          configMap:
+            name: fred-openfga-config
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
   name: openfga-post-install
   labels:
     {{- include "fred-stack.labels" . | nindent 4 }}
@@ -84,10 +136,12 @@ spec:
               value: http://openfga:9080
             - name: KEYCLOAK_SERVER_URL
               value: http://keycloak:8080
+            - name: AUTHZ_MODE
+              value: {{ if .Values.withKea }}kea-legacy{{ else }}swift-clean{{ end }}
             - name: OPENFGA_MODEL_FILE
-              value: /opt/openfga/openfga-model.json
+              value: {{ if .Values.withKea }}/opt/openfga/openfga-model.kea.json{{ else }}/opt/openfga/openfga-model.json{{ end }}
             - name: OPENFGA_SEED_FILE
-              value: /opt/openfga/openfga-seed.json
+              value: {{ if .Values.withKea }}/opt/openfga/openfga-seed.kea.json{{ else }}/opt/openfga/openfga-seed.json{{ end }}
           command:
             - /bin/sh
             - -ec

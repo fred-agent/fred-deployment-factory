@@ -12,12 +12,21 @@
       "email": "alice@app.com",
       "password": "Azerty123_",
       "enabled": true,
-      "_purpose": "Swift clean role model: platform_admin only. Must not see collaborative team data.",
-      "app_roles": [],
-      "platform_roles": [
+      "app_roles": [
         "admin"
       ],
-      "teams": []
+      "team_roles": {
+        "manager": [
+          "northbridge",
+          "fredlab",
+          "swiftpost"
+        ]
+      },
+      "teams": [
+        "northbridge",
+        "fredlab",
+        "swiftpost"
+      ]
     },
     {
       "username": "bob",
@@ -26,13 +35,10 @@
       "email": "bob@app.com",
       "password": "Azerty123_",
       "enabled": true,
-      "app_roles": [],
-      "team_roles": {
-        "team_editor": [
-          "northbridge",
-          "fredlab"
-        ]
-      },
+      "app_roles": [
+        "editor",
+        "viewer"
+      ],
       "teams": [
         "northbridge",
         "fredlab"
@@ -45,13 +51,9 @@
       "email": "phil@app.com",
       "password": "Azerty123_",
       "enabled": true,
-      "app_roles": [],
-      "team_roles": {
-        "team_member": [
-          "northbridge",
-          "swiftpost"
-        ]
-      },
+      "app_roles": [
+        "viewer"
+      ],
       "teams": [
         "northbridge",
         "swiftpost"
@@ -64,12 +66,9 @@
       "email": "zoe@app.com",
       "password": "Azerty123_",
       "enabled": true,
-      "app_roles": [],
-      "team_roles": {
-        "team_member": [
-          "fredlab"
-        ]
-      },
+      "app_roles": [
+        "viewer"
+      ],
       "teams": [
         "fredlab"
       ]
@@ -81,12 +80,9 @@
       "email": "liam@app.com",
       "password": "Azerty123_",
       "enabled": true,
-      "app_roles": [],
-      "team_roles": {
-        "team_member": [
-          "swiftpost"
-        ]
-      },
+      "app_roles": [
+        "viewer"
+      ],
       "teams": [
         "swiftpost"
       ]
@@ -98,9 +94,11 @@
       "email": "sophia@app.com",
       "password": "Azerty123_",
       "enabled": true,
-      "app_roles": [],
+      "app_roles": [
+        "viewer"
+      ],
       "team_roles": {
-        "team_admin": [
+        "owner": [
           "northbridge"
         ]
       },
@@ -115,27 +113,11 @@
       "email": "marc@app.com",
       "password": "Azerty123_",
       "enabled": true,
-      "app_roles": [],
+      "app_roles": [
+        "viewer"
+      ],
       "team_roles": {
-        "team_admin": [
-          "fredlab"
-        ]
-      },
-      "teams": [
-        "fredlab"
-      ]
-    },
-    {
-      "username": "elena",
-      "first_name": "Elena",
-      "last_name": "Cruz",
-      "email": "elena@app.com",
-      "password": "Azerty123_",
-      "enabled": true,
-      "_purpose": "Swift team_analyst of fredlab only; dedicated persona for evaluation-campaign capabilities (can_run_evaluations, can_manage_evaluation_corpus, can_read_conversations_for_evaluation) instead of an ad hoc team_admin grant.",
-      "app_roles": [],
-      "team_roles": {
-        "team_analyst": [
+        "owner": [
           "fredlab"
         ]
       },
@@ -150,9 +132,11 @@
       "email": "nadia@app.com",
       "password": "Azerty123_",
       "enabled": true,
-      "app_roles": [],
+      "app_roles": [
+        "viewer"
+      ],
       "team_roles": {
-        "team_admin": [
+        "owner": [
           "swiftpost"
         ]
       },
@@ -167,8 +151,10 @@
       "email": "oscar@app.com",
       "password": "Azerty123_",
       "enabled": true,
-      "_purpose": "Swift floor/control user: identity only, no platform role and no team role.",
-      "app_roles": [],
+      "_purpose": "Kea legacy escalation stress case: app admin, no team.",
+      "app_roles": [
+        "admin"
+      ],
       "teams": []
     },
     {
@@ -178,7 +164,7 @@
       "email": "nina@app.com",
       "password": "Azerty123_",
       "enabled": true,
-      "_purpose": "Freshly onboarded identity: zero platform role, zero team role.",
+      "_purpose": "Kea floor/control user: no app role and no team.",
       "app_roles": [],
       "teams": []
     },
@@ -189,10 +175,12 @@
       "email": "derek@app.com",
       "password": "Azerty123_",
       "enabled": true,
-      "_purpose": "Swift team_editor of northbridge only; proves cross-team denial still holds.",
-      "app_roles": [],
+      "_purpose": "Kea legacy admin plus manager of northbridge only.",
+      "app_roles": [
+        "admin"
+      ],
       "team_roles": {
-        "team_editor": [
+        "manager": [
           "northbridge"
         ]
       },
@@ -207,22 +195,9 @@
       "email": "priya@app.com",
       "password": "Azerty123_",
       "enabled": true,
-      "_purpose": "AUTHZ-06 cumulative-role persona (RFC Part 7 \u00a733-39): holds team_admin + team_editor + team_analyst on fredlab at once - a small team where one person governs, edits content, and evaluates. Alongside marc/bob/elena (each a single, isolated role on fredlab) this proves the cumulative case gets the union of every role's capabilities.",
+      "_purpose": "Retained identity with no legacy grant; useful as migration control.",
       "app_roles": [],
-      "team_roles": {
-        "team_admin": [
-          "fredlab"
-        ],
-        "team_editor": [
-          "fredlab"
-        ],
-        "team_analyst": [
-          "fredlab"
-        ]
-      },
-      "teams": [
-        "fredlab"
-      ]
+      "teams": []
     },
     {
       "username": "quinn",
@@ -231,7 +206,7 @@
       "email": "quinn@app.com",
       "password": "Azerty123_",
       "enabled": true,
-      "_purpose": "Neutral retained demo identity: no platform role and no team role.",
+      "_purpose": "Retained identity with no legacy grant; useful as migration control.",
       "app_roles": [],
       "teams": []
     },
@@ -242,11 +217,8 @@
       "email": "gabriel@app.com",
       "password": "Azerty123_",
       "enabled": true,
-      "_purpose": "Swift clean role model: platform_observer only. Must not see collaborative team data.",
+      "_purpose": "Retained identity introduced for Swift observer; no legacy grant in Kea mode.",
       "app_roles": [],
-      "platform_roles": [
-        "observer"
-      ],
       "teams": []
     }
   ]

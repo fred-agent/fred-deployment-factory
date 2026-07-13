@@ -1,6 +1,25 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
+# ---------------------------------------------------------------------------
+# KEA-LEGACY ONLY - not the Swift onboarding path.
+#
+# This script models the pre-AUTHZ-05 shape: Keycloak groups as teams, plus
+# admin/editor/viewer app roles. In the Swift target model, Keycloak creates
+# identity ONLY - a team is a team_metadata row + OpenFGA relations, created
+# via the control-plane APIs (POST /teams, then
+# POST/DELETE /teams/{team_id}/members/{user_id}/roles/{relation}), never as
+# a Keycloak group. This script does not call those APIs and does not create
+# any Fred/OpenFGA team ownership tuple.
+#
+# Real GKE onboarding still runs this script today for lack of an established
+# Swift replacement (tracked in docs/BACKLOG.md); it is not presented as, and
+# must not be treated as, the current Swift onboarding flow. See
+# helm/fredlab-infra/README.md for the up-to-date boundary.
+# ---------------------------------------------------------------------------
+echo "[fredlab-keycloak-identity] KEA-LEGACY ONLY: this provisions Keycloak groups/app-roles (pre-AUTHZ-05 shape)." >&2
+echo "[fredlab-keycloak-identity] Swift teams/roles are created via the control-plane APIs, never as a Keycloak group. See helm/fredlab-infra/README.md." >&2
+
 CONFIG_FILE="${1:-config/fredlab-keycloak-identity.json}"
 NAMESPACE="${NAMESPACE:-default}"
 KEYCLOAK_DEPLOYMENT="${KEYCLOAK_DEPLOYMENT:-deploy/keycloak}"

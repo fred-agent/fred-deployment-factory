@@ -1,4 +1,5 @@
 {
+  "_notice": "KEA-LEGACY ONLY. This file/script models the pre-AUTHZ-05 Keycloak-groups-as-teams + admin/editor/viewer app-role shape. It is NOT the Swift onboarding path: Keycloak creates identity only, and Swift teams/roles are created via the control-plane APIs (POST /teams, POST/DELETE /teams/{id}/members/{user_id}/roles/{relation}), never as a Keycloak group. See helm/fredlab-infra/README.md.",
   "realm": "app",
   "clientId": "app",
   "appRoles": [

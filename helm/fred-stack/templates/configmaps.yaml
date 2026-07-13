@@ -19,6 +19,13 @@ data:
 {{ .Files.Get "files/openfga/openfga-model.json" | indent 4 }}
   openfga-seed.json: |
 {{ .Files.Get "files/openfga/openfga-seed.json" | indent 4 }}
+  # withKea=true selects these two instead (see jobs.yaml) - the legacy
+  # member/manager/owner model, kept separate so it is never mixed with the
+  # Swift seed/model above (AUTHZ-05/06).
+  openfga-model.kea.json: |
+{{ .Files.Get "files/openfga/openfga-model.kea.json" | indent 4 }}
+  openfga-seed.kea.json: |
+{{ .Files.Get "files/openfga/openfga-seed.kea.json" | indent 4 }}
 ---
 apiVersion: v1
 kind: ConfigMap

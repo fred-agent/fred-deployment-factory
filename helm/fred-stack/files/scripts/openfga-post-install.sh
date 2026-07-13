@@ -298,11 +298,10 @@ write_tuple() {
   fga_request POST "/stores/${STORE_ID}/write" "$payload" >/dev/null
 }
 
-ensure_team_relation_tuple() {
+ensure_relation_tuple() {
   local user="$1"
   local relation="$2"
-  local team="$3"
-  local object="team:${team}"
+  local object="$3"
 
   if tuple_exists "$user" "$relation" "$object"; then
     ((SKIPPED_TUPLES+=1))
@@ -318,22 +317,53 @@ ensure_team_role_closure() {
   local user="$1"
   local role="$2"
   local team="$3"
+  local object="team:${team}"
 
   case "$role" in
     member)
-      ensure_team_relation_tuple "$user" member "$team"
+      ensure_relation_tuple "$user" member "$object"
       ;;
     manager)
-      ensure_team_relation_tuple "$user" manager "$team"
-      ensure_team_relation_tuple "$user" member "$team"
+      ensure_relation_tuple "$user" manager "$object"
+      ensure_relation_tuple "$user" member "$object"
       ;;
     owner)
-      ensure_team_relation_tuple "$user" owner "$team"
-      ensure_team_relation_tuple "$user" manager "$team"
-      ensure_team_relation_tuple "$user" member "$team"
+      ensure_relation_tuple "$user" owner "$object"
+      ensure_relation_tuple "$user" manager "$object"
+      ensure_relation_tuple "$user" member "$object"
+      ;;
+    team_member)
+      ensure_relation_tuple "$user" team_member "$object"
+      ;;
+    team_editor)
+      ensure_relation_tuple "$user" team_editor "$object"
+      ;;
+    team_admin)
+      ensure_relation_tuple "$user" team_admin "$object"
+      ;;
+    team_analyst)
+      ensure_relation_tuple "$user" team_analyst "$object"
       ;;
     *)
-      die "unsupported team role '${role}' in demo identity config (supported: member, manager, owner)"
+      die "unsupported team role '${role}' in demo identity config"
+      ;;
+  esac
+}
+
+ensure_platform_role_tuple() {
+  local user="$1"
+  local role="$2"
+  local object="organization:fred"
+
+  case "$role" in
+    admin)
+      ensure_relation_tuple "$user" platform_admin "$object"
+      ;;
+    observer)
+      ensure_relation_tuple "$user" platform_observer "$object"
+      ;;
+    *)
+      die "unsupported platform role '${role}' in demo identity config"
       ;;
   esac
 }
@@ -346,6 +376,23 @@ OPENFGA_URL="${OPENFGA_URL%/}"
 OPENFGA_API_TOKEN="${OPENFGA_API_TOKEN:-Azerty123_}"
 OPENFGA_STORE_NAME="${OPENFGA_STORE_NAME:-fred}"
 OPENFGA_MODEL_FILE="${OPENFGA_MODEL_FILE:-${SCRIPT_DIR}/openfga-model.json}"
+
+# AUTHZ-05/06: mirrors docker-compose/openfga/openfga-post-install.sh. swift-clean
+# never seeds a team-role tuple here - a Swift team_id only exists once the
+# control-plane creates the team_metadata row (POST /teams), so team roles are
+# bootstrapped later via the real control-plane APIs, never here.
+AUTHZ_MODE="${AUTHZ_MODE:-swift-clean}"
+case "${AUTHZ_MODE,,}" in
+  swift|swift-clean)
+    AUTHZ_MODE="swift-clean"
+    ;;
+  kea|kea-legacy)
+    AUTHZ_MODE="kea-legacy"
+    ;;
+  *)
+    die "unsupported AUTHZ_MODE='${AUTHZ_MODE}' (supported: swift-clean, kea-legacy)"
+    ;;
+esac
 
 # Config file resolution: DEMO_IDENTITY_CONFIG_FILE > OPENFGA_SEED_FILE
 OPENFGA_SEED_FILE="${OPENFGA_SEED_FILE:-${SCRIPT_DIR}/openfga-seed.json}"
@@ -370,19 +417,29 @@ jq -e '
     (.username|type=="string") and
     ((.teams // [])|type=="array") and
     all((.teams // [])[]?; type == "string" and length > 0) and
+    ((.platform_roles // [])|type=="array") and
+    all((.platform_roles // [])[]?; . == "admin" or . == "observer") and
     (
       (.team_roles // {}) | type == "object"
     ) and
     (
       ((.team_roles.member // [])|type=="array") and
       ((.team_roles.manager // [])|type=="array") and
-      ((.team_roles.owner // [])|type=="array")
+      ((.team_roles.owner // [])|type=="array") and
+      ((.team_roles.team_member // [])|type=="array") and
+      ((.team_roles.team_editor // [])|type=="array") and
+      ((.team_roles.team_admin // [])|type=="array") and
+      ((.team_roles.team_analyst // [])|type=="array")
     ) and
     all((.team_roles.member // [])[]?; type == "string" and length > 0) and
     all((.team_roles.manager // [])[]?; type == "string" and length > 0) and
-    all((.team_roles.owner // [])[]?; type == "string" and length > 0)
+    all((.team_roles.owner // [])[]?; type == "string" and length > 0) and
+    all((.team_roles.team_member // [])[]?; type == "string" and length > 0) and
+    all((.team_roles.team_editor // [])[]?; type == "string" and length > 0) and
+    all((.team_roles.team_admin // [])[]?; type == "string" and length > 0) and
+    all((.team_roles.team_analyst // [])[]?; type == "string" and length > 0)
   )
-' "$DEMO_IDENTITY_CONFIG_FILE" >/dev/null || die "invalid demo identity config format: each user must define username, optional teams[], and optional team_roles.{member,manager,owner}[]"
+' "$DEMO_IDENTITY_CONFIG_FILE" >/dev/null || die "invalid demo identity config format: each user must define username, optional teams[], optional platform_roles[], and optional team_roles.{member,manager,owner,team_member,team_editor,team_admin,team_analyst}[]"
 
 log "using demo identity config file '${DEMO_IDENTITY_CONFIG_FILE}'"
 
@@ -392,8 +449,6 @@ SKIPPED_TUPLES=0
 
 declare -A TEAM_EXISTS=()
 declare -A KEYCLOAK_USER_IDS=()
-declare -A KEYCLOAK_GROUP_IDS=()
-
 log "waiting for OpenFGA API at '${OPENFGA_URL}'"
 wait_for_openfga || die "OpenFGA API is not reachable at ${OPENFGA_URL}"
 
@@ -418,10 +473,24 @@ KEYCLOAK_ADMIN_TOKEN="$(kc_admin_token)"
 
 while IFS=$'\t' read -r username relation team; do
   local_user_id=""
-  local_team_id=""
   [[ -n "$username" ]] || continue
   [[ -n "$relation" ]] || continue
   [[ -n "$team" ]] || continue
+
+  if [[ "$team" == "organization:fred" ]]; then
+    local_user_id="$(kc_user_id_by_username "$username")"
+    ensure_platform_role_tuple "user:${local_user_id}" "$relation"
+    if is_truthy "$OPENFGA_SEED_INCLUDE_USERNAME_USERS"; then
+      ensure_platform_role_tuple "user:${username}" "$relation"
+    fi
+    continue
+  fi
+
+  if [[ "$AUTHZ_MODE" == "swift-clean" ]]; then
+    # Team roles are bootstrapped later via the control-plane APIs (see
+    # validation/conftest.py::_bootstrap_collaborative_teams) - never here.
+    continue
+  fi
 
   if [[ -z "${TEAM_EXISTS[$team]:-}" ]]; then
     warn "team '${team}' is referenced by user '${username}' but missing from .teams list"
@@ -429,24 +498,32 @@ while IFS=$'\t' read -r username relation team; do
   fi
 
   local_user_id="$(kc_user_id_by_username "$username")"
-  local_team_id="$(kc_group_id_by_team_name "$team")"
-  ensure_team_role_closure "user:${local_user_id}" "$relation" "$local_team_id"
+  ensure_team_role_closure "user:${local_user_id}" "$relation" "$team"
 
   if is_truthy "$OPENFGA_SEED_INCLUDE_USERNAME_USERS"; then
-    ensure_team_role_closure "user:${username}" "$relation" "$local_team_id"
+    ensure_team_role_closure "user:${username}" "$relation" "$team"
   fi
 done < <(
   jq -r '
     .users[]? as $u
     | ($u.username // empty) as $name
     | (
-        (($u.teams // [])[]? | [$name, "member", .]) ,
+        (($u.platform_roles // [])[]? | [$name, ., "organization:fred"]) ,
+        (($u.teams // [])[]? | [$name, "team_member", .]) ,
         (($u.team_roles.member // [])[]? | [$name, "member", .]) ,
         (($u.team_roles.manager // [])[]? | [$name, "manager", .]) ,
-        (($u.team_roles.owner // [])[]? | [$name, "owner", .])
+        (($u.team_roles.owner // [])[]? | [$name, "owner", .]) ,
+        (($u.team_roles.team_member // [])[]? | [$name, "team_member", .]) ,
+        (($u.team_roles.team_editor // [])[]? | [$name, "team_editor", .]) ,
+        (($u.team_roles.team_admin // [])[]? | [$name, "team_admin", .]) ,
+        (($u.team_roles.team_analyst // [])[]? | [$name, "team_analyst", .])
       )
     | @tsv
   ' "$DEMO_IDENTITY_CONFIG_FILE"
 )
+
+if [[ "$AUTHZ_MODE" == "swift-clean" ]]; then
+  log "swift-clean: skipped team-role tuple seeding - team roles are bootstrapped via control-plane APIs, see validation/conftest.py::_bootstrap_collaborative_teams"
+fi
 
 log "post-install completed (store=${STORE_ID}, model=${AUTHORIZATION_MODEL_ID}, tuples_added=${ADDED_TUPLES}, tuples_skipped=${SKIPPED_TUPLES}, changes=${CHANGED})"

@@ -12,6 +12,7 @@ client. The user/role/team matrix and endpoints live in `factory_config.py`.
 
 from __future__ import annotations
 
+import base64
 import json
 import tempfile
 from pathlib import Path
@@ -20,7 +21,16 @@ import httpx
 import pytest
 from fred_core.cli.auth import KeycloakLoginConfig, KeycloakUserSessionManager
 
-from factory_config import CLIENT_ID, CP_URL, KF_URL, PASSWORD, REALM_URL, USERS, FactoryUser
+from factory_config import (
+    ALL_TEAMS,
+    CLIENT_ID,
+    CP_URL,
+    KF_URL,
+    PASSWORD,
+    REALM_URL,
+    USERS,
+    FactoryUser,
+)
 
 
 @pytest.fixture(scope="session")
@@ -72,9 +82,211 @@ def login(username: str) -> str:
     finally:
         mgr.close()
     if not token:
-        pytest.fail(f"No token returned for {username!r} (client {CLIENT_ID!r}).", pytrace=False)
+        pytest.fail(
+            f"No token returned for {username!r} (client {CLIENT_ID!r}).",
+            pytrace=False,
+        )
     _TOKEN_CACHE[username] = token
     return token
+
+
+def _jwt_sub(token: str) -> str:
+    """Extract the Keycloak subject from a JWT already obtained from Keycloak."""
+    try:
+        payload = token.split(".")[1]
+        payload += "=" * (-len(payload) % 4)
+        decoded = json.loads(base64.urlsafe_b64decode(payload.encode("ascii")))
+    except Exception as exc:  # noqa: BLE001 - validation diagnostic
+        pytest.fail(
+            f"Could not decode JWT subject: {type(exc).__name__}: {exc}",
+            pytrace=False,
+        )
+    sub = decoded.get("sub")
+    if not isinstance(sub, str) or not sub:
+        pytest.fail("JWT does not contain a usable 'sub' claim.", pytrace=False)
+    return sub
+
+
+def _team_identifiers(team_item: dict) -> set[str]:
+    return {
+        str(team_item.get(k))
+        for k in ("id", "name", "team_id")
+        if team_item.get(k)
+    }
+
+
+def _configured_relations(username: str, team_name: str) -> frozenset[str]:
+    return USERS[username].relations_in(team_name)
+
+
+def _configured_team_admins(team_name: str) -> list[str]:
+    return sorted(username for username in USERS if USERS[username].is_team_admin_in(team_name))
+
+
+def _platform_admin_username() -> str:
+    for username, user in sorted(USERS.items()):
+        if user.is_platform_admin:
+            return username
+    pytest.fail(
+        "No platform_admin user found in validation configuration; cannot bootstrap Swift teams.",
+        pytrace=False,
+    )
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _bootstrap_collaborative_teams(_require_stack) -> None:
+    """Create the configured collaborative teams through the Swift API if missing.
+
+    `make docker-up` seeds identities and OpenFGA, but in Swift the authoritative
+    team registry lives in the control-plane `team_metadata` table. A fresh local
+    stack therefore needs the validation suite to create its test teams through
+    the same platform-admin bootstrap endpoint the UI uses, then apply the
+    configured team roles through the team-admin membership endpoint.
+    """
+    if not ALL_TEAMS:
+        return
+
+    admin_username = _platform_admin_username()
+    admin_token = login(admin_username)
+    admin_client = httpx.Client(
+        base_url=CP_URL,
+        headers={"Authorization": f"Bearer {admin_token}"},
+        timeout=15.0,
+    )
+    try:
+        existing_resp = admin_client.get("/teams/all")
+        existing_resp.raise_for_status()
+        existing_items = existing_resp.json()
+        if not isinstance(existing_items, list):
+            pytest.fail(
+                f"Unexpected /teams/all response shape: {existing_items!r}",
+                pytrace=False,
+            )
+        teams_by_name_or_id: dict[str, dict] = {}
+        for item in existing_items:
+            if isinstance(item, dict):
+                for ident in _team_identifiers(item):
+                    teams_by_name_or_id[ident] = item
+
+        for team_name in ALL_TEAMS:
+            item = teams_by_name_or_id.get(team_name)
+            if item is None:
+                admin_usernames = _configured_team_admins(team_name)
+                if not admin_usernames:
+                    pytest.fail(
+                        f"Configured team {team_name!r} has no team_admin; "
+                        "cannot bootstrap it safely.",
+                        pytrace=False,
+                    )
+                payload = {
+                    "name": team_name,
+                    "initial_team_admin_ids": [
+                        _jwt_sub(login(username)) for username in admin_usernames
+                    ],
+                }
+                create_resp = admin_client.post("/teams", json=payload)
+                if create_resp.status_code == 409:
+                    refresh_resp = admin_client.get("/teams/all")
+                    refresh_resp.raise_for_status()
+                    for refreshed in refresh_resp.json():
+                        if isinstance(refreshed, dict):
+                            for ident in _team_identifiers(refreshed):
+                                teams_by_name_or_id[ident] = refreshed
+                    item = teams_by_name_or_id.get(team_name)
+                    if item is None:
+                        pytest.fail(
+                            f"Team {team_name!r} already exists by name but "
+                            "is not visible in /teams/all.",
+                            pytrace=False,
+                        )
+                else:
+                    create_resp.raise_for_status()
+                    item = create_resp.json()
+                    for ident in _team_identifiers(item):
+                        teams_by_name_or_id[ident] = item
+
+            team_id = str(item.get("id") or item.get("team_id") or "")
+            if not team_id:
+                pytest.fail(
+                    f"Team {team_name!r} has no id in bootstrap response: {item!r}",
+                    pytrace=False,
+                )
+
+            admin_usernames = _configured_team_admins(team_name)
+            acting_admin = admin_usernames[0]
+            team_admin_client = httpx.Client(
+                base_url=CP_URL,
+                headers={"Authorization": f"Bearer {login(acting_admin)}"},
+                timeout=15.0,
+            )
+            try:
+                members_resp = team_admin_client.get(f"/teams/{team_id}/members")
+                members_resp.raise_for_status()
+                current_relations_by_user: dict[str, set[str]] = {}
+                for member in members_resp.json():
+                    user_id = str((member.get("user") or {}).get("id") or "")
+                    if user_id:
+                        current_relations_by_user[user_id] = set(member.get("relations") or [])
+
+                # Roles are cumulative (AUTHZ-06): grant EVERY configured relation for
+                # this user on this team, not just one. `team_admin`/`owner` are already
+                # covered by `initial_team_admin_ids` at team creation above.
+                for username in sorted(USERS):
+                    relations = sorted(_configured_relations(username, team_name) - {"owner", "team_admin"})
+                    if not relations:
+                        continue
+                    user_id = _jwt_sub(login(username))
+                    held = current_relations_by_user.get(user_id, set())
+                    for relation in relations:
+                        if relation in held:
+                            continue
+                        if user_id in current_relations_by_user:
+                            grant_resp = team_admin_client.post(
+                                f"/teams/{team_id}/members/{user_id}/roles",
+                                json={"relation": relation},
+                            )
+                        else:
+                            grant_resp = team_admin_client.post(
+                                f"/teams/{team_id}/members",
+                                json={"user_id": user_id, "relation": relation},
+                            )
+                        if grant_resp.status_code not in (200, 201, 202, 204, 409):
+                            pytest.fail(
+                                f"Could not grant {username!r} the {relation!r} relation on "
+                                f"{team_name!r} ({team_id}): HTTP {grant_resp.status_code} "
+                                f"{grant_resp.text[:500]}",
+                                pytrace=False,
+                            )
+                        if grant_resp.status_code == 409:
+                            # A 409 here is ambiguous: it means "the relation is
+                            # already held" ONLY if that is actually true. Re-read
+                            # the confirmed state instead of assuming - a 409 for
+                            # any other reason (e.g. a validation error reported as
+                            # a conflict) must fail loudly, not be swallowed.
+                            refreshed_members_resp = team_admin_client.get(f"/teams/{team_id}/members")
+                            refreshed_members_resp.raise_for_status()
+                            refreshed_relations: set[str] = set()
+                            for member in refreshed_members_resp.json():
+                                if str((member.get("user") or {}).get("id") or "") == user_id:
+                                    refreshed_relations = set(member.get("relations") or [])
+                                    break
+                            if relation not in refreshed_relations:
+                                pytest.fail(
+                                    f"Granting {username!r} the {relation!r} relation on "
+                                    f"{team_name!r} ({team_id}) returned 409, but re-reading "
+                                    f"/teams/{team_id}/members shows {username!r} holds "
+                                    f"{sorted(refreshed_relations)!r} - the 409 was not "
+                                    "'already held', it hid a real failure: "
+                                    f"{grant_resp.text[:500]}",
+                                    pytrace=False,
+                                )
+                            current_relations_by_user[user_id] = refreshed_relations
+                        else:
+                            current_relations_by_user.setdefault(user_id, set()).add(relation)
+            finally:
+                team_admin_client.close()
+    finally:
+        admin_client.close()
 
 
 @pytest.fixture(scope="session")
@@ -99,6 +311,12 @@ class CP:
 
     def post(self, path: str, **kw) -> httpx.Response:
         return self._client.post(path, **kw)
+
+    def put(self, path: str, **kw) -> httpx.Response:
+        return self._client.put(path, **kw)
+
+    def patch(self, path: str, **kw) -> httpx.Response:
+        return self._client.patch(path, **kw)
 
     def delete(self, path: str, **kw) -> httpx.Response:
         return self._client.delete(path, **kw)
