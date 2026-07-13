@@ -194,32 +194,58 @@ def test_priya_can_exercise_an_admin_gated_operation(fredlab_id, cp, token_for) 
     oscar_sub = _jwt_sub(token_for("oscar"))
     priya = cp(PRIYA)
 
-    add_resp = priya.post(f"/teams/{fredlab_id}/members", json={"user_id": oscar_sub, "relation": "team_member"})
-    assert add_resp.status_code in (200, 201, 202, 204), (
-        f"priya (team_admin among her cumulative roles) could not add a member to {TEST_TEAM}: "
-        f"{add_resp.status_code} {add_resp.text[:200]}"
+    # Refuse to mutate a persona that isn't in the expected starting state -
+    # oscar is relied on elsewhere as an identity-only control (zero OpenFGA
+    # grant); if he already has a relation here, something upstream is wrong
+    # and this test must not paper over it by adding/removing on top of it.
+    members_before = priya.get(f"/teams/{fredlab_id}/members")
+    assert members_before.status_code == 200, (
+        f"could not read {TEST_TEAM} members before mutating: "
+        f"{members_before.status_code} {members_before.text[:200]}"
+    )
+    oscar_already_member = any(
+        str((m.get("user") or {}).get("id") or "") == oscar_sub for m in members_before.json()
+    )
+    assert not oscar_already_member, (
+        f"oscar already holds a relation on {TEST_TEAM} before this test ran - refusing to "
+        f"add/remove on top of unexpected pre-existing state"
     )
 
-    remove_resp = priya.delete(f"/teams/{fredlab_id}/members/{oscar_sub}")
-    assert remove_resp.status_code in (200, 202, 204), (
-        f"priya could not remove the member she just added from {TEST_TEAM}: "
-        f"{remove_resp.status_code} {remove_resp.text[:200]}"
-    )
+    added = False
+    try:
+        add_resp = priya.post(f"/teams/{fredlab_id}/members", json={"user_id": oscar_sub, "relation": "team_member"})
+        assert add_resp.status_code in (200, 201, 202, 204), (
+            f"priya (team_admin among her cumulative roles) could not add a member to {TEST_TEAM}: "
+            f"{add_resp.status_code} {add_resp.text[:200]}"
+        )
+        added = True
+    finally:
+        if added:
+            remove_resp = priya.delete(f"/teams/{fredlab_id}/members/{oscar_sub}")
+            assert remove_resp.status_code in (200, 202, 204), (
+                f"priya could not remove the member she just added from {TEST_TEAM} - cleanup "
+                f"failed, oscar may still be a member: {remove_resp.status_code} "
+                f"{remove_resp.text[:200]}"
+            )
 
 
 def test_priya_can_exercise_an_editor_gated_operation(fredlab_id, cp) -> None:
     """priya, holding team_editor among her cumulative roles, can create and then delete a {team} prompt."""
     priya = cp(PRIYA)
     name = f"val-cumulative-{uuid.uuid4().hex[:8]}"
-    create_resp = priya.post(f"/teams/{fredlab_id}/prompts", json={"name": name, "text": "Say exactly: validation-ok"})
-    assert create_resp.status_code == 201, (
-        f"priya (team_editor among her cumulative roles) could not create a prompt in {TEST_TEAM}: "
-        f"{create_resp.status_code} {create_resp.text[:200]}"
-    )
-    prompt = create_resp.json()
-
-    delete_resp = priya.delete(f"/teams/{fredlab_id}/prompts/{prompt['id']}")
-    assert delete_resp.status_code in (200, 202, 204), (
-        f"priya could not delete the prompt she just created in {TEST_TEAM}: "
-        f"{delete_resp.status_code} {delete_resp.text[:200]}"
-    )
+    prompt_id: str | None = None
+    try:
+        create_resp = priya.post(f"/teams/{fredlab_id}/prompts", json={"name": name, "text": "Say exactly: validation-ok"})
+        assert create_resp.status_code == 201, (
+            f"priya (team_editor among her cumulative roles) could not create a prompt in {TEST_TEAM}: "
+            f"{create_resp.status_code} {create_resp.text[:200]}"
+        )
+        prompt_id = create_resp.json()["id"]
+    finally:
+        if prompt_id is not None:
+            delete_resp = priya.delete(f"/teams/{fredlab_id}/prompts/{prompt_id}")
+            assert delete_resp.status_code in (200, 202, 204), (
+                f"priya could not delete the prompt she just created in {TEST_TEAM} - cleanup "
+                f"failed, prompt {prompt_id} may still exist: {delete_resp.status_code} "
+                f"{delete_resp.text[:200]}"
+            )

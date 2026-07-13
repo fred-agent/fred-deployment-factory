@@ -3,7 +3,11 @@ fullnameOverride: ""
 
 imagePullPolicy: IfNotPresent
 
-# Set to true to also provision the fred_kea database (for kea→swift migration testing)
+# Set to true to switch the whole stack to the Kea legacy rehearsal profile (mirrors
+# WITH_KEA in docker-compose): provisions the fred_kea database, imports the Kea demo
+# identity/team seed (Keycloak groups, member/manager/owner) instead of the Swift one,
+# and pushes the Kea OpenFGA model instead of the Swift one. false (default) is the
+# Swift-clean profile - no Keycloak group is ever created for a team.
 withKea: false
 
 # Stack profile — selects which services are deployed:

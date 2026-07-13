@@ -43,7 +43,14 @@ claim about who can see what in the clean Swift model:
   team, used for legitimate team-admin workflows without platform escalation.
 - **phil / zoe / liam** - plain `team_member` fixtures → ordinary member visibility
   and runtime access.
-- **oscar / nina / priya / quinn** - identity-only controls → authenticated users
+- **elena** - `team_analyst` of `fredlab` only, and no other role → dedicated persona
+  for evaluation-campaign capabilities (`can_run_evaluations`,
+  `can_manage_evaluation_corpus`, `can_read_conversations_for_evaluation`), isolated
+  from admin/editor capabilities.
+- **priya** - `team_admin` + `team_editor` + `team_analyst` on `fredlab` at once
+  (AUTHZ-06 cumulative roles, RFC Part 7 §33-39) → proves the cumulative case gets the
+  union of every role's capabilities; see `scenarios/test_cumulative_team_roles.py`.
+- **oscar / nina / quinn** - identity-only controls → authenticated users
   with no OpenFGA grant get no collaborative team data by default.
 
 The Kea rehearsal users live separately in `config/configuration.kea.yaml`; that
@@ -142,7 +149,9 @@ can actually be observed against a running stack, not just team-vs-team:
 | phil, zoe, liam | none | — | team_member of 1-2 teams | plain member cross-team matrix. |
 | sophia, marc, nadia | none | — | team_admin of 1 team each | team-admin matrix; one of them/bob acts as the validation operator for the test team. |
 | derek | none | — | team_editor of northbridge only | proves legitimate access stays team-scoped. |
-| oscar, nina, priya, quinn | none | — | none | identity-only floor/control users. |
+| elena | none | — | team_analyst of fredlab only | evaluation-campaign capabilities, isolated from admin/editor. |
+| priya | none | — | team_admin + team_editor + team_analyst of fredlab | AUTHZ-06 cumulative roles - union of all three roles' capabilities. |
+| oscar, nina, quinn | none | — | none | identity-only floor/control users. |
 
 `platform_roles` is a new, separate `configuration.yaml` field (`["admin"]` /
 `["observer"]`), seeded by `openfga-post-install.sh` directly as stored

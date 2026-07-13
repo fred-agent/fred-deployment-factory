@@ -74,7 +74,13 @@ Tear down: `make k3d-down` (uninstall release) · `make k3d-delete` (delete clus
 | Mode | Command | Provisions |
 | --- | --- | --- |
 | **clean Swift** (default) | `make docker-up` / `make k3d-up` | identity-only Keycloak users from `config/configuration.yaml` (no groups, no app roles, no `groups-scope`), the Swift OpenFGA model, and direct platform tuples only (`alice=platform_admin`, `gabriel=platform_observer`). Team-role tuples (`team_admin`/`team_editor`/`team_analyst`/`team_member`) are **not** seeded by `docker-up` - a Swift team only exists once its `team_metadata` row is created via the control-plane `POST /teams` API, done by the validation harness or any control-plane client, never derived from a Keycloak group. |
-| **Kea legacy rehearsal** | `make docker-up WITH_KEA=true` | `config/configuration.kea.yaml`, the legacy OpenFGA model (`member`/`manager`/`owner`), and an extra `fred_kea` DB so the migration script has an old-world source to translate |
+| **Kea legacy rehearsal** | `make docker-up WITH_KEA=true` / `make k3d-up WITH_KEA=true` | `config/configuration.kea.yaml`, the legacy OpenFGA model (`member`/`manager`/`owner`), Keycloak groups for teams, and (Compose only) an extra `fred_kea` DB so the migration script has an old-world source to translate |
+
+Both backends behave identically: `AUTHZ_MODE` (`swift-clean`/`kea-legacy`, derived from
+`WITH_KEA`) selects the Keycloak/OpenFGA post-install behavior in both the Docker Compose
+scripts and the `helm/fred-stack` chart's post-install Jobs. The imported realm template
+itself never carries team groups in either backend - a Keycloak group is only ever created
+by the post-install script, and only in `kea-legacy` mode.
 
 Databases created in clean Swift mode: `fred` (Fred), `keycloak`, `data` (tabular/vector),
 `openfga`, `temporal`, `temporal_visibility`. `WITH_KEA=true` adds `fred_kea` (a temporary
@@ -89,7 +95,17 @@ the template for custom values. Keycloak backend client secrets:
   `KEYCLOAK_CONTROL_PLANE_CLIENT_SECRET` in `docker-compose/.env.template`.
 - **k3d:** `auth.keycloak*ClientSecret` in `helm/fred-stack/values.yaml`.
 
-For the Compose workflow, the single source of truth for demo users / groups (teams) / client
-roles / OpenFGA membership tuples is **`config/configuration.yaml`**. Edit it, then
-`make docker-wipe && make docker-up`. (The k3d/Helm path is not yet migrated to it and still
-uses the chart's `helm/fred-stack/files/openfga/openfga-seed.json`.)
+The single source of truth for demo users / team roles / platform roles / OpenFGA tuples is
+**`config/configuration.yaml`** (swift-clean) and **`config/configuration.kea.yaml`**
+(kea-legacy) - for both backends. Edit the relevant file, then:
+
+- **Compose:** `make docker-wipe && make docker-up` (reads the file directly).
+- **k3d/Helm:** the chart cannot read files outside its own directory, so
+  `helm/fred-stack/files/openfga/openfga-seed.json` /
+  `openfga-seed.kea.json` are **generated copies** - regenerate them with
+  `make sync-k3d-demo-config` (mirrors `make sync-openfga-model` for the OpenFGA schema
+  itself), then `make k3d-wipe && make k3d-up`. `make check-k3d-demo-config-sync` fails fast
+  if the copies have drifted from `config/configuration*.yaml`.
+  `helm/fred-stack/files/openfga/openfga-model.kea.json` is likewise a generated copy of
+  `docker-compose/openfga/openfga-model.kea.json` (the Swift model copies were already kept
+  in sync by `make sync-openfga-model`).

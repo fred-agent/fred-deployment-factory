@@ -507,7 +507,14 @@ kubectl logs deploy/control-plane-backend --tail=200
 
 If logs mention `KEYCLOAK_CONTROL_PLANE_CLIENT_SECRET is not set`, the control-plane pod is missing the exact env var named by `security.m2m.secret_env_var`.
 
-## 14. Provision Initial Keycloak Users And Teams
+## 14. Provision Initial Keycloak Users (Kea-legacy script - not the Swift path)
+
+**KEA-LEGACY ONLY.** This step's script (`bin/fredlab-keycloak-identity.sh`) provisions
+Keycloak groups/app-roles - the pre-AUTHZ-05 shape. It is kept only because there is not yet
+a Swift-native onboarding path for real GKE users (**SEC-3**, `docs/BACKLOG.md`). In Swift,
+Keycloak creates identity only; a team is a `team_metadata` row + OpenFGA relations created
+via the control-plane team APIs (see the boundary note after step 14 below) - never a
+Keycloak group.
 
 Keycloak identity provisioning is driven by a local JSON file, not by names hard-coded in a script.
 

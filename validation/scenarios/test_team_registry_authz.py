@@ -83,7 +83,16 @@ def disposable_team(cp, token_for):
     team = created.json()
     yield team
 
-    admin.delete(f"/teams/{team['id']}")
+    # pytest runs this teardown even if the test body above failed (yield
+    # fixtures behave like try/finally around the test). A teardown error is
+    # reported separately from the test's own pass/fail, so asserting here is
+    # how a failed cleanup actually surfaces instead of leaking a disposable
+    # team into the registry silently.
+    deleted = admin.delete(f"/teams/{team['id']}")
+    assert deleted.status_code == 204, (
+        f"cleanup failed: could not delete disposable team {team['id']!r}: "
+        f"{deleted.status_code} {deleted.text[:200]}"
+    )
 
 
 @pytest.mark.parametrize("username", NON_PLATFORM_ADMINS)

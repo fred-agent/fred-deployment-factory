@@ -128,8 +128,9 @@ The OpenFGA post-install script is idempotent, mode-aware (`AUTHZ_MODE=swift-cle
 default, `AUTHZ_MODE=kea-legacy` with `WITH_KEA=true`), and enforces:
 - store `OPENFGA_STORE_NAME` (default: `fred`)
 - authorization model from the active model file (`docker-compose/openfga/openfga-model.json`
-  by default - kept byte-identical to `fred-core`'s `schema.fga.json` by `make
-  sync-openfga-model` / `make check-openfga-model-sync` - or
+  by default - kept in sync with `fred-core`'s `schema.fga.json` by `make
+  sync-openfga-model` / `make check-openfga-model-sync`, which compare normalized JSON
+  (`json.dumps(..., sort_keys=True)`), not raw file bytes - or
   `docker-compose/openfga/openfga-model.kea.json` with `WITH_KEA=true`)
 - platform tuples (`platform_admin`/`platform_observer` on `organization:fred`) from the
   active demo identity config's `platform_roles`, in both modes

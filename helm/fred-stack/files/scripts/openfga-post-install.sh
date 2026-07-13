@@ -377,6 +377,23 @@ OPENFGA_API_TOKEN="${OPENFGA_API_TOKEN:-Azerty123_}"
 OPENFGA_STORE_NAME="${OPENFGA_STORE_NAME:-fred}"
 OPENFGA_MODEL_FILE="${OPENFGA_MODEL_FILE:-${SCRIPT_DIR}/openfga-model.json}"
 
+# AUTHZ-05/06: mirrors docker-compose/openfga/openfga-post-install.sh. swift-clean
+# never seeds a team-role tuple here - a Swift team_id only exists once the
+# control-plane creates the team_metadata row (POST /teams), so team roles are
+# bootstrapped later via the real control-plane APIs, never here.
+AUTHZ_MODE="${AUTHZ_MODE:-swift-clean}"
+case "${AUTHZ_MODE,,}" in
+  swift|swift-clean)
+    AUTHZ_MODE="swift-clean"
+    ;;
+  kea|kea-legacy)
+    AUTHZ_MODE="kea-legacy"
+    ;;
+  *)
+    die "unsupported AUTHZ_MODE='${AUTHZ_MODE}' (supported: swift-clean, kea-legacy)"
+    ;;
+esac
+
 # Config file resolution: DEMO_IDENTITY_CONFIG_FILE > OPENFGA_SEED_FILE
 OPENFGA_SEED_FILE="${OPENFGA_SEED_FILE:-${SCRIPT_DIR}/openfga-seed.json}"
 DEMO_IDENTITY_CONFIG_FILE="${DEMO_IDENTITY_CONFIG_FILE:-${OPENFGA_SEED_FILE}}"
@@ -469,6 +486,12 @@ while IFS=$'\t' read -r username relation team; do
     continue
   fi
 
+  if [[ "$AUTHZ_MODE" == "swift-clean" ]]; then
+    # Team roles are bootstrapped later via the control-plane APIs (see
+    # validation/conftest.py::_bootstrap_collaborative_teams) - never here.
+    continue
+  fi
+
   if [[ -z "${TEAM_EXISTS[$team]:-}" ]]; then
     warn "team '${team}' is referenced by user '${username}' but missing from .teams list"
     TEAM_EXISTS["$team"]=1
@@ -498,5 +521,9 @@ done < <(
     | @tsv
   ' "$DEMO_IDENTITY_CONFIG_FILE"
 )
+
+if [[ "$AUTHZ_MODE" == "swift-clean" ]]; then
+  log "swift-clean: skipped team-role tuple seeding - team roles are bootstrapped via control-plane APIs, see validation/conftest.py::_bootstrap_collaborative_teams"
+fi
 
 log "post-install completed (store=${STORE_ID}, model=${AUTHORIZATION_MODEL_ID}, tuples_added=${ADDED_TUPLES}, tuples_skipped=${SKIPPED_TUPLES}, changes=${CHANGED})"

@@ -92,6 +92,26 @@ KEYCLOAK_KF_ENABLE_MANAGE_USERS="${KEYCLOAK_KF_ENABLE_MANAGE_USERS:-true}"
 KEYCLOAK_FORCE_RELOGIN="${KEYCLOAK_FORCE_RELOGIN:-$(read_env_file_var KEYCLOAK_FORCE_RELOGIN)}"
 KEYCLOAK_FORCE_RELOGIN="${KEYCLOAK_FORCE_RELOGIN:-auto}"
 
+# AUTHZ-05/06: swift-clean never represents a Swift team as a Keycloak group -
+# a team is a team_metadata row + OpenFGA relations, created later via the
+# control-plane APIs. kea-legacy keeps Keycloak groups so the migration
+# rehearsal has an old-world source to translate. Mirrors the same case
+# statement in docker-compose/keycloak/keycloak-post-install.sh and
+# openfga-post-install.sh.
+AUTHZ_MODE="${AUTHZ_MODE:-$(read_env_file_var AUTHZ_MODE)}"
+AUTHZ_MODE="${AUTHZ_MODE:-swift-clean}"
+case "${AUTHZ_MODE,,}" in
+  swift|swift-clean)
+    AUTHZ_MODE="swift-clean"
+    ;;
+  kea|kea-legacy)
+    AUTHZ_MODE="kea-legacy"
+    ;;
+  *)
+    die "unsupported AUTHZ_MODE='${AUTHZ_MODE}' (supported: swift-clean, kea-legacy)"
+    ;;
+esac
+
 DEMO_IDENTITY_CONFIG_FILE="${DEMO_IDENTITY_CONFIG_FILE:-$(read_env_file_var DEMO_IDENTITY_CONFIG_FILE)}"
 DEMO_IDENTITY_CONFIG_FILE="${DEMO_IDENTITY_CONFIG_FILE:-${SCRIPT_DIR}/../openfga/openfga-seed.json}"
 DEMO_IDENTITY_DEFAULT_PASSWORD="${DEMO_IDENTITY_DEFAULT_PASSWORD:-$(read_env_file_var DEMO_IDENTITY_DEFAULT_PASSWORD)}"
@@ -124,10 +144,12 @@ client_scope_uuid() {
 ensure_client_exists() {
   local client_id="$1"
   local uuid
+  local payload
 
   uuid="$(client_uuid "$client_id")"
   if [[ -z "$uuid" ]]; then
-    kc create clients -r "$KEYCLOAK_REALM" -s "clientId=${client_id}" -s enabled=true -s protocol=openid-connect >/dev/null
+    payload="$(jq -nc --arg client_id "$client_id" '{clientId: $client_id, enabled: true, protocol: "openid-connect"}')"
+    kc_http_post_json "/clients" "$payload"
     mark_changed
     uuid="$(client_uuid "$client_id")"
   fi
@@ -139,28 +161,28 @@ ensure_client_exists() {
 ensure_app_client() {
   local uuid
   local client_json
+  local payload
 
   uuid="$(client_uuid app)"
   if [[ -z "$uuid" ]]; then
-    kc create clients -r "$KEYCLOAK_REALM" \
-      -s clientId=app \
-      -s protocol=openid-connect \
-      -s enabled=true \
-      -s publicClient=true \
-      -s standardFlowEnabled=true \
-      -s serviceAccountsEnabled=false >/dev/null
+    payload="$(jq -nc '{
+      clientId: "app",
+      protocol: "openid-connect",
+      enabled: true,
+      publicClient: true,
+      standardFlowEnabled: true,
+      serviceAccountsEnabled: false
+    }')"
+    kc_http_post_json "/clients" "$payload"
     mark_changed
     uuid="$(client_uuid app)"
   fi
   [[ -n "$uuid" ]] || die "cannot ensure client 'app'"
 
-  client_json="$(kc get "clients/${uuid}" -r "$KEYCLOAK_REALM" -c)"
+  client_json="$(kc_http_get "/clients/${uuid}")"
   if ! jq -e '.enabled == true and .publicClient == true and .standardFlowEnabled == true' >/dev/null <<<"$client_json"; then
-    kc update "clients/${uuid}" -r "$KEYCLOAK_REALM" \
-      -s enabled=true \
-      -s publicClient=true \
-      -s standardFlowEnabled=true \
-      -s serviceAccountsEnabled=false >/dev/null
+    payload="$(jq -c '.enabled = true | .publicClient = true | .standardFlowEnabled = true | .serviceAccountsEnabled = false' <<<"$client_json")"
+    kc_http_put_json "/clients/${uuid}" "$payload"
     mark_changed
   fi
 
@@ -173,28 +195,30 @@ ensure_service_client_confidential() {
   local uuid
   local client_json
   local current_secret
+  local payload
 
   uuid="$(ensure_client_exists "$client_id")"
-  client_json="$(kc get "clients/${uuid}" -r "$KEYCLOAK_REALM" -c)"
+  client_json="$(kc_http_get "/clients/${uuid}")"
 
   if ! jq -e '.enabled == true and .publicClient == false and .serviceAccountsEnabled == true and .clientAuthenticatorType == "client-secret"' >/dev/null <<<"$client_json"; then
-    kc update "clients/${uuid}" -r "$KEYCLOAK_REALM" \
-      -s enabled=true \
-      -s publicClient=false \
-      -s serviceAccountsEnabled=true \
-      -s clientAuthenticatorType=client-secret >/dev/null
+    payload="$(jq -c '.enabled = true | .publicClient = false | .serviceAccountsEnabled = true | .clientAuthenticatorType = "client-secret"' <<<"$client_json")"
+    kc_http_put_json "/clients/${uuid}" "$payload"
     mark_changed
+    client_json="$(kc_http_get "/clients/${uuid}")"
   fi
 
-  current_secret="$(kc get "clients/${uuid}/client-secret" -r "$KEYCLOAK_REALM" -c | jq -r '.value // empty')"
+  current_secret="$(kc_http_get "/clients/${uuid}/client-secret" | jq -r '.value // empty')"
   if [[ "$current_secret" != "$desired_secret" ]]; then
-    if ! kc create "clients/${uuid}/client-secret" -r "$KEYCLOAK_REALM" -s "value=${desired_secret}" >/dev/null 2>&1; then
-      kc update "clients/${uuid}" -r "$KEYCLOAK_REALM" -s "secret=${desired_secret}" >/dev/null
-    fi
+    # The /client-secret POST endpoint always REGENERATES a random value - it
+    # cannot be told to set a specific secret. Setting an explicit value
+    # requires PUTting the client representation with `secret` set directly
+    # (same effect as kcadm's `update clients/{id} -s secret=...`).
+    payload="$(jq -c --arg secret "$desired_secret" '.secret = $secret' <<<"$client_json")"
+    kc_http_put_json "/clients/${uuid}" "$payload"
     mark_changed
   fi
 
-  current_secret="$(kc get "clients/${uuid}/client-secret" -r "$KEYCLOAK_REALM" -c | jq -r '.value // empty')"
+  current_secret="$(kc_http_get "/clients/${uuid}/client-secret" | jq -r '.value // empty')"
   [[ "$current_secret" == "$desired_secret" ]] || die "failed to apply secret for client '${client_id}'"
 
   printf '%s' "$uuid"
@@ -224,11 +248,13 @@ ensure_client_role() {
 wait_for_service_account_username() {
   local client_id="$1"
   local username="service-account-${client_id}"
+  local encoded_username
   local attempts=30
   local i=1
 
+  encoded_username="$(uri_encode "$username")"
   while (( i <= attempts )); do
-    if kc get users -r "$KEYCLOAK_REALM" -q "username=${username}" -c | jq -e 'length > 0' >/dev/null; then
+    if kc_http_get "/users?username=${encoded_username}&exact=true" | jq -e 'length > 0' >/dev/null; then
       printf '%s' "$username"
       return 0
     fi
@@ -243,13 +269,22 @@ ensure_user_client_role() {
   local username="$1"
   local client_id="$2"
   local role_name="$3"
+  local user_id
+  local target_client_uuid
+  local role_json
 
-  if kc get-roles -r "$KEYCLOAK_REALM" --uusername "$username" --cclientid "$client_id" -c \
+  user_id="$(keycloak_user_json_by_username "$username" | jq -r '.id // empty')"
+  [[ -n "$user_id" ]] || die "cannot resolve user '${username}' to grant '${client_id}/${role_name}'"
+  target_client_uuid="$(client_uuid "$client_id")"
+  [[ -n "$target_client_uuid" ]] || die "cannot resolve client '${client_id}' to grant role '${role_name}'"
+
+  if kc_http_get "/users/${user_id}/role-mappings/clients/${target_client_uuid}" \
     | jq -e --arg role_name "$role_name" '.[] | select(.name == $role_name)' >/dev/null; then
     return
   fi
 
-  kc add-roles -r "$KEYCLOAK_REALM" --uusername "$username" --cclientid "$client_id" --rolename "$role_name" >/dev/null
+  role_json="$(kc_http_get "/clients/${target_client_uuid}/roles/$(uri_encode "$role_name")")"
+  kc_http_post_json "/users/${user_id}/role-mappings/clients/${target_client_uuid}" "[${role_json}]"
   mark_changed
 }
 
@@ -693,33 +728,46 @@ reconcile_demo_groups_exact() {
 
 apply_demo_identity_config() {
   local app_client_uuid="$1"
-  local user_json user_id
+  local user_json user_id existing_groups_json
 
   demo_identity_config_validate
   demo_identity_load_managed_teams
   demo_identity_load_managed_users
-  log "applying demo identity config '${DEMO_IDENTITY_CONFIG_FILE}'"
+  log "applying demo identity config '${DEMO_IDENTITY_CONFIG_FILE}' (authz mode: ${AUTHZ_MODE})"
 
   DEMO_GROUP_IDS=()
   DEMO_APP_ROLE_JSON_CACHE=()
 
   reconcile_demo_users_exact
 
-  while IFS= read -r team; do
-    [[ -n "$team" ]] || continue
-    ensure_demo_team_group "$team"
-  done < <(printf '%s\n' "${DEMO_MANAGED_TEAMS[@]}")
+  if [[ "$AUTHZ_MODE" == "kea-legacy" ]]; then
+    while IFS= read -r team; do
+      [[ -n "$team" ]] || continue
+      ensure_demo_team_group "$team"
+    done < <(printf '%s\n' "${DEMO_MANAGED_TEAMS[@]}")
+  else
+    log "swift-clean: not creating Keycloak groups for teams - a Swift team is a team_metadata row + OpenFGA relations, bootstrapped later via the control-plane APIs"
+  fi
 
   ensure_demo_app_role_definitions
 
   while IFS= read -r user_json; do
     [[ -n "$user_json" ]] || continue
     user_id="$(ensure_demo_user_profile "$user_json")"
-    ensure_demo_user_team_memberships "$user_id" "$user_json"
+    if [[ "$AUTHZ_MODE" == "kea-legacy" ]]; then
+      ensure_demo_user_team_memberships "$user_id" "$user_json"
+    fi
     ensure_demo_user_app_roles "$app_client_uuid" "$user_id" "$user_json"
   done < <(jq -c '.users[]?' "$DEMO_IDENTITY_CONFIG_FILE")
 
-  reconcile_demo_groups_exact
+  if [[ "$AUTHZ_MODE" == "kea-legacy" ]]; then
+    reconcile_demo_groups_exact
+  else
+    existing_groups_json="$(kc_http_get "/groups?first=0&max=1")"
+    if [[ -n "$existing_groups_json" && "$existing_groups_json" != "[]" ]]; then
+      warn "swift-clean: pre-existing Keycloak groups were found and are left untouched (not read by any Swift authorization path); reinstall the release for a from-scratch swift-clean proof"
+    fi
+  fi
 }
 
 groups_mapper_payload() {
@@ -745,25 +793,24 @@ ensure_groups_scope() {
   local scope_uuid
   local mapper_json
   local mapper_uuid
+  local payload
 
   scope_uuid="$(client_scope_uuid "$scope_name")"
   if [[ -z "$scope_uuid" ]]; then
-    kc create client-scopes -r "$KEYCLOAK_REALM" -s "name=${scope_name}" -s protocol=openid-connect >/dev/null
+    payload="$(jq -nc --arg name "$scope_name" '{name: $name, protocol: "openid-connect"}')"
+    kc_http_post_json "/client-scopes" "$payload"
     mark_changed
     scope_uuid="$(client_scope_uuid "$scope_name")"
   fi
   [[ -n "$scope_uuid" ]] || die "cannot ensure client scope '${scope_name}'"
 
-  mapper_json="$(kc get "client-scopes/${scope_uuid}/protocol-mappers/models" -r "$KEYCLOAK_REALM" -c \
+  mapper_json="$(kc_http_get "/client-scopes/${scope_uuid}/protocol-mappers/models" \
     | jq -c '.[] | select(.name == "groups" and .protocolMapper == "oidc-group-membership-mapper")' \
     | head -n1 || true)"
 
   if [[ -z "$mapper_json" ]]; then
-    local payload_file
-    payload_file="$(mktemp)"
-    groups_mapper_payload >"$payload_file"
-    kc create "client-scopes/${scope_uuid}/protocol-mappers/models" -r "$KEYCLOAK_REALM" -f "$payload_file" >/dev/null
-    rm -f "$payload_file"
+    payload="$(groups_mapper_payload)"
+    kc_http_post_json "/client-scopes/${scope_uuid}/protocol-mappers/models" "$payload"
     mark_changed
   else
     mapper_uuid="$(jq -r '.id // empty' <<<"$mapper_json")"
@@ -777,11 +824,8 @@ ensure_groups_scope() {
       .config["id.token.claim"] == "true" and
       .config["multivalued"] == "true"
     ' >/dev/null <<<"$mapper_json"; then
-      local payload_file
-      payload_file="$(mktemp)"
-      groups_mapper_payload >"$payload_file"
-      kc update "client-scopes/${scope_uuid}/protocol-mappers/models/${mapper_uuid}" -r "$KEYCLOAK_REALM" -f "$payload_file" >/dev/null
-      rm -f "$payload_file"
+      payload="$(groups_mapper_payload | jq -c --arg id "$mapper_uuid" '.id = $id')"
+      kc_http_put_json "/client-scopes/${scope_uuid}/protocol-mappers/models/${mapper_uuid}" "$payload"
       mark_changed
     fi
   fi
@@ -794,14 +838,29 @@ ensure_app_default_scope() {
   local scope_uuid="$2"
   local scope_name="groups-scope"
 
-  if kc get "clients/${app_uuid}/default-client-scopes" -r "$KEYCLOAK_REALM" -c \
+  if kc_http_get "/clients/${app_uuid}/default-client-scopes" \
     | jq -e --arg scope_name "$scope_name" '.[] | select(.name == $scope_name)' >/dev/null; then
     return
   fi
 
-  if ! kc update "clients/${app_uuid}/default-client-scopes/${scope_uuid}" -r "$KEYCLOAK_REALM" -n -b '{}' >/dev/null 2>&1; then
-    kc update "clients/${app_uuid}/default-client-scopes/${scope_uuid}" -r "$KEYCLOAK_REALM" -n >/dev/null
+  kc_http_put_empty "/clients/${app_uuid}/default-client-scopes/${scope_uuid}"
+  mark_changed
+}
+
+ensure_app_default_scope_detached() {
+  local app_uuid="$1"
+  local scope_name="groups-scope"
+  local scope_uuid
+
+  scope_uuid="$(client_scope_uuid "$scope_name")"
+  [[ -n "$scope_uuid" ]] || return 0
+
+  if ! kc_http_get "/clients/${app_uuid}/default-client-scopes" \
+    | jq -e --arg scope_name "$scope_name" '.[] | select(.name == $scope_name)' >/dev/null; then
+    return 0
   fi
+
+  kc_http_delete_empty "/clients/${app_uuid}/default-client-scopes/${scope_uuid}"
   mark_changed
 }
 
@@ -833,6 +892,18 @@ KEYCLOAK_ADMIN_HTTP_TOKEN="$(kc_http_admin_token)"
 
 app_client_uuid="$(client_uuid app)"
 [[ -n "$app_client_uuid" ]] || die "cannot resolve client 'app' from imported realm"
+
+if [[ "$AUTHZ_MODE" == "kea-legacy" ]]; then
+  groups_scope_uuid="$(ensure_groups_scope)"
+  ensure_app_default_scope "$app_client_uuid" "$groups_scope_uuid"
+else
+  # swift-clean: no groups claim is required or consumed by any Swift
+  # authorization path. The imported realm never attaches groups-scope by
+  # default; this is a no-op unless a prior kea-legacy run (or hand
+  # provisioning) attached it, in which case it is detached. Its absence
+  # after this step is the expected, not an error, state either way.
+  ensure_app_default_scope_detached "$app_client_uuid"
+fi
 
 apply_demo_identity_config "$app_client_uuid"
 

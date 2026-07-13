@@ -82,8 +82,10 @@ spec:
           env:
             - name: KEYCLOAK_SERVER_URL
               value: http://keycloak:8080
+            - name: AUTHZ_MODE
+              value: {{ if .Values.withKea }}kea-legacy{{ else }}swift-clean{{ end }}
             - name: DEMO_IDENTITY_CONFIG_FILE
-              value: /opt/openfga/openfga-seed.json
+              value: {{ if .Values.withKea }}/opt/openfga/openfga-seed.kea.json{{ else }}/opt/openfga/openfga-seed.json{{ end }}
           command:
             - /bin/sh
             - -ec
@@ -134,10 +136,12 @@ spec:
               value: http://openfga:9080
             - name: KEYCLOAK_SERVER_URL
               value: http://keycloak:8080
+            - name: AUTHZ_MODE
+              value: {{ if .Values.withKea }}kea-legacy{{ else }}swift-clean{{ end }}
             - name: OPENFGA_MODEL_FILE
-              value: /opt/openfga/openfga-model.json
+              value: {{ if .Values.withKea }}/opt/openfga/openfga-model.kea.json{{ else }}/opt/openfga/openfga-model.json{{ end }}
             - name: OPENFGA_SEED_FILE
-              value: /opt/openfga/openfga-seed.json
+              value: {{ if .Values.withKea }}/opt/openfga/openfga-seed.kea.json{{ else }}/opt/openfga/openfga-seed.json{{ end }}
           command:
             - /bin/sh
             - -ec
