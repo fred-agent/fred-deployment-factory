@@ -91,7 +91,8 @@ an explicit `initial_team_admin_ids`), then
 `POST /teams/{team_id}/members/{user_id}/roles` / `DELETE
 /teams/{team_id}/members/{user_id}/roles/{relation}` to grant/revoke individual, cumulative
 roles (`team_admin`/`team_editor`/`team_analyst`/`team_member`) - the same contract
-`validation/conftest.py::_bootstrap_collaborative_teams` exercises against the local stack.
+`fred`'s own `validation/conftest.py::_bootstrap_collaborative_teams` exercises against a
+local stack.
 Platform roles (`platform_admin`/`platform_observer`) are stored-only OpenFGA relations on
 `organization:fred`, seeded directly (never derived from a Keycloak group or app role).
 

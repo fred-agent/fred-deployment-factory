@@ -28,7 +28,9 @@ config/fredlab-keycloak-identity.local.json
 # Checkpoint snapshots (Docker volume archives — can be large)
 /checkpoints/
 
-# Generated empty realm template — derived from app-realm.json.template
+# Retired: `make keycloak-up` no longer generates this file (the canonical
+# app-realm.json.template is now itself empty). Keep ignored in case a stale
+# local copy from an older checkout still exists on disk.
 /docker/keycloak/app-realm.empty.json.template
 
 # Editor and OS artifacts

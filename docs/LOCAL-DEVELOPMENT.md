@@ -1,7 +1,8 @@
 # Local development stack
 
 Run Fred's backing services on your laptop — for day-to-day development against a local Fred,
-or to host the [auth/isolation validation](../validation/README.md) release gate. Fred itself
+or to host the auth/isolation validation release gate, which now lives in the sibling `fred`
+monorepo's own `validation/README.md` (run `cd ../fred && make validation-report`). Fred itself
 can run on just ChromaDB + SQLite + the local filesystem; this repo gives the fuller
 experience (real Postgres, Keycloak, OpenFGA, OpenSearch, Temporal, plus optional
 Prometheus / Grafana / ClickHouse / Langfuse).

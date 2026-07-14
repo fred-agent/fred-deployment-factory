@@ -94,18 +94,25 @@ bash docker/keycloak/keycloak-post-install.sh
 ```
 
 The Keycloak post-install script is idempotent and enforces:
-- clients `app`, `agentic`, `knowledge-flow`, `control-plane`
-- `agentic`, `knowledge-flow`, and `control-plane` as confidential clients with service accounts enabled
-- service account roles for `agentic`, `knowledge-flow`, and `control-plane`: `realm-management`
+- clients `app`, `agentic`, `knowledge-flow`, `control-plane`, `fred-evaluation-worker`
+- `agentic`, `knowledge-flow`, `control-plane`, and `fred-evaluation-worker` as confidential
+  clients with service accounts enabled
+- service account roles: `agentic`, `knowledge-flow`, and `control-plane` get `realm-management`
   `query-users`/`view-users` (plus `manage-users` for `control-plane` always, and for
-  `knowledge-flow` when `KEYCLOAK_KF_ENABLE_MANAGE_USERS=true`). No group-scoped role
-  (`query-groups`/`view-groups`) is ever granted - no app calls a Keycloak group-admin API
-  (AUTHZ-05/06: OpenFGA is the sole authorization source).
-- client roles `app:admin/editor/viewer/service_agent` (definitions remain for service/legacy
-  compatibility; nothing in Fred assigns them - team and platform roles live in OpenFGA, never
-  as Keycloak app roles or groups)
-- an **empty realm**: zero demo users, zero groups. Self-registration is enabled on the `app`
-  client, so the first human simply registers through Keycloak's own registration screen.
+  `knowledge-flow` when `KEYCLOAK_KF_ENABLE_MANAGE_USERS=true`); every one of the four service
+  accounts, including `fred-evaluation-worker`, gets `app:service_agent` (the evaluation worker
+  gets `service_agent` only, no `realm-management` role - least privilege, RFC EVAL-AUTH). No
+  group-scoped role (`query-groups`/`view-groups`) is ever granted - no app calls a Keycloak
+  group-admin API (AUTHZ-05/06: OpenFGA is the sole authorization source).
+- client roles: only `app:service_agent` exists on the `app` client - the legacy
+  `admin`/`editor`/`viewer` roles were removed from the tracked realm import entirely (AUTHZ-07);
+  team and platform roles live in OpenFGA, never as Keycloak app roles or groups
+- an **empty realm import**: `.users` and `.groups` are both `[]` in the tracked
+  `app-realm.json.template`. Keycloak auto-creates each confidential client's
+  `service-account-<clientId>` user at import time (`serviceAccountsEnabled=true`), and the
+  post-install script grants it the roles above - no user or role assignment is baked into the
+  tracked JSON. Self-registration is enabled on the `app` client, so the first human simply
+  registers through Keycloak's own registration screen.
 - forced user re-login after a Keycloak wipe (`KEYCLOAK_FORCE_RELOGIN=auto` or `true`)
 
 - OpenFGA

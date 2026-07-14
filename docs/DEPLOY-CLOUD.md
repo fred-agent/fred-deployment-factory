@@ -72,17 +72,18 @@ when standing up a fresh cluster.
 ## 3. Validate before you ship (release gate)
 
 The black-box **auth / team-isolation** suite — it proves Keycloak identity + OpenFGA
-authorization + cross-team isolation against a *running* stack. Run it against your local
-stack as the release gate for a `swift` candidate:
+authorization + cross-team isolation against a *running* stack — now lives in the `fred`
+monorepo's own `validation/`, not in this repo. Run it against your local stack as the release
+gate for a `swift` candidate:
 
 ```bash
-make validate-auth-isolation-localhost
+cd ../fred && make validation-report
 ```
 
-It spins up a venv, installs the Fred libs editable, and runs the scenarios in `validation/`
-against the localhost control-plane + runtime. See [`../validation/README.md`](../validation/README.md)
-for the auth matrix it asserts. (A k3d/ingress variant, `validate-auth-isolation-k3d`, is
-planned but not yet implemented.)
+See `fred`'s `validation/README.md` for the auth matrix it asserts. This repo keeps only the
+offline guards that don't need a running stack: `make check-openfga-model-sync` (OpenFGA schema
+drift) and `make check-pure-infrastructure` (no demo users/groups/legacy roles/dead seeds
+shipped by this repo's tracked artifacts).
 
 ## 4. Ship it — the steady-state loop
 

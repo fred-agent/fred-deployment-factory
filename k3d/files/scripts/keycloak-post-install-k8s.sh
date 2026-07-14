@@ -37,6 +37,13 @@ read_env_file_var() {
   printf '%s' "$value"
 }
 
+is_truthy() {
+  case "${1,,}" in
+    true|1|yes|on|always) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 wait_for_keycloak() {
   local attempts="${1:-120}"
   local i=1
@@ -359,10 +366,38 @@ KEYCLOAK_ADMIN_HTTP_TOKEN="$(kc_http_admin_token)"
 app_client_uuid="$(client_uuid app)"
 [[ -n "$app_client_uuid" ]] || die "cannot resolve client 'app' from imported realm"
 
-ensure_client_role app admin "application administrator role"
-ensure_client_role app editor "application editor role"
-ensure_client_role app viewer "application viewer role"
 ensure_client_role app service_agent "application service agent role"
+
+# The imported realm ships with zero users (.users=[]): Keycloak still
+# auto-creates service-account-<clientId> for every confidential client with
+# serviceAccountsEnabled=true (agentic, knowledge-flow, control-plane are
+# already declared that way in the realm import), but grants no role. Mirror
+# the Docker Compose post-install (docker/keycloak/keycloak-post-install.sh):
+# resolve each service account and grant the least privilege it needs.
+agentic_service_user="$(wait_for_service_account_username agentic)"
+knowledge_flow_service_user="$(wait_for_service_account_username knowledge-flow)"
+control_plane_service_user="$(wait_for_service_account_username control-plane)"
+
+# Neither agentic (fred-agents), knowledge-flow, nor control-plane call any
+# Keycloak group-admin API (a_get_groups/a_get_group_members) - confirmed
+# against the fred product code (AUTHZ-05/06). Only user-scoped realm-management
+# roles are granted.
+ensure_user_client_role "$agentic_service_user" realm-management query-users
+ensure_user_client_role "$agentic_service_user" realm-management view-users
+
+ensure_user_client_role "$knowledge_flow_service_user" realm-management query-users
+ensure_user_client_role "$knowledge_flow_service_user" realm-management view-users
+if is_truthy "$KEYCLOAK_KF_ENABLE_MANAGE_USERS"; then
+  ensure_user_client_role "$knowledge_flow_service_user" realm-management manage-users
+fi
+
+ensure_user_client_role "$control_plane_service_user" realm-management query-users
+ensure_user_client_role "$control_plane_service_user" realm-management view-users
+ensure_user_client_role "$control_plane_service_user" realm-management manage-users
+
+ensure_user_client_role "$agentic_service_user" app service_agent
+ensure_user_client_role "$knowledge_flow_service_user" app service_agent
+ensure_user_client_role "$control_plane_service_user" app service_agent
 
 if should_force_relogin; then
   if kc_http_post_empty "/logout-all"; then

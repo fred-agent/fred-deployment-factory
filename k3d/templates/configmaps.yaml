@@ -17,8 +17,6 @@ metadata:
 data:
   openfga-model.json: |
 {{ .Files.Get "files/openfga/openfga-model.json" | indent 4 }}
-  openfga-seed.json: |
-{{ .Files.Get "files/openfga/openfga-seed.json" | indent 4 }}
 ---
 apiVersion: v1
 kind: ConfigMap

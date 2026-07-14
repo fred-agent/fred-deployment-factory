@@ -231,8 +231,9 @@ Status: `[ ]` todo · `[~]` in progress · `[x]` done. IDs are referenced from t
       missing Keycloak identity *and* grants every configured team/platform role - see
       `docs/swift/rfc/PLATFORM-IMPORT-RFC.md` §10 in `fred`. `cd apps/control-plane-backend &&
       make build-demo-bundle` packages that fixture for upload via **Admin → Migration**.
-- [ ] **VALID-11** (2026-07-14) Session summary - `fred-deployment-factory` → pure
-      infrastructure. This entry ties together the day's changes recorded individually above:
+- [x] **VALID-11** (2026-07-14, AUTHZ-07 Step 4, issue #1912, PR #1957) Session summary -
+      `fred-deployment-factory` → pure infrastructure. This entry ties together the day's
+      changes recorded individually above:
       kea-legacy mode (`WITH_KEA`/`AUTHZ_MODE`, the `bin/kea-*.sh` dump/restore scripts,
       `bin/fredlab-keycloak-identity.sh`, `config/configuration.kea.yaml`, the Kea OpenFGA
       model files) removed entirely (closes **SEC-3** by removal - see its note above); the
@@ -245,14 +246,53 @@ Status: `[ ]` todo · `[~]` in progress · `[x]` done. IDs are referenced from t
       `apps/control-plane-backend/tests/fixtures/import_export/demo_provisioning/` fixture,
       imported via `POST /import-export/import`.
 
-      Separately, `validation/` (this repo's auth/isolation release-gate suite) is planned to
-      move to a new top-level `fred/validation/`, so it can read the demo-provisioning fixture
-      as a same-repo sibling instead of needing a cross-repo `SWIFT_SRC` path. **Not done as of
-      this entry** - `fred/validation/` does not exist yet. Once it lands, this repo's own
-      `validation/` directory and its `SWIFT_SRC` plumbing should be removed, and the
-      references to it in `README.md` / `docker/README.md` / `docs/LOCAL-DEVELOPMENT.md`
-      updated to point at the new location - tracked as follow-up, not yet a numbered item
-      here.
+      `validation/` (this repo's former auth/isolation release-gate suite) has moved to
+      `fred/validation/` as a same-repo sibling of the demo-provisioning fixture it reads -
+      run it with `cd ../fred && make validation-report`. This repo's own `validation/`
+      directory, its `SWIFT_SRC`-derived `FRED_SDK_SRC`/`FRED_RUNTIME_SRC` plumbing, and the
+      `validation-unit-tests` / `validate-auth-isolation-localhost` / `validate-auth-isolation-k3d`
+      / `validation-report` Makefile targets are removed; `check-swift-src` /
+      `sync-openfga-model` / `check-openfga-model-sync` keep the minimal `FRED_CORE_SRC` path
+      they still need. `README.md`, `docker/README.md`, `docs/LOCAL-DEVELOPMENT.md`, and
+      `docs/DEPLOY-CLOUD.md` now point at the new location instead of a local path.
+
+      Closing this pass, three more items landed:
+      - **Keycloak realm templates genuinely empty.** Both tracked copies
+        (`docker/keycloak/app-realm.json.template`, `k3d/files/keycloak/app-realm.json.template`)
+        now ship `.users: []` and `.groups: []` - no more demo users (`alice`/`bob`/`phil`) or
+        pre-baked service-account role assignments hiding in the source, and no more
+        `make keycloak-up`-time `app-realm.empty.json.template` filtering step (`KC_REALM_TEMPLATE`
+        removed; Compose mounts the canonical template directly). The legacy `app`-client roles
+        `admin`/`editor`/`viewer` are deleted from both templates' `roles.client.app` - only
+        `service_agent` remains, and **it is not legacy**: it is the current M2M marker that
+        the post-install scripts now grant explicitly to every confidential service account
+        (`agentic`, `knowledge-flow`, `control-plane`,
+        `fred-evaluation-worker` in Docker) after Keycloak auto-creates its
+        `service-account-<clientId>` user from `serviceAccountsEnabled=true`. The k3d
+        post-install (`keycloak-post-install-k8s.sh`) previously relied entirely on the
+        now-removed pre-baked `.users[].clientRoles` for this - it now resolves and grants
+        roles to the three k3d service accounts explicitly, reusing (not duplicating) the
+        `wait_for_service_account_username`/`ensure_user_client_role` helpers that already
+        existed in the file but were dead code.
+      - **Dead OpenFGA seed removed.** `k3d/files/openfga/openfga-seed.json` (a full demo
+        identity/team population the current `openfga-post-install.sh` never reads) and its
+        `k3d/templates/configmaps.yaml` ConfigMap entry are deleted.
+      - **Direct OpenFGA mutator removed.** `bin/fredlab-authz-migrate-swift.py` (a plan/apply
+        script that wrote OpenFGA tuples directly from mapped legacy Keycloak roles) is deleted
+        outright, not replaced - it was a second provisioning path parallel to the bootstrap +
+        declarative-import model this repo now exclusively relies on.
+      - **New offline regression guard.** `make check-pure-infrastructure` fails fast (no
+        live stack needed) if either realm template regains a user/group, `service_agent`
+        disappears or a legacy `app:admin/editor/viewer` role reappears, the k3d chart ships an
+        OpenFGA seed again, or the Makefile regains a target pointing at the removed local
+        `validation/`.
+
+      **Not covered by this pass (still open):** Step 5 (Helm/GKE/AKS bootstrap-secret
+      handling, a bootstrap-marker upgrade strategy, a Swift-native cloud onboarding
+      replacement for the removed `bin/fredlab-keycloak-identity.sh` - **SEC-1**/**SEC-2** and
+      the onboarding half of **SEC-3**'s note remain open); no live k3d/Docker/GKE run was
+      performed to confirm runtime behavior end-to-end, only offline validation (`jq`, `helm
+      lint`/`template`, `bash -n`, `check-pure-infrastructure`).
 
 ## ENV — multi-environment
 

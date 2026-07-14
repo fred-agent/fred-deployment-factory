@@ -12,8 +12,6 @@ DOCKER_COMPOSE_BASE := docker compose -f docker/docker-compose-
 # fred/control-plane-backend, not this repo.
 OPENFGA_MODEL_FILE ?= $(CURDIR)/docker/openfga/openfga-model.json
 export OPENFGA_MODEL_FILE
-KC_REALM_TEMPLATE := app-realm.empty.json.template
-export KC_REALM_TEMPLATE
 
 # STACK selects which services are launched (Docker Compose and Helm):
 #   base (default) → minimal stack: drops ClickHouse, Langfuse (+ its Redis),
@@ -124,10 +122,6 @@ postgres-up: network-create env-setup
 
 keycloak-up: postgres-up
 	@echo "Launching Keycloak..."
-	@echo "generating empty realm template (clients + service accounts only)..."
-	@jq '.users |= map(select(.username | startswith("service-account-"))) | .groups = []' \
-	  docker/keycloak/app-realm.json.template \
-	  > docker/keycloak/app-realm.empty.json.template
 	$(DOCKER_COMPOSE_BASE)keycloak.yml -p keycloak up -d
 	$(MAKE) keycloak-post-install
 
@@ -519,15 +513,14 @@ checkpoint-delete: ## Delete a named checkpoint (NAME=<name> required)
 	@echo "Checkpoint '$(NAME)' deleted."
 
 ##@ Validation
-VALIDATION_DIR  ?= validation
-VALIDATION_VENV ?= $(VALIDATION_DIR)/.venv
-PYTHON_BIN      ?= python3
 # Shared Fred libraries live on the local `fred` checkout, expected as a sibling
-# directory of this repo (../fred). Override if yours lives elsewhere.
+# directory of this repo (../fred). Override if yours lives elsewhere. Only
+# fred-core is needed here: sync-openfga-model / check-openfga-model-sync read
+# its canonical schema.fga.json. The auth/isolation validation harness itself
+# (fred-sdk/fred-runtime, pytest scenarios) has moved to `fred`'s own
+# `validation/` - see `make -C ../fred validation-report`.
 SWIFT_SRC       ?= ../fred
 FRED_CORE_SRC   ?= $(SWIFT_SRC)/libs/fred-core
-FRED_SDK_SRC    ?= $(SWIFT_SRC)/libs/fred-sdk
-FRED_RUNTIME_SRC ?= $(SWIFT_SRC)/libs/fred-runtime
 
 # Fails fast with a precise, actionable message instead of pip's generic
 # "not a valid editable requirement" (which doesn't say WHICH path is wrong or
@@ -543,20 +536,9 @@ define require_swift_lib
 	}
 endef
 
-check-swift-src: ## Verify SWIFT_SRC points at a real fred checkout with fred-core/fred-sdk/fred-runtime
+check-swift-src: ## Verify SWIFT_SRC points at a real fred checkout with fred-core (needed by sync-openfga-model / check-openfga-model-sync)
 	$(call require_swift_lib,$(FRED_CORE_SRC))
-	$(call require_swift_lib,$(FRED_SDK_SRC))
-	$(call require_swift_lib,$(FRED_RUNTIME_SRC))
 	@echo "✓ SWIFT_SRC resolves to a valid fred checkout ($(SWIFT_SRC))"
-
-# Localhost auth/isolation validation expects Docker infra plus manually started Fred apps.
-FRED_CONTROL_PLANE_URL ?= http://localhost:8222/control-plane/v1
-FRED_RUNTIME_PUBLIC_BASE ?= http://localhost:8000
-# Default: stop at the first failure (fast release-gate signal - one break is
-# enough to say "not ready"). Override to see the full pass/fail picture in one
-# run, e.g. when comparing an unfixed checkout against a fixed one:
-#   make validate-auth-isolation-localhost PYTEST_ARGS=""
-PYTEST_ARGS ?= -x
 
 sync-openfga-model: check-swift-src ## Regenerate BOTH Swift OpenFGA model copies (docker-compose + k3d) from the swift fred-core schema (manual - run after any fred-core rebac/schema.fga change)
 	@python3 -m json.tool $(FRED_CORE_SRC)/fred_core/security/rebac/schema.fga.json docker/openfga/openfga-model.json
@@ -577,61 +559,32 @@ check-openfga-model-sync: check-swift-src ## Fail fast if either Swift OpenFGA m
 	done
 	@echo "✓ docker and k3d Swift OpenFGA models match the fred-core canonical schema"
 
-validate-auth-isolation-localhost: check-swift-src ## Black-box auth/security team-isolation validation against localhost Fred apps + Docker infra
-	@test -x $(VALIDATION_VENV)/bin/python || { \
-	  echo "▶ creating venv $(VALIDATION_VENV) (python3 -m venv)"; \
-	  $(PYTHON_BIN) -m venv $(VALIDATION_VENV) && \
-	  $(VALIDATION_VENV)/bin/pip install -q --upgrade pip; \
-	}
-	@echo "▶ installing deps (shared Fred libs editable + test app)"
-	@$(VALIDATION_VENV)/bin/pip install -q -e $(FRED_CORE_SRC) -e $(FRED_SDK_SRC) -e $(FRED_RUNTIME_SRC) -e $(VALIDATION_DIR)
-	@echo "▶ running black-box auth/security team-isolation scenarios on localhost"
-	@echo "  control-plane: $(FRED_CONTROL_PLANE_URL)"
-	@echo "  runtime base : $(FRED_RUNTIME_PUBLIC_BASE)"
-	cd $(VALIDATION_DIR) && \
-	  FRED_CONTROL_PLANE_URL="$(FRED_CONTROL_PLANE_URL)" \
-	  FRED_RUNTIME_PUBLIC_BASE="$(FRED_RUNTIME_PUBLIC_BASE)" \
-	  .venv/bin/pytest $(PYTEST_ARGS)
+# The auth/isolation validation harness (pytest scenarios, black-box
+# release gate) lives in `fred`'s own `validation/` now - run it there:
+#   cd ../fred && make validation-report
+# This repo only ships infrastructure; it keeps just the OpenFGA schema-sync
+# guards above and the pure-infrastructure regression guard below.
 
-validation-unit-tests: ## Offline unit tests for the validation harness itself (factory_config.py) - no running stack required
-	@test -x $(VALIDATION_VENV)/bin/python || { \
-	  echo "▶ creating venv $(VALIDATION_VENV) (python3 -m venv)"; \
-	  $(PYTHON_BIN) -m venv $(VALIDATION_VENV) && \
-	  $(VALIDATION_VENV)/bin/pip install -q --upgrade pip; \
-	}
-	@echo "▶ installing deps (shared Fred libs editable + test app)"
-	@$(VALIDATION_VENV)/bin/pip install -q -e $(FRED_CORE_SRC) -e $(FRED_SDK_SRC) -e $(FRED_RUNTIME_SRC) -e $(VALIDATION_DIR)
-	@echo "▶ running offline unit tests (no live stack)"
-	cd $(VALIDATION_DIR) && .venv/bin/pytest tests -q
+check-pure-infrastructure: ## Offline guard: fail if a tracked artifact carries business/demo data, a dead OpenFGA seed, or dangling local validation/ wiring
+	@echo "▶ Keycloak realm templates must ship zero users/groups and only the app:service_agent client role"
+	@for template in docker/keycloak/app-realm.json.template k3d/files/keycloak/app-realm.json.template; do \
+	  users="$$(jq '.users | length' "$$template")"; \
+	  groups="$$(jq '.groups | length' "$$template")"; \
+	  extra_roles="$$(jq -r '[(.roles.client.app // [])[].name] - ["service_agent"] | length' "$$template")"; \
+	  has_service_agent="$$(jq -r '([(.roles.client.app // [])[].name] | index("service_agent")) != null' "$$template")"; \
+	  [ "$$users" = "0" ] || { echo "✗ $$template: .users is not empty ($$users)"; exit 1; }; \
+	  [ "$$groups" = "0" ] || { echo "✗ $$template: .groups is not empty ($$groups)"; exit 1; }; \
+	  [ "$$extra_roles" = "0" ] || { echo "✗ $$template: .roles.client.app carries a role other than service_agent (legacy admin/editor/viewer?)"; exit 1; }; \
+	  [ "$$has_service_agent" = "true" ] || { echo "✗ $$template: app:service_agent client role is missing"; exit 1; }; \
+	done
+	@echo "✓ docker and k3d realm templates: zero users, zero groups, only app:service_agent"
+	@echo "▶ no dead OpenFGA seed in the k3d chart"
+	@test ! -f k3d/files/openfga/openfga-seed.json || { echo "✗ k3d/files/openfga/openfga-seed.json exists (business/demo data does not belong in this repo)"; exit 1; }
+	@! grep -q "openfga-seed" k3d/templates/configmaps.yaml || { echo "✗ k3d/templates/configmaps.yaml still publishes an openfga-seed key"; exit 1; }
+	@echo "✓ no OpenFGA seed shipped by the k3d chart"
+	@echo "▶ no Makefile wiring left pointing at the removed local validation/ harness"
+	@! grep -qE '^(VALIDATION_DIR|VALIDATION_VENV|VALIDATION_REPORT|VALIDATION_JUNIT_XML)[[:space:]]*\??=|^(validation-unit-tests|validate-auth-isolation-localhost|validate-auth-isolation-k3d|validation-report):' Makefile || { echo "✗ Makefile still defines local validation/ harness targets/vars - that harness moved to fred/validation"; exit 1; }
+	@echo "✓ no local validation/ harness wiring left in the Makefile"
+	@echo "✓ check-pure-infrastructure passed"
 
-validate-auth-isolation-k3d: ## Black-box auth/security team-isolation validation against full k3d deployment (not implemented)
-	@echo "validate-auth-isolation-k3d is not yet implemented."
-	@echo "It will run the same black-box auth/security team-isolation suite against a full k3d deployment through ingress."
-	@echo "Current release gate: make validate-auth-isolation-localhost"
-	@exit 2
-
-VALIDATION_REPORT ?= $(VALIDATION_DIR)/report.md
-VALIDATION_JUNIT_XML ?= $(VALIDATION_DIR)/report.xml
-
-validation-report: check-swift-src ## Run the full validation suite (no -x) and write a short claims-grouped Markdown report
-	@test -x $(VALIDATION_VENV)/bin/python || { \
-	  echo "▶ creating venv $(VALIDATION_VENV) (python3 -m venv)"; \
-	  $(PYTHON_BIN) -m venv $(VALIDATION_VENV) && \
-	  $(VALIDATION_VENV)/bin/pip install -q --upgrade pip; \
-	}
-	@echo "▶ installing deps (shared Fred libs editable + test app)"
-	@$(VALIDATION_VENV)/bin/pip install -q -e $(FRED_CORE_SRC) -e $(FRED_SDK_SRC) -e $(FRED_RUNTIME_SRC) -e $(VALIDATION_DIR)
-	@echo "▶ running the full suite (no -x, so one failure doesn't hide the rest)"
-	@set +e; \
-	  cd $(VALIDATION_DIR) && \
-	    FRED_CONTROL_PLANE_URL="$(FRED_CONTROL_PLANE_URL)" \
-	    FRED_RUNTIME_PUBLIC_BASE="$(FRED_RUNTIME_PUBLIC_BASE)" \
-	    .venv/bin/pytest --junitxml=report.xml; \
-	  rc=$$?; \
-	  cd "$(CURDIR)" || exit $$rc; \
-	  $(VALIDATION_VENV)/bin/python $(VALIDATION_DIR)/generate_report.py $(VALIDATION_JUNIT_XML) | tee $(VALIDATION_REPORT); \
-	  echo ""; \
-	  echo "✓ Report written to $(VALIDATION_REPORT)"; \
-	  exit $$rc
-
-.PHONY: help network-create env-setup keycloak-post-install postgres-up keycloak-up seaweedfs-up opensearch-up clickhouse-up langfuse-up prometheus-up grafana-up openfga-post-install openfga-up temporal-up preflight-check docker-up docker-down all-down docker-wipe docker-destroy k3d-create k3d-up k3d-deploy k3d-restart k3d-redeploy k3d-logs k3d-down k3d-uninstall k3d-delete k3d-wipe k3d-status k3d-airgap-on k3d-airgap-off k3d-airgap-status checkpoint-save checkpoint-restore docker-restart-from-checkpoint checkpoint-list checkpoint-delete check-swift-src sync-openfga-model check-openfga-model-sync validation-unit-tests validate-auth-isolation-localhost validate-auth-isolation-k3d validation-report
+.PHONY: help network-create env-setup keycloak-post-install postgres-up keycloak-up seaweedfs-up opensearch-up clickhouse-up langfuse-up prometheus-up grafana-up openfga-post-install openfga-up temporal-up preflight-check docker-up docker-down all-down docker-wipe docker-destroy k3d-create k3d-up k3d-deploy k3d-restart k3d-redeploy k3d-logs k3d-down k3d-uninstall k3d-delete k3d-wipe k3d-status k3d-airgap-on k3d-airgap-off k3d-airgap-status checkpoint-save checkpoint-restore docker-restart-from-checkpoint checkpoint-list checkpoint-delete check-swift-src sync-openfga-model check-openfga-model-sync check-pure-infrastructure

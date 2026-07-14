@@ -28,7 +28,7 @@ services:
         sed "s#__DOCKER_COMPOSE_HOST_FQDN__#$$DOCKER_COMPOSE_HOST_FQDN#g; s#__TEMPORAL_UI_PORT__#$$TEMPORAL_UI_PORT#g" /tmp/app-realm.json.template > /opt/keycloak/data/import/app-realm.json
         /opt/keycloak/bin/kc.sh start-dev --import-realm
     volumes:
-      - ./keycloak/${KC_REALM_TEMPLATE:-app-realm.json.template}:/tmp/app-realm.json.template
+      - ./keycloak/app-realm.json.template:/tmp/app-realm.json.template
       - ./keycloak/realm_export:/export
     networks:
       app-network:
