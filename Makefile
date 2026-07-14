@@ -1,40 +1,19 @@
 .DEFAULT_GOAL := help
 SHELL := /bin/bash
 
-DOCKER_COMPOSE_BASE := docker compose -f docker-compose/docker-compose-
+DOCKER_COMPOSE_BASE := docker compose -f docker/docker-compose-
 
-WITH_KEA ?= false
-export WITH_KEA
-
-ifeq ($(WITH_KEA),true)
-AUTHZ_MODE ?= kea-legacy
-DEFAULT_DEMO_IDENTITY_CONFIG_FILE := $(CURDIR)/config/configuration.kea.yaml
-DEFAULT_OPENFGA_MODEL_FILE := $(CURDIR)/docker-compose/openfga/openfga-model.kea.json
-else
-AUTHZ_MODE ?= swift-clean
-DEFAULT_DEMO_IDENTITY_CONFIG_FILE := $(CURDIR)/config/configuration.yaml
-DEFAULT_OPENFGA_MODEL_FILE := $(CURDIR)/docker-compose/openfga/openfga-model.json
-endif
-DEMO_IDENTITY_CONFIG_FILE ?= $(DEFAULT_DEMO_IDENTITY_CONFIG_FILE)
-OPENFGA_MODEL_FILE ?= $(DEFAULT_OPENFGA_MODEL_FILE)
-export AUTHZ_MODE
-export DEMO_IDENTITY_CONFIG_FILE
+# `make docker-up` has exactly one mode: a fresh, empty deployment (empty
+# Keycloak realm — clients + service accounts only, no demo users, no demo
+# groups; empty OpenFGA store carrying only the Swift authorization model, no
+# tuples) bootstrapped via AUTHZ-07's root-admin endpoint
+# (`POST /bootstrap/platform-admin`) + declarative provisioning. There is no
+# fork and no demo-seeding knob — identity and role provisioning are owned by
+# fred/control-plane-backend, not this repo.
+OPENFGA_MODEL_FILE ?= $(CURDIR)/docker/openfga/openfga-model.json
 export OPENFGA_MODEL_FILE
-
-# SEED_DEMO=false brings the stack up EMPTY (the "freshly deployed s3ns" state):
-#   - Keycloak realm `app` gets clients + service accounts ONLY (no alice/bob/phil, no demo groups)
-#   - Keycloak/OpenFGA post-install seed NO demo users/groups/tuples (store + model still created)
-#   - preflight-check is skipped (there are no demo users to verify)
-# Postgres `fred_kea` and the buckets come up empty either way. Used by `migration-reset`
-# so the identity/data restore populates a genuinely empty target.
-SEED_DEMO ?= true
-export SEED_DEMO
-ifeq ($(SEED_DEMO),false)
 KC_REALM_TEMPLATE := app-realm.empty.json.template
-DEMO_IDENTITY_CONFIG_FILE := $(CURDIR)/config/configuration.empty.yaml
 export KC_REALM_TEMPLATE
-export DEMO_IDENTITY_CONFIG_FILE
-endif
 
 # STACK selects which services are launched (Docker Compose and Helm):
 #   base (default) → minimal stack: drops ClickHouse, Langfuse (+ its Redis),
@@ -59,7 +38,7 @@ endif
 K3D_CLUSTER ?= fred
 K3D_NAMESPACE ?= fred
 HELM_RELEASE ?= fred-stack
-HELM_CHART_DIR ?= ./helm/fred-stack
+HELM_CHART_DIR ?= ./k3d
 HELM_TIMEOUT ?= 20m
 HELM_HISTORY_MAX ?= 10
 IMAGE_REGISTRY_HOST ?= registry-1.docker.io
@@ -124,12 +103,12 @@ network-create:
 
 env-setup:
 	@echo "Setting up .env file..."
-	cp docker-compose/.env.template docker-compose/.env
-	@echo "NOTE: Remember to customize docker-compose/.env if needed."
+	cp docker/.env.template docker/.env
+	@echo "NOTE: Remember to customize docker/.env if needed."
 
 keycloak-post-install:
 	@echo "Running Keycloak post-install..."
-	bash docker-compose/keycloak/keycloak-post-install.sh
+	bash docker/keycloak/keycloak-post-install.sh
 
 postgres-up: network-create env-setup
 	@echo "Launching PostgreSQL..."
@@ -145,12 +124,10 @@ postgres-up: network-create env-setup
 
 keycloak-up: postgres-up
 	@echo "Launching Keycloak..."
-	@if [ "$(SEED_DEMO)" = "false" ]; then \
-	  echo "[SEED_DEMO=false] generating empty realm template (clients + service accounts only)..."; \
-	  jq '.users |= map(select(.username | startswith("service-account-"))) | .groups = []' \
-	    docker-compose/keycloak/app-realm.json.template \
-	    > docker-compose/keycloak/app-realm.empty.json.template; \
-	fi
+	@echo "generating empty realm template (clients + service accounts only)..."
+	@jq '.users |= map(select(.username | startswith("service-account-"))) | .groups = []' \
+	  docker/keycloak/app-realm.json.template \
+	  > docker/keycloak/app-realm.empty.json.template
 	$(DOCKER_COMPOSE_BASE)keycloak.yml -p keycloak up -d
 	$(MAKE) keycloak-post-install
 
@@ -196,7 +173,7 @@ grafana-up: prometheus-up
 
 openfga-post-install:
 	@echo "Running OpenFGA post-install..."
-	bash docker-compose/openfga/openfga-post-install.sh
+	bash docker/openfga/openfga-post-install.sh
 
 openfga-up: keycloak-up
 	@echo "Launching OpenFGA..."
@@ -211,20 +188,11 @@ preflight-check:
 	@echo "Running FRED preflight..."
 	bash bin/fred-preflight.sh
 
-docker-up: $(DOCKER_UP_SERVICES) ## Launch the Docker stack (default Swift clean authz; WITH_KEA=true for legacy Kea migration rehearsal)
-	@echo "Authz mode: $(AUTHZ_MODE)"
-	@echo "Demo identity config: $(DEMO_IDENTITY_CONFIG_FILE)"
+docker-up: $(DOCKER_UP_SERVICES) ## Launch the Docker stack (empty realm + empty OpenFGA store; bootstrap the first platform_admin via POST /bootstrap/platform-admin)
 	@echo "OpenFGA model file: $(OPENFGA_MODEL_FILE)"
-	@if [ "$(AUTHZ_MODE)" = "swift-clean" ]; then \
-	  echo "Swift clean seed: alice=platform_admin, gabriel=platform_observer, team roles live only in OpenFGA."; \
-	else \
-	  echo "Kea legacy seed: old app/team roles, intended for migration-script rehearsal."; \
-	fi
-	@if [ "$(SEED_DEMO)" = "false" ]; then \
-	  echo "[SEED_DEMO=false] empty mode — skipping preflight (no demo users to verify)."; \
-	else \
-	  $(MAKE) preflight-check; \
-	fi
+	@echo "Empty realm + empty OpenFGA store. Bootstrap the first platform_admin via"
+	@echo "POST /bootstrap/platform-admin (AUTHZ-07) — see README."
+	$(MAKE) preflight-check
 	@echo "All Docker stack services are running."
 
 docker-down: all-down ## Stop the Docker stack
@@ -357,7 +325,7 @@ k3d-up: k3d-create ## Deploy the full stack into k3d with Helm
 	  helm_images=(); \
 	  while IFS= read -r image; do \
 	    [ -n "$$image" ] && helm_images+=("$$image"); \
-	  done < <(helm template "$(HELM_RELEASE)" "$(HELM_CHART_DIR)" --set withKea=$(WITH_KEA) --set stack=$(STACK) | awk '/image:[[:space:]]*/ {print $$2}' | tr -d '"' | sort -u); \
+	  done < <(helm template "$(HELM_RELEASE)" "$(HELM_CHART_DIR)" --set stack=$(STACK) | awk '/image:[[:space:]]*/ {print $$2}' | tr -d '"' | sort -u); \
 	  if [ "$${#helm_images[@]}" -eq 0 ]; then \
 	    fail "No images found in chart template for prefetch."; \
 	  fi; \
@@ -419,7 +387,6 @@ k3d-up: k3d-create ## Deploy the full stack into k3d with Helm
 		helm upgrade --install "$(HELM_RELEASE)" "$(HELM_CHART_DIR)" \
 		  --namespace "$(K3D_NAMESPACE)" \
 		  --create-namespace \
-		  --set withKea=$(WITH_KEA) \
 		  --set stack=$(STACK) \
 		  --wait \
 		  --wait-for-jobs \
@@ -465,7 +432,6 @@ k3d-deploy: ## Redeploy the full fred-stack Helm chart (no image prefetch)
 	helm upgrade --install "$(HELM_RELEASE)" "$(HELM_CHART_DIR)" \
 		--namespace "$(K3D_NAMESPACE)" \
 		--create-namespace \
-		--set withKea=$(WITH_KEA) \
 		--set stack=$(STACK) \
 		--wait \
 		--wait-for-jobs \
@@ -515,13 +481,13 @@ k3d-status: ## Show pods and services in the k3d namespace
 k3d-airgap-on: ## Enable air-gap mode (block internet except OpenAI API)
 	@if ! kubectl get crd ciliumnetworkpolicies.cilium.io >/dev/null 2>&1; then echo "Cilium CRDs not found; recreate with K3D_USE_CILIUM=true to use air-gap targets."; exit 1; fi
 	@echo "🔒 Enabling air-gap mode in namespace '$(K3D_NAMESPACE)'..."
-	kubectl apply -f helm/fred-stack/policies/cilium-airgap-policy.yaml
+	kubectl apply -f k3d/policies/cilium-airgap-policy.yaml
 	@echo "Air-gap enabled. Only cluster-internal traffic and api.openai.com:443 are allowed."
 
 k3d-airgap-off: ## Disable air-gap mode (restore full internet access)
 	@if ! kubectl get crd ciliumnetworkpolicies.cilium.io >/dev/null 2>&1; then echo "Cilium CRDs not found; nothing to disable."; exit 0; fi
 	@echo "🔓 Disabling air-gap mode in namespace '$(K3D_NAMESPACE)'..."
-	-kubectl delete -f helm/fred-stack/policies/cilium-airgap-policy.yaml
+	-kubectl delete -f k3d/policies/cilium-airgap-policy.yaml
 	@echo "Air-gap disabled. Full internet access restored."
 
 k3d-airgap-status: ## Show active Cilium network policies
@@ -551,40 +517,6 @@ checkpoint-delete: ## Delete a named checkpoint (NAME=<name> required)
 	@test -d "checkpoints/$(NAME)" || (echo "ERROR: Checkpoint '$(NAME)' not found in checkpoints/"; exit 1)
 	rm -rf "checkpoints/$(NAME)"
 	@echo "Checkpoint '$(NAME)' deleted."
-
-# ─── Migration rehearsal — per-topic dump/restore (identity + data) ─────────────
-# These mirror the production migration steps and, crucially, NEVER touch Postgres:
-# after a wipe, fred_kea is empty so the METADATA import (step 3, in the app) is what
-# repopulates it. Capture with docs loaded, then `migration-reset` to retest from scratch.
-
-kea-identity-dump: ## [identity] Dump Keycloak realm (users+groups, IDs preserved) → dumps/identity/
-	@bash bin/kea-identity-dump.sh
-
-kea-identity-restore: ## [identity · step 1] Restore the Keycloak realm dump into the running stack
-	@bash bin/kea-identity-restore.sh
-
-kea-data-dump: ## [data] Dump all kea-* object-storage buckets, key-for-key → dumps/data/
-	@bash bin/kea-data-dump.sh
-
-kea-data-restore: ## [data · step 2] Restore the object-storage dump into the running stack
-	@bash bin/kea-data-restore.sh
-
-kea-snapshot: kea-identity-dump kea-data-dump ## Capture identity+data golden snapshot (run with docs loaded)
-	@echo ""
-	@echo "✓ Golden snapshot captured (identity + data)."
-	@echo "  For step 3, also export the metadata .zip from the kea admin UI (Platform Migration · Export)."
-
-migration-reset: ## Wipe → up EMPTY (no demo seed) → restore identity + data. fred_kea empty, ready for the metadata import (step 3)
-	$(MAKE) docker-wipe
-	$(MAKE) docker-up WITH_KEA=true SEED_DEMO=false
-	$(MAKE) kea-identity-restore
-	$(MAKE) kea-data-restore
-	@echo ""
-	@echo "============================================================"
-	@echo " Ready for METADATA import (step 3)."
-	@echo "   identity restored · data restored · fred_kea EMPTY"
-	@echo "   → run the import in the app / kea admin UI."
-	@echo "============================================================"
 
 ##@ Validation
 VALIDATION_DIR  ?= validation
@@ -626,17 +558,16 @@ FRED_RUNTIME_PUBLIC_BASE ?= http://localhost:8000
 #   make validate-auth-isolation-localhost PYTEST_ARGS=""
 PYTEST_ARGS ?= -x
 
-sync-openfga-model: check-swift-src ## Regenerate BOTH Swift OpenFGA model copies (docker-compose + helm/fred-stack) from the swift fred-core schema (manual - run after any fred-core rebac/schema.fga change). Never touches the Kea model.
-	@python3 -m json.tool $(FRED_CORE_SRC)/fred_core/security/rebac/schema.fga.json docker-compose/openfga/openfga-model.json
-	@python3 -m json.tool $(FRED_CORE_SRC)/fred_core/security/rebac/schema.fga.json helm/fred-stack/files/openfga/openfga-model.json
-	@echo "✓ synced docker-compose/openfga/openfga-model.json and helm/fred-stack/files/openfga/openfga-model.json"
+sync-openfga-model: check-swift-src ## Regenerate BOTH Swift OpenFGA model copies (docker-compose + k3d) from the swift fred-core schema (manual - run after any fred-core rebac/schema.fga change)
+	@python3 -m json.tool $(FRED_CORE_SRC)/fred_core/security/rebac/schema.fga.json docker/openfga/openfga-model.json
+	@python3 -m json.tool $(FRED_CORE_SRC)/fred_core/security/rebac/schema.fga.json k3d/files/openfga/openfga-model.json
+	@echo "✓ synced docker/openfga/openfga-model.json and k3d/files/openfga/openfga-model.json"
 	@echo "  from $(FRED_CORE_SRC)/fred_core/security/rebac/schema.fga.json"
-	@echo "  (docker-compose/openfga/openfga-model.kea.json is untouched - Kea stays on the legacy model)"
 	@echo "  Re-run 'make openfga-post-install' (or 'make docker-up') to push the updated model to the running store."
 
 check-openfga-model-sync: check-swift-src ## Fail fast if either Swift OpenFGA model copy has drifted from the fred-core canonical schema (normalized JSON compare)
 	@canonical="$$(python3 -c "import json,sys; print(json.dumps(json.load(open('$(FRED_CORE_SRC)/fred_core/security/rebac/schema.fga.json')), sort_keys=True))")"; \
-	for copy in docker-compose/openfga/openfga-model.json helm/fred-stack/files/openfga/openfga-model.json; do \
+	for copy in docker/openfga/openfga-model.json k3d/files/openfga/openfga-model.json; do \
 	  actual="$$(python3 -c "import json; print(json.dumps(json.load(open('$$copy')), sort_keys=True))")"; \
 	  if [ "$$canonical" != "$$actual" ]; then \
 	    echo "✗ $$copy has drifted from $(FRED_CORE_SRC)/fred_core/security/rebac/schema.fga.json"; \
@@ -644,63 +575,7 @@ check-openfga-model-sync: check-swift-src ## Fail fast if either Swift OpenFGA m
 	    exit 1; \
 	  fi; \
 	done
-	@echo "✓ docker-compose and helm Swift OpenFGA models match the fred-core canonical schema"
-
-sync-k3d-demo-config: ## Regenerate the k3d/Helm chart's demo identity + Kea model copies from the same canonical sources Docker Compose uses (manual - run after any config/configuration*.yaml or docker-compose/openfga/openfga-model.kea.json change)
-	@python3 -c "import json,yaml; json.dump(yaml.safe_load(open('config/configuration.yaml')), open('helm/fred-stack/files/openfga/openfga-seed.json','w'), indent=2); open('helm/fred-stack/files/openfga/openfga-seed.json','a').write('\n')"
-	@python3 -c "import json,yaml; json.dump(yaml.safe_load(open('config/configuration.kea.yaml')), open('helm/fred-stack/files/openfga/openfga-seed.kea.json','w'), indent=2); open('helm/fred-stack/files/openfga/openfga-seed.kea.json','a').write('\n')"
-	@python3 -m json.tool docker-compose/openfga/openfga-model.kea.json helm/fred-stack/files/openfga/openfga-model.kea.json
-	@echo "✓ synced helm/fred-stack/files/openfga/openfga-seed.json from config/configuration.yaml"
-	@echo "✓ synced helm/fred-stack/files/openfga/openfga-seed.kea.json from config/configuration.kea.yaml"
-	@echo "✓ synced helm/fred-stack/files/openfga/openfga-model.kea.json from docker-compose/openfga/openfga-model.kea.json"
-	@echo "  Re-run 'make k3d-up' (or 'helm upgrade') to push the updated data to the running cluster."
-
-check-k3d-demo-config-sync: ## Fail fast if the k3d/Helm chart's demo identity or Kea model copies have drifted from their canonical sources
-	@swift_seed_canonical="$$(python3 -c "import json,yaml; print(json.dumps(yaml.safe_load(open('config/configuration.yaml')), sort_keys=True))")"; \
-	swift_seed_actual="$$(python3 -c "import json; print(json.dumps(json.load(open('helm/fred-stack/files/openfga/openfga-seed.json')), sort_keys=True))")"; \
-	if [ "$$swift_seed_canonical" != "$$swift_seed_actual" ]; then \
-	  echo "✗ helm/fred-stack/files/openfga/openfga-seed.json has drifted from config/configuration.yaml"; \
-	  echo "  Fix: make sync-k3d-demo-config"; \
-	  exit 1; \
-	fi; \
-	kea_seed_canonical="$$(python3 -c "import json,yaml; print(json.dumps(yaml.safe_load(open('config/configuration.kea.yaml')), sort_keys=True))")"; \
-	kea_seed_actual="$$(python3 -c "import json; print(json.dumps(json.load(open('helm/fred-stack/files/openfga/openfga-seed.kea.json')), sort_keys=True))")"; \
-	if [ "$$kea_seed_canonical" != "$$kea_seed_actual" ]; then \
-	  echo "✗ helm/fred-stack/files/openfga/openfga-seed.kea.json has drifted from config/configuration.kea.yaml"; \
-	  echo "  Fix: make sync-k3d-demo-config"; \
-	  exit 1; \
-	fi; \
-	kea_model_canonical="$$(python3 -c "import json; print(json.dumps(json.load(open('docker-compose/openfga/openfga-model.kea.json')), sort_keys=True))")"; \
-	kea_model_actual="$$(python3 -c "import json; print(json.dumps(json.load(open('helm/fred-stack/files/openfga/openfga-model.kea.json')), sort_keys=True))")"; \
-	if [ "$$kea_model_canonical" != "$$kea_model_actual" ]; then \
-	  echo "✗ helm/fred-stack/files/openfga/openfga-model.kea.json has drifted from docker-compose/openfga/openfga-model.kea.json"; \
-	  echo "  Fix: make sync-k3d-demo-config"; \
-	  exit 1; \
-	fi
-	@echo "✓ k3d/Helm demo identity + Kea model copies match their canonical sources"
-
-check-k3d-authz-mode-render: ## Fail fast if `helm template` doesn't select the Swift path for withKea=false and the Kea path for withKea=true (no cluster contact)
-	@swift_authz_mode="$$(helm template check-render helm/fred-stack --set withKea=false 2>/dev/null | grep -A1 'name: AUTHZ_MODE' | grep 'value:' | sort -u)"; \
-	if ! printf '%s' "$$swift_authz_mode" | grep -q 'value: swift-clean'; then \
-	  echo "✗ helm template --set withKea=false did not select AUTHZ_MODE=swift-clean (got: $$swift_authz_mode)"; \
-	  exit 1; \
-	fi
-	@swift_files="$$(helm template check-render helm/fred-stack --set withKea=false 2>/dev/null | grep 'value: /opt/openfga/' | sort -u)"; \
-	if printf '%s' "$$swift_files" | grep -q '\.kea\.json'; then \
-	  echo "✗ helm template --set withKea=false references a .kea.json file: $$swift_files"; \
-	  exit 1; \
-	fi
-	@kea_authz_mode="$$(helm template check-render helm/fred-stack --set withKea=true 2>/dev/null | grep -A1 'name: AUTHZ_MODE' | grep 'value:' | sort -u)"; \
-	if ! printf '%s' "$$kea_authz_mode" | grep -q 'value: kea-legacy'; then \
-	  echo "✗ helm template --set withKea=true did not select AUTHZ_MODE=kea-legacy (got: $$kea_authz_mode)"; \
-	  exit 1; \
-	fi
-	@kea_files="$$(helm template check-render helm/fred-stack --set withKea=true 2>/dev/null | grep 'value: /opt/openfga/openfga-seed.json\|value: /opt/openfga/openfga-model.json')"; \
-	if [ -n "$$kea_files" ]; then \
-	  echo "✗ helm template --set withKea=true references a Swift (non-.kea) demo/model file: $$kea_files"; \
-	  exit 1; \
-	fi
-	@echo "✓ helm template selects swift-clean for withKea=false and kea-legacy for withKea=true"
+	@echo "✓ docker and k3d Swift OpenFGA models match the fred-core canonical schema"
 
 validate-auth-isolation-localhost: check-swift-src ## Black-box auth/security team-isolation validation against localhost Fred apps + Docker infra
 	@test -x $(VALIDATION_VENV)/bin/python || { \
@@ -759,4 +634,4 @@ validation-report: check-swift-src ## Run the full validation suite (no -x) and 
 	  echo "✓ Report written to $(VALIDATION_REPORT)"; \
 	  exit $$rc
 
-.PHONY: help network-create env-setup keycloak-post-install postgres-up keycloak-up seaweedfs-up opensearch-up clickhouse-up langfuse-up prometheus-up grafana-up openfga-post-install openfga-up temporal-up preflight-check docker-up docker-down all-down docker-wipe docker-destroy k3d-create k3d-up k3d-deploy k3d-restart k3d-redeploy k3d-logs k3d-down k3d-uninstall k3d-delete k3d-wipe k3d-status k3d-airgap-on k3d-airgap-off k3d-airgap-status checkpoint-save checkpoint-restore docker-restart-from-checkpoint checkpoint-list checkpoint-delete kea-identity-dump kea-identity-restore kea-data-dump kea-data-restore kea-snapshot migration-reset check-swift-src sync-openfga-model check-openfga-model-sync sync-k3d-demo-config check-k3d-demo-config-sync check-k3d-authz-mode-render validation-unit-tests validate-auth-isolation-localhost validate-auth-isolation-k3d validation-report
+.PHONY: help network-create env-setup keycloak-post-install postgres-up keycloak-up seaweedfs-up opensearch-up clickhouse-up langfuse-up prometheus-up grafana-up openfga-post-install openfga-up temporal-up preflight-check docker-up docker-down all-down docker-wipe docker-destroy k3d-create k3d-up k3d-deploy k3d-restart k3d-redeploy k3d-logs k3d-down k3d-uninstall k3d-delete k3d-wipe k3d-status k3d-airgap-on k3d-airgap-off k3d-airgap-status checkpoint-save checkpoint-restore docker-restart-from-checkpoint checkpoint-list checkpoint-delete check-swift-src sync-openfga-model check-openfga-model-sync validation-unit-tests validate-auth-isolation-localhost validate-auth-isolation-k3d validation-report

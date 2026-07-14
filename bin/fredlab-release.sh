@@ -20,7 +20,7 @@ COMPONENTS=(
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-VALUES="${REPO_ROOT}/argocd/fred-apps/values-fredlab.yaml"
+VALUES="${REPO_ROOT}/gcp-c1/argocd/fred-apps/values-fredlab.yaml"
 # THE single knob for "where is the Fred monorepo" — used here for the tag AND, via the
 # `$FRED_REPO_DIR` catalog sentinel (config/fredlab-images.tsv), for the build source.
 # Default ~/fred; export FRED_REPO_DIR to point elsewhere. Set it in ONE place only.

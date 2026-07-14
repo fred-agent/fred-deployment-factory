@@ -9,8 +9,8 @@ Mental model: **authenticate once → (validate) → build & bump → push → s
 
 > Scope: this is the end-to-end *operator* guide. The ArgoCD-specific reference (one-time
 > bootstrap, the Foundation/Apps boundary, per-app cutover, admin RBAC) lives in
-> [`../argocd/README.md`](../argocd/README.md); the imperative Foundation (Postgres, Keycloak,
-> OpenFGA, …) lives in [`../helm/fredlab-infra/`](../helm/fredlab-infra/README.md).
+> [`../gcp-c1/argocd/README.md`](../gcp-c1/argocd/README.md); the imperative Foundation (Postgres, Keycloak,
+> OpenFGA, …) lives in [`../gcp-c1/helm/`](../gcp-c1/helm/README.md).
 
 ## Prerequisites
 
@@ -66,7 +66,7 @@ bin/fredlab-gcp-build-prereqs.sh
 
 The one-time **ArgoCD bootstrap** (static IP + DNS, Keycloak OIDC client, install, expose,
 register the `fred-apps` Application) is documented in
-[`../argocd/README.md`](../argocd/README.md#one-time-setup-run-in-order). You only need it
+[`../gcp-c1/argocd/README.md`](../gcp-c1/argocd/README.md#one-time-setup-run-in-order). You only need it
 when standing up a fresh cluster.
 
 ## 3. Validate before you ship (release gate)
@@ -101,7 +101,7 @@ What each step really does:
 - **`fredlab-release.sh all`** — derives the tag `YYYYMMDD-swift-<shortsha>` from `~/fred`
   `HEAD`, submits a Cloud Build for each of the four app-layer images (control-plane-backend,
   fred-frontend, fred-agents, knowledge-flow-backend — the worker reuses the backend image),
-  and rewrites the `# release-tag:` lines in `argocd/fred-apps/values-fredlab.yaml`. It does
+  and rewrites the `# release-tag:` lines in `gcp-c1/argocd/fred-apps/values-fredlab.yaml`. It does
   **not** commit, push, or touch the cluster. Build just one app with
   `bin/fredlab-release.sh <control-plane|frontend|fred-agents|knowledge-flow>`, or reuse an
   already-built image with `bin/fredlab-release.sh <component> <tag>`.

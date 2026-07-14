@@ -1,5 +1,5 @@
 # Local Docker Compose configuration
-/docker-compose/.env
+/docker/.env
 
 # Python/dev tooling
 /.venv/
@@ -20,19 +20,16 @@ key-prod.txt
 *.nosec.yaml
 *.secrets.values.yaml
 fredlab-secrets.values.yaml
-helm/**/fredlab-secrets.values.yaml
-helm/**/fredlab-secrets.values.yaml.*
+gcp-c1/helm/**/fredlab-secrets.values.yaml
+gcp-c1/helm/**/fredlab-secrets.values.yaml.*
 config/fredlab-keycloak-identity.json
 config/fredlab-keycloak-identity.local.json
 
 # Checkpoint snapshots (Docker volume archives — can be large)
 /checkpoints/
 
-# Migration rehearsal dumps (identity = user data, data = document binaries — sensitive, can be large)
-/dumps/
-
-# Generated empty realm template (SEED_DEMO=false) — derived from app-realm.json.template
-/docker-compose/keycloak/app-realm.empty.json.template
+# Generated empty realm template — derived from app-realm.json.template
+/docker/keycloak/app-realm.empty.json.template
 
 # Editor and OS artifacts
 .DS_Store

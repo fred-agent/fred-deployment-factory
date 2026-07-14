@@ -1,0 +1,46 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets:
+          - localhost:9090
+
+  - job_name: keycloak-metrics
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - app-keycloak:9000
+
+  - job_name: openfga-metrics
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - openfga:2112
+
+  - job_name: clickhouse-metrics
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - app-clickhouse:9363
+
+  - job_name: temporal-metrics
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - app-temporal:9090
+
+  - job_name: seaweedfs-s3-metrics
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - app-seaweedfs:9327
+
+  # Add extra target groups as *.yml files in docker/prometheus/targets/.
+  - job_name: static-targets
+    file_sd_configs:
+      - files:
+          - /etc/prometheus/targets/*.yml
+        refresh_interval: 30s

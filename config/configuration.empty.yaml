@@ -1,5 +1,0 @@
-{
-  "_comment": "Empty demo-identity config used by SEED_DEMO=false (migration-reset). No demo teams or users are seeded into Keycloak or OpenFGA; the realm gets clients + service accounts only, and the OpenFGA store is created empty. Identity is then restored from a dump (make kea-identity-restore).",
-  "teams": [],
-  "users": []
-}

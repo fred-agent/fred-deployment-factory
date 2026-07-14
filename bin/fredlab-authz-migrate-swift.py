@@ -16,7 +16,7 @@ Expected local flow:
     --platform-admin <admin-user-or-keycloak-id> \
     --out dumps/authz/swift-authz-plan.json
   python3 bin/fredlab-authz-migrate-swift.py install-model \
-    --model-file docker-compose/openfga/openfga-model.json
+    --model-file docker/openfga/openfga-model.json
   python3 bin/fredlab-authz-migrate-swift.py apply --plan dumps/authz/swift-authz-plan.json
   python3 bin/fredlab-authz-migrate-swift.py validate --plan dumps/authz/swift-authz-plan.json
 """
@@ -35,7 +35,7 @@ from pathlib import Path
 from typing import Any
 
 
-DEFAULT_ENV_FILE = Path("docker-compose/.env")
+DEFAULT_ENV_FILE = Path("docker/.env")
 DEFAULT_OPENFGA_URL = "http://localhost:9080"
 DEFAULT_OPENFGA_STORE = "fred"
 DEFAULT_OPENFGA_TOKEN = "Azerty123_"
@@ -883,7 +883,7 @@ def build_parser() -> argparse.ArgumentParser:
     add_target_relation_args(install)
     install.add_argument(
         "--model-file",
-        default="docker-compose/openfga/openfga-model.json",
+        default="docker/openfga/openfga-model.json",
         help="OpenFGA authorization model JSON file to upload",
     )
     install.add_argument("--dry-run", action="store_true", help="validate and compare without uploading")

@@ -30,10 +30,10 @@ Start with the guide that matches what you're trying to do:
 | --- | --- |
 | 🖥️ Run Fred's services locally (Docker Compose / k3d) | [`docs/LOCAL-DEVELOPMENT.md`](docs/LOCAL-DEVELOPMENT.md) |
 | ☁️ Ship the latest Fred to the live cloud instance | [`docs/DEPLOY-CLOUD.md`](docs/DEPLOY-CLOUD.md) |
-| 🔁 Operate ArgoCD (bootstrap, boundary, cutover, rollback) | [`argocd/README.md`](argocd/README.md) |
-| 🧱 Deploy / understand the GKE Foundation (infra) | [`helm/fredlab-infra/README.md`](helm/fredlab-infra/README.md) · [`DEPLOYMENT-STEPS.md`](helm/fredlab-infra/DEPLOYMENT-STEPS.md) |
-| 🔐 Run the auth / team-isolation validation (release gate) | [`validation/README.md`](validation/README.md) |
-| 🐳 Docker Compose internals (network, `.env`, per-service) | [`docker-compose/README.md`](docker-compose/README.md) |
+| 🔁 Operate ArgoCD (bootstrap, boundary, cutover, rollback) | [`gcp-c1/argocd/README.md`](gcp-c1/argocd/README.md) |
+| 🧱 Deploy / understand the GKE Foundation (infra) | [`gcp-c1/helm/README.md`](gcp-c1/helm/README.md) · [`DEPLOYMENT-STEPS.md`](gcp-c1/helm/DEPLOYMENT-STEPS.md) |
+| 🔐 Run the auth / team-isolation validation (release gate) | now lives in the [`fred`](https://github.com/ThalesGroup/fred) monorepo's own `validation/README.md` — no longer part of this repo |
+| 🐳 Docker Compose internals (network, `.env`, per-service) | [`docker/README.md`](docker/README.md) |
 
 ---
 

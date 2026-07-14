@@ -13,7 +13,7 @@ set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-CHART_DIR="${REPO_ROOT}/argocd/fred-apps"
+CHART_DIR="${REPO_ROOT}/gcp-c1/argocd/fred-apps"
 
 command -v helm >/dev/null 2>&1 || { echo "Missing required tool: helm"; exit 1; }
 
