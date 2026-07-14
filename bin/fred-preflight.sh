@@ -59,8 +59,12 @@ LANGFUSE_S3_HTTP_RETRIES="${LANGFUSE_S3_HTTP_RETRIES:-10}"
 STACK="${STACK:-base}"
 
 REQUIRED_CLIENTS=(app agentic knowledge-flow control-plane fred-evaluation-worker)
-REQUIRED_APP_CLIENT_ROLES=(admin editor viewer)
 EXPECTED_SERVICE_APP_ROLE="service_agent"
+# Pre-AUTHZ-05 user-facing app roles. The realm import (AUTHZ-07) never
+# defines them anymore - team and platform roles live in OpenFGA, never as
+# Keycloak app roles. Their presence on a from-scratch realm is a critical
+# regression, not a missing prerequisite.
+LEGACY_APP_CLIENT_ROLES=(admin editor viewer)
 EXPECTED_GROUPS_SCOPE_NAME="groups-scope"
 EXPECTED_GROUPS_MAPPER_NAME="groups"
 
@@ -190,6 +194,12 @@ extra_lines() {
   local expected="$1"
   local actual="$2"
   comm -13 <(printf '%s\n' "$expected" | sed '/^$/d' | sort -u) <(printf '%s\n' "$actual" | sed '/^$/d' | sort -u) || true
+}
+
+common_lines() {
+  local a="$1"
+  local b="$2"
+  comm -12 <(printf '%s\n' "$a" | sed '/^$/d' | sort -u) <(printf '%s\n' "$b" | sed '/^$/d' | sort -u) || true
 }
 
 contains_line() {
@@ -349,16 +359,16 @@ if [[ -n "${ADM}" ]]; then
     ((APP_CLIENT_ROLE_GAPS+=1))
     mark_critical "Skipping app role checks: missing client UUID for 'app'"
   else
-    expected_app_roles_lines="$(printf '%s\n' "${REQUIRED_APP_CLIENT_ROLES[@]}" | sort -u)"
+    legacy_app_roles_lines="$(printf '%s\n' "${LEGACY_APP_CLIENT_ROLES[@]}" | sort -u)"
     info "Token claim prerequisite: resource_access.app.roles comes from effective app client roles"
     info "No groups claim is required or consumed by any Swift authorization path (AUTHZ-05/06 - OpenFGA is the sole authorization source)"
 
     if app_client_roles="$(curl -fsS -H "Authorization: Bearer ${ADM}" "$KC/admin/realms/${REALM}/clients/${APP_CLIENT_UUID}/roles?first=0&max=200" 2>/dev/null | jq -r '.[].name' | sort -u)"; then
       info "App client roles: $(sorted_lines_to_csv "$app_client_roles")"
-      missing_app_client_roles="$(missing_lines "$expected_app_roles_lines" "$app_client_roles")"
-      if [[ -n "$missing_app_client_roles" ]]; then
+      present_legacy_app_roles="$(common_lines "$legacy_app_roles_lines" "$app_client_roles")"
+      if [[ -n "$present_legacy_app_roles" ]]; then
         ((APP_CLIENT_ROLE_GAPS+=1))
-        mark_critical "Missing app client roles: $(sorted_lines_to_csv "$missing_app_client_roles")"
+        mark_critical "Legacy app client role(s) present on an identity-only realm (AUTHZ-07 - must not exist): $(sorted_lines_to_csv "$present_legacy_app_roles")"
       fi
       if ! contains_line "$EXPECTED_SERVICE_APP_ROLE" "$app_client_roles"; then
         ((APP_CLIENT_ROLE_GAPS+=1))
@@ -707,7 +717,7 @@ info "Keycloak clients: ${FOUND_CLIENTS}/${#REQUIRED_CLIENTS[@]} present"
 info "Residual Keycloak groups (expected 0): ${RESIDUAL_GROUPS}"
 info "Keycloak realm name gaps (expected 'app'): ${REALM_NAME_GAPS}"
 info "Keycloak realm existence gaps: ${REALM_EXISTENCE_GAPS}"
-info "App client role definition gaps (admin/editor/viewer/service_agent): ${APP_CLIENT_ROLE_GAPS}"
+info "App client role definition gaps (service_agent required; admin/editor/viewer forbidden as legacy): ${APP_CLIENT_ROLE_GAPS}"
 info "groups-scope / groups mapper gaps: ${APP_GROUPS_SCOPE_GAPS}"
 info "Service-client config gaps (agentic): ${AGENTIC_CLIENT_CONFIG_GAPS}"
 info "Service-client config gaps (knowledge-flow): ${KNOWLEDGE_FLOW_CLIENT_CONFIG_GAPS}"

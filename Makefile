@@ -578,6 +578,11 @@ check-pure-infrastructure: ## Offline guard: fail if a tracked artifact carries 
 	  [ "$$has_service_agent" = "true" ] || { echo "✗ $$template: app:service_agent client role is missing"; exit 1; }; \
 	done
 	@echo "✓ docker and k3d realm templates: zero users, zero groups, only app:service_agent"
+	@echo "▶ fred-preflight.sh must not require legacy app:admin/editor/viewer roles"
+	@! grep -qE '^REQUIRED_APP_CLIENT_ROLES=' bin/fred-preflight.sh || { echo "✗ bin/fred-preflight.sh reintroduces REQUIRED_APP_CLIENT_ROLES - admin/editor/viewer must never be required, only flagged as legacy"; exit 1; }
+	@grep -qE '^LEGACY_APP_CLIENT_ROLES=\(admin editor viewer\)' bin/fred-preflight.sh || { echo "✗ bin/fred-preflight.sh must flag admin/editor/viewer as legacy via LEGACY_APP_CLIENT_ROLES"; exit 1; }
+	@grep -qE '^EXPECTED_SERVICE_APP_ROLE="service_agent"' bin/fred-preflight.sh || { echo "✗ bin/fred-preflight.sh must still require app:service_agent via EXPECTED_SERVICE_APP_ROLE"; exit 1; }
+	@echo "✓ fred-preflight.sh requires service_agent and forbids admin/editor/viewer as legacy"
 	@echo "▶ no dead OpenFGA seed in the k3d chart"
 	@test ! -f k3d/files/openfga/openfga-seed.json || { echo "✗ k3d/files/openfga/openfga-seed.json exists (business/demo data does not belong in this repo)"; exit 1; }
 	@! grep -q "openfga-seed" k3d/templates/configmaps.yaml || { echo "✗ k3d/templates/configmaps.yaml still publishes an openfga-seed key"; exit 1; }

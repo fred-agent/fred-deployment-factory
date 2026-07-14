@@ -287,6 +287,22 @@ Status: `[ ]` todo · `[~]` in progress · `[x]` done. IDs are referenced from t
         OpenFGA seed again, or the Makefile regains a target pointing at the removed local
         `validation/`.
 
+      **(2026-07-14) Correction: `bin/fred-preflight.sh` still required the removed legacy
+      roles.** The pass above emptied the realm templates but missed that
+      `bin/fred-preflight.sh` (run by `make docker-up` via `preflight-check`) still declared
+      `REQUIRED_APP_CLIENT_ROLES=(admin editor viewer)` and marked their absence critical - a
+      from-scratch `docker-up` therefore failed its own preflight. Fixed: the script now
+      enforces the actual invariant - `EXPECTED_SERVICE_APP_ROLE="service_agent"` is required,
+      and `LEGACY_APP_CLIENT_ROLES=(admin editor viewer)` must be **absent**, flagged critical
+      if any reappear. `check-pure-infrastructure` gained a check for this exact regression
+      (fails if `REQUIRED_APP_CLIENT_ROLES` reappears, or if the script stops requiring
+      `service_agent` / forbidding admin/editor/viewer). Also: the two realm templates were
+      reformatted wholesale by the original pass's `jq` rewrite (~10k lines of pure
+      whitespace/style churn); they're now edited as targeted text splices against the
+      `05dda9e^` original, restoring the prior Keycloak-export formatting and reducing the
+      cumulative template diff to the intended semantic change only (verified by normalized-JSON
+      projection, see the correction commit).
+
       **Not covered by this pass (still open):** Step 5 (Helm/GKE/AKS bootstrap-secret
       handling, a bootstrap-marker upgrade strategy, a Swift-native cloud onboarding
       replacement for the removed `bin/fredlab-keycloak-identity.sh` - **SEC-1**/**SEC-2** and
