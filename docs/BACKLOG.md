@@ -383,3 +383,10 @@ the **git host + GitOps mechanism**, and the **three classification knobs** chan
       mechanism, C2 knobs (RFC §6). **Gated:** build on the hardened GKE chart (`CHART-2`) and,
       ideally, the monorepo chart (`CHART-1` / ThalesGroup/fred#1839) — do **not** fork a
       parallel model to stand C2 up first.
+      **(2026-07-15, AUTHZ-07)** The GKE reference now wires the root platform-admin
+      bootstrap secret (`FRED_BOOTSTRAP_TOKEN` / `secretKeyRef` on the existing Foundation
+      Secret's `CONTROL_PLANE_BOOTSTRAP_TOKEN` key — see `gcp-c1/argocd/fred-apps/templates/
+      control-plane-backend.yaml`); `fred`'s `deploy/charts/fred` chart owns the same portable
+      contract (`fred`'s `deploy/README.md` "Root bootstrap secret contract"). A future AKS/Flux
+      overlay for this item reuses that exact contract unchanged — it supplies its own namespace,
+      pre-existing Secret name/key, and Foundation endpoints; no new bootstrap mechanism to design.

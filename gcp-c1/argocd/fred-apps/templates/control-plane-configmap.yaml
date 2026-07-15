@@ -40,6 +40,10 @@ data:
       port: {{ .Values.controlPlane.containerPort }}
       log_level: {{ .Values.controlPlane.config.logLevel | quote }}
       gcu_version: {{ .Values.controlPlane.config.gcuVersion | quote }}
+      # Root platform-admin bootstrap secret (AUTHZ-07). Same variable name as
+      # the canonical Fred chart's own default (deploy/README.md in fred) —
+      # the Deployment injects it via secretKeyRef, never a literal value.
+      bootstrap_token_env_var: FRED_BOOTSTRAP_TOKEN
       default_team_max_resources_storage_size: {{ .Values.controlPlane.config.defaultTeamMaxResourcesStorageSize }}
       personal_max_resources_storage_size: {{ .Values.controlPlane.config.personalMaxResourcesStorageSize }}
 

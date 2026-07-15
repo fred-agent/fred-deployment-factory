@@ -120,6 +120,18 @@ spec:
               value: {{ .Values.controlPlane.config.opensearch.password | quote }}
             - name: TEMPORAL_ADDRESS
               value: {{ .Values.controlPlane.config.temporalAddress | quote }}
+            # Root platform-admin bootstrap secret (AUTHZ-07). References the
+            # existing Foundation Secret's own dedicated key; this Apps-layer
+            # chart never creates a Secret of its own. `optional: false` makes
+            # Kubernetes itself refuse to start the pod if the key is missing —
+            # fail-closed at the platform level, matching the canonical Fred
+            # chart's own bootstrap-secret contract (deploy/README.md in fred).
+            - name: FRED_BOOTSTRAP_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fredlab-infra.secretName" . }}
+                  key: CONTROL_PLANE_BOOTSTRAP_TOKEN
+                  optional: false
             {{- range $name, $value := .Values.controlPlane.extraEnv }}
             - name: {{ $name }}
               value: {{ $value | quote }}
