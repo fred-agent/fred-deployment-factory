@@ -38,6 +38,100 @@ Extended-profile endpoints: Prometheus `:9090`, Grafana `:3002`, ClickHouse `:81
 Langfuse `:3001`. Per-service targets also exist (`make keycloak-up`, `make opensearch-up`,
 `make openfga-up`, `make temporal-up`, …).
 
+## Full bootstrap walkthrough: from `docker-up` to a validated platform
+
+`make docker-up` only gives you empty infra (§"What `docker-up` / `k3d-up` provisions"
+below) — zero users, zero teams, zero apps running. This is the exact, copy-pasteable
+sequence to go from that empty infra to a `platform_admin` account, demo data, all four
+Fred apps running prod-like, and both automated and UI-driven validation green. **Every
+step matters — skipping step 1 is the single most common cause of "works on my machine,
+fails in review."** All `make` commands below run inside the sibling `fred` monorepo
+checkout, not this repo.
+
+**0. Infra up** (this repo)
+
+```bash
+make docker-up   # Keycloak, Postgres, OpenFGA, OpenSearch, Temporal — infra only, zero business data
+```
+
+**1. Every Fred app points at `configuration_prod.yaml` — always, everywhere**
+
+Use `make run-prod` for every app below, never plain `make run`. `run-prod` sets
+`CONFIG_FILE=./config/configuration_prod.yaml` for you — the one config each app ships
+that actually matches deployed behaviour (real ports, `bootstrap_token_file`, real
+backends). Plain `make run` uses dev shortcuts (`configuration.yaml`) that silently
+diverge from it.
+
+**2. Start control-plane only** (`fred/apps/control-plane-backend`)
+
+```bash
+cd apps/control-plane-backend
+make run-prod          # binds :8222 — leave this terminal running
+```
+
+**3. Become `platform_admin` — the AUTHZ-07 root bootstrap** (second terminal, same directory)
+
+```bash
+make bootstrap-token    # writes target/bootstrap-token; never overwrites, never printed by the app
+```
+
+Self-register a user through **Keycloak's own** registration screen — no Fred frontend
+needed yet: open `http://localhost:8080/realms/app/account` → "Register". Then:
+
+```bash
+TOKEN=$(curl -s http://localhost:8080/realms/app/protocol/openid-connect/token \
+  -d grant_type=password -d client_id=app \
+  -d username=<your-username> -d password=<your-password> \
+  | python3 -c 'import sys,json;print(json.load(sys.stdin)["access_token"])')
+
+curl -s -X POST http://localhost:8222/control-plane/v1/bootstrap/platform-admin \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d "{\"token\": \"$(cat target/bootstrap-token)\"}"
+```
+
+One-shot and permanent — a second call, ever, returns `409`. You are now the platform's
+root `platform_admin`.
+
+**4. Import the demo dataset**
+
+```bash
+make build-demo-bundle    # zips tests/fixtures/import_export/demo_provisioning/ → target/demo-provisioning-bundle.zip
+
+curl -s -X POST http://localhost:8222/control-plane/v1/import-export/import \
+  -H "Authorization: Bearer $TOKEN" -F file=@target/demo-provisioning-bundle.zip
+```
+
+Same effect as uploading from **Admin → Migration** in the UI once the frontend is up.
+Creates every demo identity/team/role (`alice`, `bob`, `marc`, …) — see the `fred`
+monorepo's `validation/README.md` for who's who and why. Import runs async (returns a
+`task_id`); give it a few seconds before moving on.
+
+**5. Start the rest of the apps — still prod-like**
+
+```bash
+cd apps/fred-agents && make run-prod &             # :8000
+cd apps/knowledge-flow-backend && make run-prod &   # :8111
+cd apps/frontend && make run &                      # :5173 — needed for step 7
+```
+
+**6. Run the automated cross-app validation suite** (from the `fred` repo root)
+
+```bash
+make validation-report
+```
+
+Logs in as every demo user from step 4 and asserts the full authorization matrix
+end-to-end. Writes `validation/report.md` (PASS/FAIL grouped by real-world claim, not
+by test name) and returns pytest's exit code. See `fred`'s `validation/README.md` for
+what it checks.
+
+**7. Finish with the UI self-test** (VALID-02 — real pipeline, no mocks, browser-driven)
+
+Log into the frontend (`http://localhost:5173`) as the `platform_admin` from step 3 →
+**Admin → Self-test** (`/admin/self-test`) → run it. It drives create-folder → ingest →
+real agent execution → assert marker → delete through the actual browser UI — the one
+check the pytest suite in step 6 cannot do for you.
+
 ## Stack profiles: `base` vs `extended`
 
 `STACK` selects which services launch, for both `make docker-up` and `make k3d-up`:
@@ -85,11 +179,10 @@ Databases created: `fred` (Fred), `keycloak`, `data` (tabular/vector), `openfga`
 Every identity and role - platform (`platform_admin`/`platform_observer`) and team
 (`team_admin`/`team_editor`/`team_analyst`/`team_member`) - is provisioned afterwards by
 `fred`/control-plane-backend's declarative platform-import feature
-(`POST /import-export/import`), not by this repo. See
-[`../docker/README.md`](../docker/README.md) ("Platform and demo-data provisioning now lives
-in `fred`") for the exact sequence (`make build-demo-bundle` + **Admin → Migration** upload),
-or self-register the first user and complete the AUTHZ-07 `/bootstrap` flow to become
-`platform_admin`.
+(`POST /import-export/import`), not by this repo. See "Full bootstrap walkthrough" above
+for the exact step-by-step sequence (`make bootstrap-token` → become `platform_admin` →
+`make build-demo-bundle` + import), and [`../docker/README.md`](../docker/README.md)
+("Platform and demo-data provisioning now lives in `fred`") for the underlying contract.
 
 ## Configuration
 
