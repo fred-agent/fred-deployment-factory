@@ -33,6 +33,11 @@ Environment overrides:
   GCP_SERVICE_ACCOUNT   (agents / knowledge-flow; default: fredlab-knowledge-flow-gcs@<project>.iam.gserviceaccount.com)
   VERTEX_PROJECT        (knowledge-flow; default: PROJECT_ID)
   API_IMAGE, WORKER_IMAGE  (evaluation; defaults: fred-evaluation-api / fred-evaluation-worker)
+  REGISTRY_BASE         override the image registry+namespace prefix entirely (default:
+                        <REGION>-docker.pkg.dev/<PROJECT_ID>/<REPOSITORY>, i.e. Artifact
+                        Registry). Each component still appends its own image short name.
+                        e.g. REGISTRY_BASE=ghcr.io/thalesgroup/fred-agent to pull public
+                        CI-built images directly instead of Artifact Registry.
 EOF
 }
 
@@ -70,7 +75,10 @@ if [[ ! -f "${SECRET_VALUES_FILE}" ]]; then
   exit 1
 fi
 
-img_repo() { printf '%s\n' "${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/$1"; }
+# REGISTRY_BASE lets a caller point every image at a different registry+namespace
+# (e.g. ghcr.io/thalesgroup/fred-agent) instead of this project's Artifact Registry —
+# see `usage()`. Default behaviour (Artifact Registry) is unchanged when unset.
+img_repo() { printf '%s/%s\n' "${REGISTRY_BASE:-${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}}" "$1"; }
 
 need_tag() {
   if [[ -z "${TAG}" ]]; then

@@ -18,7 +18,7 @@ spec:
         - values-fredlab.yaml
   destination:
     server: https://kubernetes.default.svc
-    namespace: default
+    namespace: fred-demo
   # No `automated:` block on purpose — MANUAL sync for the first cutover so the diff
   # is reviewed before anything is applied. Add automated + selfHeal once it is green:
   #   syncPolicy:
@@ -27,5 +27,8 @@ spec:
   #       selfHeal: true
   syncPolicy:
     syncOptions:
-      - CreateNamespace=false
+      # CreateNamespace=true: the destination namespace is declared here, in
+      # git, and created idempotently by ArgoCD on sync — no manual `kubectl
+      # create namespace` step for this or any future instance.
+      - CreateNamespace=true
       - ServerSideApply=true

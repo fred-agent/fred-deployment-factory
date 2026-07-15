@@ -59,6 +59,31 @@ bin/fredlab-build fred-agents            "$TAG"
 bin/fredlab-build knowledge-flow-backend "$TAG"
 ```
 
+## C6 — Named instances (namespace-per-instance)
+
+**Convention:** each complete Fred instance (Foundation + Apps) lives in its own
+Kubernetes namespace, named for the instance, not `default`. Both the Foundation
+chart (`bin/fredlab-infra-deploy.sh`, `NAMESPACE=<name>`, `--create-namespace`
+idempotent) and the Apps `Application` manifest
+(`gcp-c1/argocd/applications/fred-apps.yaml`'s `destination.namespace` +
+`syncOptions: [CreateNamespace=true]`) create the namespace idempotently —
+no manual `kubectl create namespace` step, for this or any future instance.
+
+**Live instances:**
+
+| Namespace | Role | Hostnames | Static IP | Image source | Since |
+|-----------|------|-----------|-----------|---------------|-------|
+| `fred-demo` | primary/demo instance | `studio.playground.fredlab.dev`, `keycloak.playground.fredlab.dev`, `temporal.playground.fredlab.dev` (unchanged — same DNS, reused static IP) | `fredlab-playground-ip` (8.233.26.38, reserved GCP global address, reused from the prior `default`-namespace deployment) | ghcr.io v2.1.1 (C5) for the 4 core apps; fred-evaluation deferred, still on Artifact Registry at its last-shipped tag | 2026-07-15 |
+
+**Known gap (not solved by this convention):** the Foundation deploy is still one
+imperative `helm upgrade` per instance — `NAMESPACE=<name>` plus the (untracked,
+per-machine) `SECRET_VALUES_FILE` fully determine an instance, but nothing
+today bundles "this instance's namespace + hostnames + static-IP name + secrets
+file path" into one committed, reusable artifact. Two named instances currently
+means two sets of env vars an operator has to remember or re-derive from this
+table — a real per-instance values overlay (CHART-2/INST-1 territory) would
+close that gap. Track it there rather than solving it ad hoc per instance.
+
 ## C5 — ghcr.io as the image source (proposed 2026-07-15, pending ratification)
 
 **Proposal:** for routine redeploys, source the four app images directly from the images
@@ -234,3 +259,5 @@ overrides (`KEEP_COUNT`, `LOG_RETENTION_DAYS`, …) rather than editing the scri
 | 2026-06-24 | C4 | Retention & cost control scripts + budget    | Dimitri     | Adopted  |
 | 2026-06-25 | C2.2 | `fredlab-ship` one-command build+fast-redeploy | Dimitri   | Adopted  |
 | 2026-06-25 | — | Folded per-app deploy scripts into generic `fredlab-deploy.sh` | Dimitri | Adopted  |
+| 2026-07-15 | C5 | ghcr.io as the image source, replacing local Cloud Build for routine redeploys | Dimitri | Proposed — pending 👍 from Sébastien & Arthur |
+| 2026-07-15 | C6 | Named instances: namespace-per-instance, `CreateNamespace=true`/`--create-namespace` idempotent | Dimitri | Adopted |

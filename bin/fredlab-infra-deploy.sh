@@ -35,6 +35,7 @@ current_values_file=""
 args=(
   upgrade --install fredlab-infra "${CHART_DIR}"
   --namespace "${NAMESPACE}"
+  --create-namespace
   -f "${SECRET_VALUES_FILE}"
   --timeout 10m
 )
