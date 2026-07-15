@@ -105,16 +105,25 @@
                     "can_administer_analysts": {},
                     "can_administer_editors": {},
                     "can_administer_members": {},
+                    "can_contribute_wikis": {},
                     "can_manage_evaluation_corpus": {},
+                    "can_manage_wiki_governance": {},
+                    "can_manage_wiki_lifecycle": {},
+                    "can_manage_wiki_schema": {},
                     "can_read": {},
                     "can_read_conversations": {},
                     "can_read_conversations_for_evaluation": {},
                     "can_read_members": {},
+                    "can_read_wikis": {},
+                    "can_review_wiki_changes": {},
                     "can_run_evaluations": {},
+                    "can_run_wiki_autonomous_apply": {},
+                    "can_run_wiki_guarded_auto_apply": {},
                     "can_update_agents": {},
                     "can_update_info": {},
                     "can_update_resources": {},
                     "can_use_team_agents": {},
+                    "can_use_wiki_review_assistant": {},
                     "organization": {
                         "directly_related_user_types": [
                             {
@@ -181,6 +190,11 @@
                         "relation": "team_admin"
                     }
                 },
+                "can_contribute_wikis": {
+                    "computedUserset": {
+                        "relation": "team_editor"
+                    }
+                },
                 "can_manage_evaluation_corpus": {
                     "union": {
                         "child": [
@@ -195,6 +209,21 @@
                                 }
                             }
                         ]
+                    }
+                },
+                "can_manage_wiki_governance": {
+                    "computedUserset": {
+                        "relation": "team_admin"
+                    }
+                },
+                "can_manage_wiki_lifecycle": {
+                    "computedUserset": {
+                        "relation": "team_admin"
+                    }
+                },
+                "can_manage_wiki_schema": {
+                    "computedUserset": {
+                        "relation": "team_admin"
                     }
                 },
                 "can_read": {
@@ -228,6 +257,16 @@
                         "relation": "team_member"
                     }
                 },
+                "can_read_wikis": {
+                    "computedUserset": {
+                        "relation": "team_member"
+                    }
+                },
+                "can_review_wiki_changes": {
+                    "computedUserset": {
+                        "relation": "team_admin"
+                    }
+                },
                 "can_run_evaluations": {
                     "union": {
                         "child": [
@@ -242,6 +281,16 @@
                                 }
                             }
                         ]
+                    }
+                },
+                "can_run_wiki_autonomous_apply": {
+                    "computedUserset": {
+                        "relation": "team_admin"
+                    }
+                },
+                "can_run_wiki_guarded_auto_apply": {
+                    "computedUserset": {
+                        "relation": "team_admin"
                     }
                 },
                 "can_update_agents": {
@@ -262,6 +311,11 @@
                 "can_use_team_agents": {
                     "computedUserset": {
                         "relation": "team_member"
+                    }
+                },
+                "can_use_wiki_review_assistant": {
+                    "computedUserset": {
+                        "relation": "team_admin"
                     }
                 },
                 "organization": {
