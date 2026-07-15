@@ -24,7 +24,7 @@ driven by GitLab**.
 | --- | --- |
 | `docs/rfc/RFC-0001-gitops-deployment-pattern.md` | the deployment pattern + every decision (Foundation/Apps split, the boundary, the classification model §6, the pipeline gap) |
 | `docs/BACKLOG.md` | the work, by theme — **the current direction lives here** |
-| `argocd/README.md` | the GitOps app-layer ops (cutover procedure, sync) |
+| `gcp-c1/argocd/README.md` | the GitOps app-layer ops (cutover procedure, sync) |
 
 The polished *vision* of the pattern is a slide deck in the `fred-website` repo
 (`slides/fred_deployment_pattern.md`). These docs stay **decisions + gaps** only — don't
@@ -44,7 +44,7 @@ network segmentation, admin exposure (RFC §6).
 ## The roadmap — DO THIS IN ORDER (do not skip ahead)
 
 1. **Make the GKE / C1 model rock-solid and simple FIRST.** Consolidate into one clean, tested
-   Apps-layer chart, de-duplicating `argocd/fred-apps` ↔ `helm/fredlab-infra` (backlog
+   Apps-layer chart, de-duplicating `gcp-c1/argocd/fred-apps` ↔ `gcp-c1/helm` (backlog
    `CHART-2`). This is the shared reference everything else inherits.
 2. **THEN promote it to the monorepo.** Make `fred`'s `deploy/charts/fred` the single
    Apps-layer source; this repo consumes it pinned (tracking issue **ThalesGroup/fred#1839**,

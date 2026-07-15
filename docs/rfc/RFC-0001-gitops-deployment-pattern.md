@@ -30,14 +30,14 @@ out-of-band secrets layer.
 
 | Layer | Contents | Mechanism | Source of truth | Change-rate |
 | --- | --- | --- | --- | --- |
-| **A — infra** | Postgres, OpenSearch (stateful); Keycloak, OpenFGA, Temporal; the shared Ingress, ManagedCertificates, BackendConfigs, `fredlab-infra-secrets` | imperative Helm (`helm/fredlab-infra`, release `fredlab-infra`), driven by `bin/fredlab-deploy.sh` | the chart + reviewed `--set`/values | rare, deliberate |
-| **B — apps** | cp, kf-backend, kf-worker, fa, fr (Deployments, Services, ConfigMaps, fa/kf ServiceAccounts) | **GitOps** — ArgoCD `Application: fred-apps` rendering `argocd/fred-apps` | **git** (`values-fredlab.yaml` tags) | every release |
+| **A — infra** | Postgres, OpenSearch (stateful); Keycloak, OpenFGA, Temporal; the shared Ingress, ManagedCertificates, BackendConfigs, `fredlab-infra-secrets` | imperative Helm (`gcp-c1/helm`, release `fredlab-infra`), driven by `bin/fredlab-deploy.sh` | the chart + reviewed `--set`/values | rare, deliberate |
+| **B — apps** | cp, kf-backend, kf-worker, fa, fr (Deployments, Services, ConfigMaps, fa/kf ServiceAccounts) | **GitOps** — ArgoCD `Application: fred-apps` rendering `gcp-c1/argocd/fred-apps` | **git** (`values-fredlab.yaml` tags) | every release |
 | **C — secrets/identity** | `fredlab-secrets.values.yaml`, `config/fredlab-keycloak-identity.json` | injected at deploy; **git-ignored** | external (today: local file) | — |
 
 ### Rationale
 - **Blast-radius isolation.** Stateful, irreplaceable data (Postgres/OpenSearch) sits only in A.
   The app chart is *forbidden in code* from rendering infra/Ingress/certs/Secret
-  (`argocd/fred-apps/Chart.yaml`). A bad app deploy cannot delete a database.
+  (`gcp-c1/argocd/fred-apps/Chart.yaml`). A bad app deploy cannot delete a database.
 - **Mechanism matches risk.** Infra is rare + dangerous → imperative + reviewed. Apps are
   frequent → GitOps (audit trail, reconcile, easy rollback).
 - **One-way dependency: B → A.** Apps reference infra by **stable name** only (DNS + named
@@ -50,7 +50,7 @@ out-of-band secrets layer.
    or any StatefulSet/Service owned by infra.
 2. Apps find infra **by name**, not by co-deploying it. Names are a frozen contract.
 3. A new secret key / Keycloak client / database is an **infra change** (touch
-   `helm/fredlab-infra`), never an app change.
+   `gcp-c1/helm`), never an app change.
 4. Bootstrap order is fixed: infra up → identity provisioned → apps synced.
 
 ## 4. What was done (2026-06-26 cutover)
@@ -58,7 +58,7 @@ out-of-band secrets layer.
 All four apps moved from the imperative `fredlab-infra` release to the ArgoCD `fred-apps`
 chart, **pinned to the already-running tag `20260625-swift-cdee43b6` (no image change)**.
 
-- Per app: ported templates into `argocd/fred-apps/templates` (they share the
+- Per app: ported templates into `gcp-c1/argocd/fred-apps/templates` (they share the
   `fredlab-infra.*` helpers — a verbatim copy), added a value block to `values.yaml`
   (`enabled: false`) + enable/image pin to `values-fredlab.yaml`.
 - **Validation gate:** `helm template` + a **byte-for-byte diff of the rendered

@@ -22,7 +22,7 @@ fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-CHART_DIR="${CHART_DIR:-${REPO_ROOT}/helm/fredlab-infra}"
+CHART_DIR="${CHART_DIR:-${REPO_ROOT}/gcp-c1/helm}"
 SECRET_VALUES_FILE="${SECRET_VALUES_FILE:-${CHART_DIR}/fredlab-secrets.values.yaml}"
 NAMESPACE="${NAMESPACE:-default}"
 

@@ -2,7 +2,7 @@
 set -Eeuo pipefail
 
 # fredlab-argocd-install.sh — install/upgrade ArgoCD in the `argocd` namespace.
-# Idempotent single setup point: config from argocd/argocd-values.yaml; the Keycloak OIDC
+# Idempotent single setup point: config from gcp-c1/argocd/argocd-values.yaml; the Keycloak OIDC
 # client secret is fetched at runtime (never in git). If the `argocd` Keycloak client does
 # not exist yet, OIDC is skipped and the rest installs — run fredlab-argocd-keycloak-client.sh
 # then re-run this to enable login.
@@ -26,7 +26,7 @@ esac
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-VALUES_FILE="${REPO_ROOT}/argocd/argocd-values.yaml"
+VALUES_FILE="${REPO_ROOT}/gcp-c1/argocd/argocd-values.yaml"
 
 NAMESPACE="${NAMESPACE:-argocd}"
 RELEASE="${RELEASE:-argocd}"

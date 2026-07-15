@@ -15,15 +15,15 @@ Status: `[ ]` todo · `[~]` in progress · `[x]` done. IDs are referenced from t
 ## Proven / done (baseline — do not regress)
 
 - [x] All four apps (cp, kf+worker, fa, fr) under ArgoCD `fred-apps`, pinned to the running tag.
-- [x] A/B boundary enforced in `argocd/fred-apps/Chart.yaml`; apps reference infra by name.
+- [x] A/B boundary enforced in `gcp-c1/argocd/fred-apps/Chart.yaml`; apps reference infra by name.
 - [x] Config-faithful cutover method (render + byte-diff vs live ConfigMap) — keep using it.
 - [x] Frontend edge decoupled via `fredFrontend.ingressEnabled` (Ingress/cert/BackendConfig
       stay in infra; no cert churn on workload moves).
 - [x] `/ready` status probe hardened against Autopilot cold-start (`bin/fredlab-status.sh`).
 - [x] Rollout strategy `maxSurge: 0 / maxUnavailable: 1` on all fred-apps Deployments (mirrored
-      in `helm/fredlab-infra`) — replaces pods in place so a small cluster doesn't need a surge
+      in `gcp-c1/helm`) — replaces pods in place so a small cluster doesn't need a surge
       node. Without it, four simultaneous surges + a node-autoprovision GCE-quota hit wedge pods
-      in `Pending`. See `argocd/README.md` "Small-cluster rollout note".
+      in `Pending`. See `gcp-c1/argocd/README.md` "Small-cluster rollout note".
 
 ---
 
@@ -44,7 +44,7 @@ Status: `[ ]` todo · `[~]` in progress · `[x]` done. IDs are referenced from t
       evaluate External-Secrets-Operator / Vault / SOPS-in-git. Pick one. (RFC Q2)
 - [ ] **SEC-2** Move Keycloak identity (`config/fredlab-keycloak-identity.json`) provisioning to
       the same governed source; define rotation.
-- [ ] **SEC-3** (2026-07-13) `bin/fredlab-keycloak-identity.sh` is Kea-legacy only (explicitly
+- [x] **SEC-3** (2026-07-13) `bin/fredlab-keycloak-identity.sh` is Kea-legacy only (explicitly
       marked as such in the script and `config/fredlab-keycloak-identity.example.json` -
       see **VALID-7**): it provisions Keycloak groups/app-roles, never a Swift team. There is
       still no Swift-native cloud onboarding path for real GKE users - build one that (a)
@@ -57,6 +57,17 @@ Status: `[ ]` todo · `[~]` in progress · `[x]` done. IDs are referenced from t
       writing OpenFGA tuples directly from a script (bypasses `team_metadata`, exactly the
       anti-pattern **VALID-7** removed from `openfga-post-install.sh`).
 
+      **(2026-07-14) Closed by removal, not replacement.** As part of this session's broader
+      "`fred-deployment-factory` = pure infrastructure" cleanup (kea-legacy mode removed
+      entirely - see **VALID-11**), `bin/fredlab-keycloak-identity.sh` and
+      `config/fredlab-keycloak-identity.example.json` were deleted outright rather than
+      rewritten Swift-native. This item's original premise - "replace the kea-legacy-only
+      script" - no longer applies once the script itself is gone, so it is marked done. The
+      underlying need described above - a Swift-native cloud onboarding path for real GKE
+      users - is still real and still unbuilt. It remains a separate, still-open concern the
+      developer may want to pick up later; this closure does not solve it, it only records
+      that the script this item tracked no longer exists.
+
 ## VALID — auth/isolation validation (release gate)
 
 - [x] **VALID-1** Swift clean demo identity matrix (2026-07-10, superseded by **VALID-7**
@@ -67,7 +78,7 @@ Status: `[ ]` todo · `[~]` in progress · `[x]` done. IDs are referenced from t
       (no groups) in `swift-clean`, and OpenFGA carries `platform_admin`/`platform_observer`
       directly from `docker-up`; `team_admin`/`team_editor`/`team_member`/`team_analyst`
       tuples are bootstrapped later via the control-plane APIs, not seeded here.
-- [x] **VALID-2** Fixed real drift: `docker-compose/openfga/openfga-model.json` was a
+- [x] **VALID-2** Fixed real drift: `docker/openfga/openfga-model.json` was a
       hand-maintained copy that had diverged from `fred-core`'s actual `schema.fga` (missing
       most organization capabilities, missing `can_read_conversations`). Synced it and added
       `make sync-openfga-model` (manual, not CI) to prevent recurrence.
@@ -108,25 +119,25 @@ Status: `[ ]` todo · `[~]` in progress · `[x]` done. IDs are referenced from t
       has no high-signal black-box workflow in this local suite yet.
 - [x] **VALID-7** (2026-07-13, #1912/AUTHZ-05) swift-clean vs kea-legacy convergence pass:
       `make sync-openfga-model` now regenerates **both** Swift OpenFGA model copies
-      (`docker-compose/openfga/openfga-model.json` and
-      `helm/fred-stack/files/openfga/openfga-model.json`) from `fred-core`'s canonical
+      (`docker/openfga/openfga-model.json` and
+      `k3d/files/openfga/openfga-model.json`) from `fred-core`'s canonical
       `schema.fga.json`; a new `make check-openfga-model-sync` static guard fails fast on
-      drift. `docker-compose/keycloak/keycloak-post-install.sh` and
-      `docker-compose/openfga/openfga-post-install.sh` are now `AUTHZ_MODE`-gated so
+      drift. `docker/keycloak/keycloak-post-install.sh` and
+      `docker/openfga/openfga-post-install.sh` are now `AUTHZ_MODE`-gated so
       `swift-clean` creates zero Keycloak groups, attaches no `groups-scope`, and seeds zero
       team-role OpenFGA tuple from a Keycloak group id (teams are bootstrapped later via the
       control-plane APIs, never from `openfga-post-install`); `kea-legacy`
       (`WITH_KEA=true`) keeps the prior group-based rehearsal behavior unchanged.
       Service-account Keycloak client roles `query-groups`/`view-groups`/`account:view-groups`
       were removed for `agentic`/`knowledge-flow`/`control-plane` in both
-      `docker-compose/keycloak/keycloak-post-install.sh` and the GKE `helm/fredlab-infra`
+      `docker/keycloak/keycloak-post-install.sh` and the GKE `gcp-c1/helm`
       Foundation values (no app calls a Keycloak group-admin API - confirmed against
       `fred`'s source). `bin/fred-preflight.sh` no longer requires a groups claim, a
       `groups-scope` client scope, or Keycloak team groups for `swift-clean`, and no longer
       expects team-role OpenFGA tuples to exist at `docker-up` time (they only exist once
       the validation harness bootstraps them) - the GREEN verdict for `swift-clean` no
       longer depends on any Keycloak group. Left out of this pass, closed by **VALID-9**:
-      the k3d `helm/fred-stack` chart was not yet `AUTHZ_MODE`-aware, and the shared
+      the k3d `k3d` chart was not yet `AUTHZ_MODE`-aware, and the shared
       `app-realm.json.template` (both Compose and Helm copies) still carried orphaned demo
       groups from an old, unrelated realm export.
 - [x] **VALID-8** (2026-07-13, #1912/AUTHZ-06) `validation/scenarios/test_team_registry_authz.py`
@@ -147,8 +158,8 @@ Status: `[ ]` todo · `[~]` in progress · `[x]` done. IDs are referenced from t
       distinction, and a neutral identity with no role at all.
 - [x] **VALID-9** (2026-07-13, #1912/AUTHZ-05/06) Closes the gap **VALID-7** left open, plus
       four correctness fixes found while closing it:
-      - `docker-compose/keycloak/app-realm.json.template` and
-        `helm/fred-stack/files/keycloak/app-realm.json.template` (the shared realm-import
+      - `docker/keycloak/app-realm.json.template` and
+        `k3d/files/keycloak/app-realm.json.template` (the shared realm-import
         used by **both** authz modes) had **orphaned demo groups from an old, unrelated realm
         export** (`bidgpt`/`kast`/`poltechng`/`thanos`, not `northbridge`/`fredlab`/`swiftpost`)
         baked in, plus `query-groups`/`view-groups` granted directly to the
@@ -157,7 +168,7 @@ Status: `[ ]` todo · `[~]` in progress · `[x]` done. IDs are referenced from t
         import is now genuinely group-free for both modes; kea-legacy's post-install still
         creates its own groups (and attaches groups-scope) at runtime from
         `config/configuration.kea.yaml`, so nothing regresses for the migration rehearsal.
-      - `helm/fred-stack` (k3d) is now `AUTHZ_MODE`-aware end to end: the chart passes
+      - `k3d` (k3d) is now `AUTHZ_MODE`-aware end to end: the chart passes
         `AUTHZ_MODE`/`DEMO_IDENTITY_CONFIG_FILE`/`OPENFGA_MODEL_FILE`/`OPENFGA_SEED_FILE` to
         the post-install Jobs based on `.Values.withKea` (mirrors `WITH_KEA` in Docker
         Compose); `keycloak-post-install-k8s.sh` and `openfga-post-install.sh` (k8s copies)
@@ -167,18 +178,18 @@ Status: `[ ]` todo · `[~]` in progress · `[x]` done. IDs are referenced from t
         wraps `docker exec`; there is no equivalent inside a k8s Job pod, so this script could
         not have completed a real run before. Converted to the same `kc_http_*` REST calls the
         rest of the file already used.
-      - `helm/fred-stack/files/openfga/openfga-seed.json` (the k3d Swift demo identity - was
+      - `k3d/files/openfga/openfga-seed.json` (the k3d Swift demo identity - was
         hand-maintained and had drifted: missing elena, and priya missing her AUTHZ-06
         cumulative roles) and a new `openfga-seed.kea.json` / `openfga-model.kea.json` (k3d
         had no Kea-shaped data source at all before this) are now **generated copies** of
         `config/configuration.yaml` / `config/configuration.kea.yaml` /
-        `docker-compose/openfga/openfga-model.kea.json` - `make sync-k3d-demo-config`
+        `docker/openfga/openfga-model.kea.json` - `make sync-k3d-demo-config`
         regenerates them, `make check-k3d-demo-config-sync` fails fast on drift (mirrors
         `sync-openfga-model`/`check-openfga-model-sync` for the schema itself).
       - `bin/fredlab-keycloak-identity.sh` (manual cloud onboarding, still pre-AUTHZ-05
         Keycloak-groups-as-teams) is now unambiguously marked Kea-legacy-only: a runtime
         banner, a `_notice` field in `config/fredlab-keycloak-identity.example.json`, and
-        `helm/fredlab-infra/README.md` / `DEPLOYMENT-STEPS.md` no longer present it as (or
+        `gcp-c1/helm/README.md` / `DEPLOYMENT-STEPS.md` no longer present it as (or
         near) the Swift onboarding path. **SEC-3** tracks building the real one.
       - `validation/scenarios/test_cumulative_team_roles.py` and
         `test_team_registry_authz.py`'s mutating fixtures/tests now use try/finally so a
@@ -188,7 +199,7 @@ Status: `[ ]` todo · `[~]` in progress · `[x]` done. IDs are referenced from t
         instead of firing it blind.
       - `validation/README.md` no longer lists priya as an identity-only control (she is
         AUTHZ-06's cumulative-role persona) and now documents elena explicitly; the earlier
-        "byte-identical" claim about the OpenFGA model sync in `docker-compose/README.md` is
+        "byte-identical" claim about the OpenFGA model sync in `docker/README.md` is
         corrected to "normalized-JSON-identical" (`check-openfga-model-sync` compares
         `json.dumps(..., sort_keys=True)`, not raw bytes); `docs/LOCAL-DEVELOPMENT.md` no
         longer claims k3d is unmigrated.
@@ -198,6 +209,106 @@ Status: `[ ]` todo · `[~]` in progress · `[x]` done. IDs are referenced from t
         Swift model leaks them) and `make check-k3d-authz-mode-render` (`helm template`
         actually selects `AUTHZ_MODE=swift-clean` + Swift files for `withKea=false` and
         `AUTHZ_MODE=kea-legacy` + Kea files for `withKea=true`).
+- [x] **VALID-10** (2026-07-14) `make docker-up WITH_DEMO_USERS=true` (swift-clean only; default
+      stays `false`, so the official `make docker-up` empty-realm guarantee is unchanged) now seeds
+      `config/configuration.yaml`'s demo Keycloak identities (alice, bob, phil, ...) via the same
+      `apply_demo_identity_config`/kcadm mechanism already used for `WITH_KEA=true`, just pointed at
+      the populated config instead of `configuration.empty.yaml`. Identity only - no Keycloak groups,
+      no app roles, no OpenFGA tuples. Unblocks `validation-report` and manual demo/testing against
+      swift-clean without baking demo users into the realm import itself; team/role provisioning for
+      these identities is a separate, in-progress control-plane declarative import feature
+      (AUTHZ-07 Part 2, `fred` monorepo - see **SEC-3**).
+
+      **(2026-07-14) Superseded and removed the same day.** `WITH_DEMO_USERS` and the
+      `apply_demo_identity_config` mechanism it drove have been removed entirely, as part of
+      the same session's "`fred-deployment-factory` = pure infrastructure" cleanup that closed
+      **SEC-3** and dropped kea-legacy mode (see **VALID-11**). `make docker-up` no longer has
+      any demo-identity flag, in either mode. The need this item served is now met by
+      `fred`/control-plane-backend's own declarative platform-import feature: `POST
+      /import-export/import` reads
+      `apps/control-plane-backend/tests/fixtures/import_export/demo_provisioning/`
+      (`manifest.json` + `users.json`, in the `fred` monorepo) and, in one call, creates any
+      missing Keycloak identity *and* grants every configured team/platform role - see
+      `docs/swift/rfc/PLATFORM-IMPORT-RFC.md` §10 in `fred`. `cd apps/control-plane-backend &&
+      make build-demo-bundle` packages that fixture for upload via **Admin → Migration**.
+- [x] **VALID-11** (2026-07-14, AUTHZ-07 Step 4, issue #1912, PR #1957) Session summary -
+      `fred-deployment-factory` → pure infrastructure. This entry ties together the day's
+      changes recorded individually above:
+      kea-legacy mode (`WITH_KEA`/`AUTHZ_MODE`, the `bin/kea-*.sh` dump/restore scripts,
+      `bin/fredlab-keycloak-identity.sh`, `config/configuration.kea.yaml`, the Kea OpenFGA
+      model files) removed entirely (closes **SEC-3** by removal - see its note above); the
+      demo-identity seeding mechanism added earlier the same session (`WITH_DEMO_USERS`,
+      **VALID-10**) removed too, superseded by `fred`'s own declarative platform-import
+      feature. `make docker-up` / `make k3d-up` now have exactly one mode and no flags: an
+      empty Keycloak realm (self-registration enabled) and an empty OpenFGA store (Swift
+      model only) - zero users, zero groups, zero tuples. Every demo identity and role now
+      lives in one place, `fred`'s
+      `apps/control-plane-backend/tests/fixtures/import_export/demo_provisioning/` fixture,
+      imported via `POST /import-export/import`.
+
+      `validation/` (this repo's former auth/isolation release-gate suite) has moved to
+      `fred/validation/` as a same-repo sibling of the demo-provisioning fixture it reads -
+      run it with `cd ../fred && make validation-report`. This repo's own `validation/`
+      directory, its `SWIFT_SRC`-derived `FRED_SDK_SRC`/`FRED_RUNTIME_SRC` plumbing, and the
+      `validation-unit-tests` / `validate-auth-isolation-localhost` / `validate-auth-isolation-k3d`
+      / `validation-report` Makefile targets are removed; `check-swift-src` /
+      `sync-openfga-model` / `check-openfga-model-sync` keep the minimal `FRED_CORE_SRC` path
+      they still need. `README.md`, `docker/README.md`, `docs/LOCAL-DEVELOPMENT.md`, and
+      `docs/DEPLOY-CLOUD.md` now point at the new location instead of a local path.
+
+      Closing this pass, three more items landed:
+      - **Keycloak realm templates genuinely empty.** Both tracked copies
+        (`docker/keycloak/app-realm.json.template`, `k3d/files/keycloak/app-realm.json.template`)
+        now ship `.users: []` and `.groups: []` - no more demo users (`alice`/`bob`/`phil`) or
+        pre-baked service-account role assignments hiding in the source, and no more
+        `make keycloak-up`-time `app-realm.empty.json.template` filtering step (`KC_REALM_TEMPLATE`
+        removed; Compose mounts the canonical template directly). The legacy `app`-client roles
+        `admin`/`editor`/`viewer` are deleted from both templates' `roles.client.app` - only
+        `service_agent` remains, and **it is not legacy**: it is the current M2M marker that
+        the post-install scripts now grant explicitly to every confidential service account
+        (`agentic`, `knowledge-flow`, `control-plane`,
+        `fred-evaluation-worker` in Docker) after Keycloak auto-creates its
+        `service-account-<clientId>` user from `serviceAccountsEnabled=true`. The k3d
+        post-install (`keycloak-post-install-k8s.sh`) previously relied entirely on the
+        now-removed pre-baked `.users[].clientRoles` for this - it now resolves and grants
+        roles to the three k3d service accounts explicitly, reusing (not duplicating) the
+        `wait_for_service_account_username`/`ensure_user_client_role` helpers that already
+        existed in the file but were dead code.
+      - **Dead OpenFGA seed removed.** `k3d/files/openfga/openfga-seed.json` (a full demo
+        identity/team population the current `openfga-post-install.sh` never reads) and its
+        `k3d/templates/configmaps.yaml` ConfigMap entry are deleted.
+      - **Direct OpenFGA mutator removed.** `bin/fredlab-authz-migrate-swift.py` (a plan/apply
+        script that wrote OpenFGA tuples directly from mapped legacy Keycloak roles) is deleted
+        outright, not replaced - it was a second provisioning path parallel to the bootstrap +
+        declarative-import model this repo now exclusively relies on.
+      - **New offline regression guard.** `make check-pure-infrastructure` fails fast (no
+        live stack needed) if either realm template regains a user/group, `service_agent`
+        disappears or a legacy `app:admin/editor/viewer` role reappears, the k3d chart ships an
+        OpenFGA seed again, or the Makefile regains a target pointing at the removed local
+        `validation/`.
+
+      **(2026-07-14) Correction: `bin/fred-preflight.sh` still required the removed legacy
+      roles.** The pass above emptied the realm templates but missed that
+      `bin/fred-preflight.sh` (run by `make docker-up` via `preflight-check`) still declared
+      `REQUIRED_APP_CLIENT_ROLES=(admin editor viewer)` and marked their absence critical - a
+      from-scratch `docker-up` therefore failed its own preflight. Fixed: the script now
+      enforces the actual invariant - `EXPECTED_SERVICE_APP_ROLE="service_agent"` is required,
+      and `LEGACY_APP_CLIENT_ROLES=(admin editor viewer)` must be **absent**, flagged critical
+      if any reappear. `check-pure-infrastructure` gained a check for this exact regression
+      (fails if `REQUIRED_APP_CLIENT_ROLES` reappears, or if the script stops requiring
+      `service_agent` / forbidding admin/editor/viewer). Also: the two realm templates were
+      reformatted wholesale by the original pass's `jq` rewrite (~10k lines of pure
+      whitespace/style churn); they're now edited as targeted text splices against the
+      `05dda9e^` original, restoring the prior Keycloak-export formatting and reducing the
+      cumulative template diff to the intended semantic change only (verified by normalized-JSON
+      projection, see the correction commit).
+
+      **Not covered by this pass (still open):** Step 5 (Helm/GKE/AKS bootstrap-secret
+      handling, a bootstrap-marker upgrade strategy, a Swift-native cloud onboarding
+      replacement for the removed `bin/fredlab-keycloak-identity.sh` - **SEC-1**/**SEC-2** and
+      the onboarding half of **SEC-3**'s note remain open); no live k3d/Docker/GKE run was
+      performed to confirm runtime behavior end-to-end, only offline validation (`jq`, `helm
+      lint`/`template`, `bash -n`, `check-pure-infrastructure`).
 
 ## ENV — multi-environment
 
@@ -212,8 +323,8 @@ Status: `[ ]` todo · `[~]` in progress · `[x]` done. IDs are referenced from t
       Apps-layer source**; each factory consumes it (pinned) + supplies its Foundation + env
       values. Sequencing: (1) prove one clean, tested chart here first (CHART-2), then (2) promote
       to the monorepo + cut GKE over. Monorepo tracking issue: ThalesGroup/fred#1839. (RFC §7)
-- [ ] **CHART-2** De-duplicate templates: the 11 `argocd/fred-apps/templates/*` app files are
-      hand-kept copies of `helm/fredlab-infra/templates/*` and **have already drifted once** (the
+- [ ] **CHART-2** De-duplicate templates: the 11 `gcp-c1/argocd/fred-apps/templates/*` app files are
+      hand-kept copies of `gcp-c1/helm/templates/*` and **have already drifted once** (the
       `maxSurge` block landed in the ArgoCD copy first; re-synced by hand — and `_helpers.tpl`
       still differs). Extract a shared library/sub-chart so they **cannot** drift. Until then, any
       app-template edit must be applied to **both** copies (see CHART-3 for the guard).
@@ -272,3 +383,10 @@ the **git host + GitOps mechanism**, and the **three classification knobs** chan
       mechanism, C2 knobs (RFC §6). **Gated:** build on the hardened GKE chart (`CHART-2`) and,
       ideally, the monorepo chart (`CHART-1` / ThalesGroup/fred#1839) — do **not** fork a
       parallel model to stand C2 up first.
+      **(2026-07-15, AUTHZ-07)** The GKE reference now wires the root platform-admin
+      bootstrap secret (`FRED_BOOTSTRAP_TOKEN` / `secretKeyRef` on the existing Foundation
+      Secret's `CONTROL_PLANE_BOOTSTRAP_TOKEN` key — see `gcp-c1/argocd/fred-apps/templates/
+      control-plane-backend.yaml`); `fred`'s `deploy/charts/fred` chart owns the same portable
+      contract (`fred`'s `deploy/README.md` "Root bootstrap secret contract"). A future AKS/Flux
+      overlay for this item reuses that exact contract unchanged — it supplies its own namespace,
+      pre-existing Secret name/key, and Foundation endpoints; no new bootstrap mechanism to design.

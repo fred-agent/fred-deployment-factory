@@ -9,8 +9,8 @@ Mental model: **authenticate once → (validate) → build & bump → push → s
 
 > Scope: this is the end-to-end *operator* guide. The ArgoCD-specific reference (one-time
 > bootstrap, the Foundation/Apps boundary, per-app cutover, admin RBAC) lives in
-> [`../argocd/README.md`](../argocd/README.md); the imperative Foundation (Postgres, Keycloak,
-> OpenFGA, …) lives in [`../helm/fredlab-infra/`](../helm/fredlab-infra/README.md).
+> [`../gcp-c1/argocd/README.md`](../gcp-c1/argocd/README.md); the imperative Foundation (Postgres, Keycloak,
+> OpenFGA, …) lives in [`../gcp-c1/helm/`](../gcp-c1/helm/README.md).
 
 ## Prerequisites
 
@@ -66,23 +66,24 @@ bin/fredlab-gcp-build-prereqs.sh
 
 The one-time **ArgoCD bootstrap** (static IP + DNS, Keycloak OIDC client, install, expose,
 register the `fred-apps` Application) is documented in
-[`../argocd/README.md`](../argocd/README.md#one-time-setup-run-in-order). You only need it
+[`../gcp-c1/argocd/README.md`](../gcp-c1/argocd/README.md#one-time-setup-run-in-order). You only need it
 when standing up a fresh cluster.
 
 ## 3. Validate before you ship (release gate)
 
 The black-box **auth / team-isolation** suite — it proves Keycloak identity + OpenFGA
-authorization + cross-team isolation against a *running* stack. Run it against your local
-stack as the release gate for a `swift` candidate:
+authorization + cross-team isolation against a *running* stack — now lives in the `fred`
+monorepo's own `validation/`, not in this repo. Run it against your local stack as the release
+gate for a `swift` candidate:
 
 ```bash
-make validate-auth-isolation-localhost
+cd ../fred && make validation-report
 ```
 
-It spins up a venv, installs the Fred libs editable, and runs the scenarios in `validation/`
-against the localhost control-plane + runtime. See [`../validation/README.md`](../validation/README.md)
-for the auth matrix it asserts. (A k3d/ingress variant, `validate-auth-isolation-k3d`, is
-planned but not yet implemented.)
+See `fred`'s `validation/README.md` for the auth matrix it asserts. This repo keeps only the
+offline guards that don't need a running stack: `make check-openfga-model-sync` (OpenFGA schema
+drift) and `make check-pure-infrastructure` (no demo users/groups/legacy roles/dead seeds
+shipped by this repo's tracked artifacts).
 
 ## 4. Ship it — the steady-state loop
 
@@ -101,7 +102,7 @@ What each step really does:
 - **`fredlab-release.sh all`** — derives the tag `YYYYMMDD-swift-<shortsha>` from `~/fred`
   `HEAD`, submits a Cloud Build for each of the four app-layer images (control-plane-backend,
   fred-frontend, fred-agents, knowledge-flow-backend — the worker reuses the backend image),
-  and rewrites the `# release-tag:` lines in `argocd/fred-apps/values-fredlab.yaml`. It does
+  and rewrites the `# release-tag:` lines in `gcp-c1/argocd/fred-apps/values-fredlab.yaml`. It does
   **not** commit, push, or touch the cluster. Build just one app with
   `bin/fredlab-release.sh <control-plane|frontend|fred-agents|knowledge-flow>`, or reuse an
   already-built image with `bin/fredlab-release.sh <component> <tag>`.
