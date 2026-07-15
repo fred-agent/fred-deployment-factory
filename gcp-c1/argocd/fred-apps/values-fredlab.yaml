@@ -10,19 +10,21 @@
 controlPlane:
   enabled: true
   image:
-    repository: europe-west1-docker.pkg.dev/fredlab-playground/fredlab-repo/control-plane-backend
-    # The release-tag marker lets bin/fredlab-release.sh rewrite this line. Format:
-    # YYYYMMDD-swift-<shortsha>. Change = commit + push -> ArgoCD deploys it.
-    tag: "20260707-swift-565d884f" # release-tag: control-plane-backend
+    # C5 (OPERATING-CONVENTIONS.md, proposed 2026-07-15): sourced from ghcr.io,
+    # built by fred's own Build-and-push-docker.yml on the code/v* tag, rather
+    # than a local Cloud Build round. The control-plane-migration Job (imperative
+    # gcp-c1/helm chart, bin/fredlab-deploy.sh) still needs an Artifact Registry
+    # copy — mirrored once from this same digest, see OPERATING-CONVENTIONS.md C5.
+    repository: ghcr.io/thalesgroup/fred-agent/control-plane-backend
+    tag: "v2.1.1" # release-tag: control-plane-backend
 
 controlPlaneWorker:
   enabled: true
   image:
     # Same image as the backend (worker runs the control_plane_backend.main_worker
-    # entrypoint off it). Shares the control-plane-backend release-tag marker, so
-    # bin/fredlab-release.sh bumps this line together with the backend.
-    repository: europe-west1-docker.pkg.dev/fredlab-playground/fredlab-repo/control-plane-backend
-    tag: "20260707-swift-565d884f" # release-tag: control-plane-backend
+    # entrypoint off it). Shares the control-plane-backend release-tag marker.
+    repository: ghcr.io/thalesgroup/fred-agent/control-plane-backend
+    tag: "v2.1.1" # release-tag: control-plane-backend
 
 fredAgents:
   enabled: true
@@ -30,8 +32,8 @@ fredAgents:
     # GSA with roles/aiplatform.user, bound to KSA default/fred-agents via Workload Identity.
     gcpServiceAccount: fredlab-knowledge-flow-gcs@fredlab-playground.iam.gserviceaccount.com
   image:
-    repository: europe-west1-docker.pkg.dev/fredlab-playground/fredlab-repo/fred-agents
-    tag: "20260707-swift-565d884f" # release-tag: fred-agents
+    repository: ghcr.io/thalesgroup/fred-agent/fred-agents
+    tag: "v2.1.1" # release-tag: fred-agents
 
 knowledgeFlow:
   enabled: true
@@ -39,8 +41,8 @@ knowledgeFlow:
     # GSA with roles/storage.objectAdmin + roles/aiplatform.user, bound via Workload Identity.
     gcpServiceAccount: fredlab-knowledge-flow-gcs@fredlab-playground.iam.gserviceaccount.com
   image:
-    repository: europe-west1-docker.pkg.dev/fredlab-playground/fredlab-repo/knowledge-flow-backend
-    tag: "20260708-swift-c8e9f0fc" # release-tag: knowledge-flow-backend
+    repository: ghcr.io/thalesgroup/fred-agent/knowledge-flow-backend
+    tag: "v2.1.1" # release-tag: knowledge-flow-backend
   config:
     models:
       # Vertex AI project (matches the imperative deploy's VERTEX_PROJECT=PROJECT_ID).
@@ -52,14 +54,14 @@ knowledgeFlowWorker:
     gcpServiceAccount: fredlab-knowledge-flow-gcs@fredlab-playground.iam.gserviceaccount.com
   image:
     # Same image as the backend (worker runs the main_worker entrypoint off it).
-    repository: europe-west1-docker.pkg.dev/fredlab-playground/fredlab-repo/knowledge-flow-backend
-    tag: "20260708-swift-c8e9f0fc" # release-tag: knowledge-flow-backend
+    repository: ghcr.io/thalesgroup/fred-agent/knowledge-flow-backend
+    tag: "v2.1.1" # release-tag: knowledge-flow-backend
 
 fredFrontend:
   enabled: true
   image:
-    repository: europe-west1-docker.pkg.dev/fredlab-playground/fredlab-repo/fred-frontend
-    tag: "20260707-swift-565d884f" # release-tag: fred-frontend
+    repository: ghcr.io/thalesgroup/fred-agent/frontend
+    tag: "v2.1.1" # release-tag: fred-frontend
 
 # fred-agent-evaluator (API + worker) — LIVE. Internal-only (no ingress). Two distinct
 # images. LLM-as-judge on Vertex Gemini via Workload Identity. DB migrated (alembic head).
