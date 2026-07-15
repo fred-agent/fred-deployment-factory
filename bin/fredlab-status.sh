@@ -102,6 +102,10 @@ for bin in kubectl jq; do
   command -v "$bin" >/dev/null 2>&1 || { echo "Missing required tool: $bin" >&2; exit 2; }
 done
 
+to_lower() {
+  printf '%s' "$1" | tr '[:upper:]' '[:lower:]'
+}
+
 if [[ -t 1 ]]; then
   G=$'\e[32m'; R=$'\e[31m'; Y=$'\e[33m'; D=$'\e[2m'; B=$'\e[1m'; N=$'\e[0m'
 else
@@ -194,10 +198,10 @@ gcs_check_bucket() {
     gcs_check "bucket gs://${bucket}" 0 "missing"
     return
   fi
-  loc="$(jq -r '(.location // "")' <<< "$desc")"; loc="${loc,,}"
+  loc="$(jq -r '(.location // "")' <<< "$desc")"; loc="$(to_lower "$loc")"
   pap="$(jq -r '(.public_access_prevention // .iamConfiguration.publicAccessPrevention // "unknown")' <<< "$desc")"
   ubla="$(jq -r '((.uniform_bucket_level_access | if type=="object" then .enabled else . end) // .iamConfiguration.uniformBucketLevelAccess.enabled // false) | tostring' <<< "$desc")"
-  [[ "$loc" == "${region,,}" ]] || problems+=("location=$loc")
+  [[ "$loc" == "$(to_lower "$region")" ]] || problems+=("location=$loc")
   [[ "$pap" == "enforced" ]] || problems+=("pap=$pap")
   [[ "$ubla" == "true" ]] || problems+=("ubla=$ubla")
   if [[ ${#problems[@]} -eq 0 ]]; then

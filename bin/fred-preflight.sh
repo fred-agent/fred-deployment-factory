@@ -155,8 +155,12 @@ json_post() {
     -d "$payload"
 }
 
+to_lower() {
+  printf '%s' "$1" | tr '[:upper:]' '[:lower:]'
+}
+
 is_truthy() {
-  case "${1,,}" in
+  case "$(to_lower "$1")" in
     true|1|yes|on|always) return 0 ;;
     *) return 1 ;;
   esac
@@ -164,7 +168,7 @@ is_truthy() {
 
 # Langfuse is only deployed in the "extended" stack profile.
 langfuse_expected() {
-  [[ "${STACK,,}" != "base" ]]
+  [[ "$(to_lower "$STACK")" != "base" ]]
 }
 
 words_to_sorted_lines() {
@@ -212,6 +216,22 @@ keycloak_client_uuid() {
   local client_id="$1"
   curl -fsS -H "Authorization: Bearer ${ADM}" \
     "$KC/admin/realms/${REALM}/clients?clientId=${client_id}" | jq -r '.[0].id // empty'
+}
+
+# Bash 3.2 (macOS default) has no associative arrays. Emulate a
+# client_id -> uuid map with indirect variable names instead.
+client_uuid_var() {
+  printf 'CLIENT_UUID_%s' "${1//-/_}"
+}
+
+set_client_uuid() {
+  printf -v "$(client_uuid_var "$1")" '%s' "$2"
+}
+
+get_client_uuid() {
+  local var
+  var="$(client_uuid_var "$1")"
+  printf '%s' "${!var:-}"
 }
 
 keycloak_service_account_user_json() {
@@ -328,7 +348,6 @@ EVAL_WORKER_CLIENT_CONFIG_GAPS=0
 APP_CLIENT_ROLE_GAPS=0
 APP_GROUPS_SCOPE_GAPS=0
 
-declare -A CLIENT_UUIDS=()
 if [[ -n "${ADM}" ]]; then
   step "Service account permissions (Keycloak)"
   for client_id in app agentic knowledge-flow control-plane fred-evaluation-worker realm-management account; do
@@ -339,7 +358,7 @@ if [[ -n "${ADM}" ]]; then
       mark_critical "Cannot resolve Keycloak client UUID for '${client_id}'"
       continue
     fi
-    CLIENT_UUIDS["$client_id"]="$client_uuid"
+    set_client_uuid "$client_id" "$client_uuid"
     info "Client '${client_id}' UUID: ${client_uuid}"
   done
 
@@ -354,7 +373,7 @@ if [[ -n "${ADM}" ]]; then
   info "control-plane expected realm-management.manage-users: enabled"
 
   step "App client role definitions and token-claim prerequisites (Keycloak)"
-  APP_CLIENT_UUID="${CLIENT_UUIDS[app]:-}"
+  APP_CLIENT_UUID="$(get_client_uuid app)"
   if [[ -z "$APP_CLIENT_UUID" ]]; then
     ((APP_CLIENT_ROLE_GAPS+=1))
     mark_critical "Skipping app role checks: missing client UUID for 'app'"
@@ -400,7 +419,7 @@ if [[ -n "${ADM}" ]]; then
   fi
 
   for svc in agentic knowledge-flow control-plane fred-evaluation-worker; do
-    svc_uuid="${CLIENT_UUIDS[$svc]:-}"
+    svc_uuid="$(get_client_uuid "$svc")"
     if [[ -z "$svc_uuid" ]]; then
       mark_critical "Skipping '${svc}' permission checks: missing client UUID"
       continue
@@ -448,14 +467,17 @@ if [[ -n "${ADM}" ]]; then
     acc_roles=""
     app_roles=""
 
-    if [[ -n "${CLIENT_UUIDS[realm-management]:-}" ]]; then
-      rm_roles="$(keycloak_user_client_roles "$sa_user_id" "${CLIENT_UUIDS[realm-management]}" 2>/dev/null || true)"
+    realm_mgmt_uuid="$(get_client_uuid realm-management)"
+    if [[ -n "$realm_mgmt_uuid" ]]; then
+      rm_roles="$(keycloak_user_client_roles "$sa_user_id" "$realm_mgmt_uuid" 2>/dev/null || true)"
     fi
-    if [[ -n "${CLIENT_UUIDS[account]:-}" ]]; then
-      acc_roles="$(keycloak_user_client_roles "$sa_user_id" "${CLIENT_UUIDS[account]}" 2>/dev/null || true)"
+    account_uuid="$(get_client_uuid account)"
+    if [[ -n "$account_uuid" ]]; then
+      acc_roles="$(keycloak_user_client_roles "$sa_user_id" "$account_uuid" 2>/dev/null || true)"
     fi
-    if [[ -n "${CLIENT_UUIDS[app]:-}" ]]; then
-      app_roles="$(keycloak_user_client_roles "$sa_user_id" "${CLIENT_UUIDS[app]}" 2>/dev/null || true)"
+    app_uuid_for_roles="$(get_client_uuid app)"
+    if [[ -n "$app_uuid_for_roles" ]]; then
+      app_roles="$(keycloak_user_client_roles "$sa_user_id" "$app_uuid_for_roles" 2>/dev/null || true)"
     fi
 
     info "realm-management roles: $(sorted_lines_to_csv "$rm_roles")"
@@ -689,7 +711,10 @@ if command -v docker >/dev/null 2>&1; then
     if [[ "${seaweedfs_bucket_listing_rc}" != "0" ]]; then
       mark_warning "Could not list buckets from app-seaweedfs; skipping Langfuse bucket existence checks"
     else
-      mapfile -t langfuse_unique_buckets < <(
+      langfuse_unique_buckets=()
+      while IFS= read -r bucket_line; do
+        langfuse_unique_buckets+=("$bucket_line")
+      done < <(
         printf '%s\n' "${LANGFUSE_EVENT_BUCKET}" "${LANGFUSE_MEDIA_BUCKET}" "${LANGFUSE_EXPORT_BUCKET}" \
           | sed '/^$/d' | sort -u
       )

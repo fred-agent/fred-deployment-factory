@@ -37,8 +37,12 @@ read_env_file_var() {
   printf '%s' "$value"
 }
 
+to_lower() {
+  printf '%s' "$1" | tr '[:upper:]' '[:lower:]'
+}
+
 is_truthy() {
-  case "${1,,}" in
+  case "$(to_lower "$1")" in
     true|1|yes|on|always) return 0 ;;
     *) return 1 ;;
   esac
@@ -338,7 +342,7 @@ keycloak_user_json_by_username() {
 }
 
 should_force_relogin() {
-  case "${KEYCLOAK_FORCE_RELOGIN,,}" in
+  case "$(to_lower "$KEYCLOAK_FORCE_RELOGIN")" in
     true|1|yes|on|always) return 0 ;;
     false|0|no|off|never) return 1 ;;
     auto|"")
