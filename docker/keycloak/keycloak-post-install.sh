@@ -46,8 +46,12 @@ get_container_env() {
     | head -n1
 }
 
+to_lower() {
+  printf '%s' "$1" | tr '[:upper:]' '[:lower:]'
+}
+
 is_truthy() {
-  case "${1,,}" in
+  case "$(to_lower "$1")" in
     true|1|yes|on|always) return 0 ;;
     *) return 1 ;;
   esac
@@ -432,7 +436,7 @@ ensure_app_default_scope_detached() {
 }
 
 should_force_relogin() {
-  case "${KEYCLOAK_FORCE_RELOGIN,,}" in
+  case "$(to_lower "$KEYCLOAK_FORCE_RELOGIN")" in
     true|1|yes|on|always) return 0 ;;
     false|0|no|off|never) return 1 ;;
     auto|"")

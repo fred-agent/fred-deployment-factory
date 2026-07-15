@@ -59,6 +59,36 @@ bin/fredlab-build fred-agents            "$TAG"
 bin/fredlab-build knowledge-flow-backend "$TAG"
 ```
 
+## C5 — ghcr.io as the image source (proposed 2026-07-15, pending ratification)
+
+**Proposal:** for routine redeploys, source the four app images directly from the images
+`.github/workflows/Build-and-push-docker.yml` (`fred` repo) already builds and pushes on
+every `swift` push and `code/v*` tag — `ghcr.io/thalesgroup/fred-agent/<image>` — instead
+of re-building the same commit into Artifact Registry via `bin/fredlab-release.sh`.
+
+**Why:** CI already builds and pushes these on every relevant push/tag; the images are
+public (`docker manifest inspect` succeeds anonymously — no `imagePullSecret` needed on
+GKE); same Dockerfiles (`apps/<app>/dockerfiles/Dockerfile-prod`) as `fredlab-build`, so
+it's not a different artifact, just built once instead of twice. A `code/vX.Y.Z` release
+tag on `fred` maps directly to `ghcr.io/thalesgroup/fred-agent/<image>:vX.Y.Z` — deploying
+that tag ties the running instance to a named GitHub Release rather than an
+independently-built copy with its own `YYYYMMDD-<shortsha>` tag.
+
+**What changes mechanically, if ratified:** `values-fredlab.yaml`'s `image.repository` for
+`controlPlane`/`controlPlaneWorker`/`fredAgents`/`knowledgeFlow`/`knowledgeFlowWorker`/
+`fredFrontend` points at `ghcr.io/thalesgroup/fred-agent/<image>` with `tag: "vX.Y.Z"`
+(matching the `code/v*` tag on `fred`), and the release step becomes "edit the values
+file to the new release tag" instead of running `bin/fredlab-release.sh`. `fredEvaluation`
+images aren't built by this workflow and stay on Artifact Registry regardless.
+`bin/fredlab-release.sh`/Cloud Build remain useful for testing an unpushed local commit
+before it lands on `swift` — this doesn't retire that path, only changes the default for
+routine redeploys of released code.
+
+**Status: proposed, not adopted.** Per this doc's own rule ("if it changes shared
+behaviour, get a 👍 from the other two first"), this needs Sébastien's and Arthur's
+sign-off before C1/C2 above stop being the default. Used once, live, on 2026-07-15
+(GKE C1 redeploy at `v2.1.1`) as the worked example this proposal is based on.
+
 ## C2 — Deploy at the round's tag
 
 Deploy every component at the same `$TAG` so the whole stack is one version.
