@@ -79,6 +79,64 @@ data:
               class_path: knowledge_flow_backend.core.processors.input.image_processor.image_processor.ImageProcessor
             - suffix: ".ico"
               class_path: knowledge_flow_backend.core.processors.input.image_processor.image_processor.ImageProcessor
+        medium:
+          # Mirrors fred's apps/knowledge-flow-backend/config/configuration_prod.yaml
+          # "medium" profile — Docling PDF extraction + OCR instead of fast's
+          # lightweight pymupdf pass, longer activity timeouts/retries to match.
+          use_gpu: false
+          generate_summary: false
+          input_activity_timeout: 2h
+          activity_heartbeat_timeout: 5m
+          retry_initial_interval: 20s
+          retry_backoff_coefficient: 2.0
+          retry_maximum_interval: 2m
+          retry_maximum_attempts: 5
+          retry_non_retryable_error_types: []
+          process_images: false
+          text_splitter:
+            chunk_size: 1500
+            chunk_overlap: 150
+            preserve_tables: true
+          pdf:
+            extractor: docling   # Literal["docling","pymupdf"]
+            do_ocr: true
+          input_processors:
+            - suffix: ".pdf"
+              class_path: knowledge_flow_backend.core.processors.input.pdf_markdown_processor.pdf_markdown_processor.PdfMarkdownProcessor
+            - suffix: ".docx"
+              class_path: knowledge_flow_backend.core.processors.input.docx_markdown_processor.docx_markdown_processor.DocxMarkdownProcessor
+            - suffix: ".doc"
+              class_path: knowledge_flow_backend.core.processors.input.doc_markdown_processor.doc_markdown_processor.DocMarkdownProcessor
+            - suffix: ".odt"
+              class_path: knowledge_flow_backend.core.processors.input.odt_markdown_processor.odt_markdown_processor.OdtMarkdownProcessor
+            - suffix: ".pptx"
+              class_path: knowledge_flow_backend.core.processors.input.pptx_markdown_processor.pptx_markdown_processor.PptxMarkdownProcessor
+            - suffix: ".ppt"
+              class_path: knowledge_flow_backend.core.processors.input.ppt_markdown_processor.ppt_markdown_processor.PptMarkdownProcessor
+            - suffix: ".csv"
+              class_path: knowledge_flow_backend.core.processors.input.csv_tabular_processor.csv_tabular_processor.CsvTabularProcessor
+            - suffix: ".txt"
+              class_path: knowledge_flow_backend.core.processors.input.text_markdown_processor.text_markdown_processor.TextMarkdownProcessor
+            - suffix: ".md"
+              class_path: knowledge_flow_backend.core.processors.input.markdown_markdown_processor.markdown_markdown_processor.MarkdownMarkdownProcessor
+            - suffix: ".jsonl"
+              class_path: knowledge_flow_backend.core.processors.input.jsonl.jsonl_markdown_processor.JsonlMarkdownProcessor
+            - suffix: ".png"
+              class_path: knowledge_flow_backend.core.processors.input.image_processor.image_processor.ImageProcessor
+            - suffix: ".jpg"
+              class_path: knowledge_flow_backend.core.processors.input.image_processor.image_processor.ImageProcessor
+            - suffix: ".jpeg"
+              class_path: knowledge_flow_backend.core.processors.input.image_processor.image_processor.ImageProcessor
+            - suffix: ".gif"
+              class_path: knowledge_flow_backend.core.processors.input.image_processor.image_processor.ImageProcessor
+            - suffix: ".bmp"
+              class_path: knowledge_flow_backend.core.processors.input.image_processor.image_processor.ImageProcessor
+            - suffix: ".svg"
+              class_path: knowledge_flow_backend.core.processors.input.image_processor.image_processor.ImageProcessor
+            - suffix: ".webp"
+              class_path: knowledge_flow_backend.core.processors.input.image_processor.image_processor.ImageProcessor
+            - suffix: ".ico"
+              class_path: knowledge_flow_backend.core.processors.input.image_processor.image_processor.ImageProcessor
 
     security:
       m2m:
