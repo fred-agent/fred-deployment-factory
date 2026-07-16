@@ -59,30 +59,27 @@ bin/fredlab-build fred-agents            "$TAG"
 bin/fredlab-build knowledge-flow-backend "$TAG"
 ```
 
-## C6 — Named instances (namespace-per-instance)
+## C6 — Named instances (Apps-only, sharing one Foundation)
 
-**Convention:** each complete Fred instance (Foundation + Apps) lives in its own
-Kubernetes namespace, named for the instance, not `default`. Both the Foundation
-chart (`bin/fredlab-infra-deploy.sh`, `NAMESPACE=<name>`, `--create-namespace`
-idempotent) and the Apps `Application` manifest
+**Convention:** one Foundation per environment (`bin/fredlab-infra-deploy.sh`,
+`NAMESPACE=<foundation-namespace>`, deployed once), reused by any number of Fred
+instances, each in its own Apps-only namespace
 (`gcp-c1/argocd/applications/fred-apps.yaml`'s `destination.namespace` +
-`syncOptions: [CreateNamespace=true]`) create the namespace idempotently —
-no manual `kubectl create namespace` step, for this or any future instance.
+`syncOptions: [CreateNamespace=true]`, idempotent — no manual `kubectl create
+namespace`). Instances are kept apart by each Foundation component's own tenancy
+primitive (Postgres database, Keycloak realm, OpenFGA store, Temporal namespace,
+OpenSearch index) — full mapping and what's still manual: RFC-0001 §2.1, tracked as
+`INST-2`.
 
 **Live instances:**
 
-| Namespace | Role | Hostnames | Static IP | Image source | Since |
-|-----------|------|-----------|-----------|---------------|-------|
-| `fred-demo` | primary/demo instance | `studio.playground.fredlab.dev`, `keycloak.playground.fredlab.dev`, `temporal.playground.fredlab.dev` (unchanged — same DNS, reused static IP) | `fredlab-playground-ip` (8.233.26.38, reserved GCP global address, reused from the prior `default`-namespace deployment) | ghcr.io v2.1.1 (C5) for the 4 core apps; fred-evaluation deferred, still on Artifact Registry at its last-shipped tag | 2026-07-15 |
+| Namespace | Role | Foundation | Hostnames | Static IP | Image source | Since |
+|-----------|------|------------|-----------|-----------|---------------|-------|
+| `fred-demo` | primary/demo instance | own (this namespace) | `studio.playground.fredlab.dev`, `keycloak.playground.fredlab.dev`, `temporal.playground.fredlab.dev` | `fredlab-playground-ip` (8.233.26.38, reserved GCP global address) | ghcr.io v2.1.1 (C5) for the 4 core apps; fred-evaluation deferred, still on Artifact Registry at its last-shipped tag | 2026-07-15 |
 
-**Known gap (not solved by this convention):** the Foundation deploy is still one
-imperative `helm upgrade` per instance — `NAMESPACE=<name>` plus the (untracked,
-per-machine) `SECRET_VALUES_FILE` fully determine an instance, but nothing
-today bundles "this instance's namespace + hostnames + static-IP name + secrets
-file path" into one committed, reusable artifact. Two named instances currently
-means two sets of env vars an operator has to remember or re-derive from this
-table — a real per-instance values overlay (CHART-2/INST-1 territory) would
-close that gap. Track it there rather than solving it ad hoc per instance.
+`fred-demo` is today both the Foundation and the only Apps instance — no second,
+Apps-only namespace exists yet. The first one to actually share `fred-demo`'s
+Foundation instead of standing up its own is the reference case for `INST-2`.
 
 ## C5 — ghcr.io as the image source (proposed 2026-07-15, pending ratification)
 

@@ -22,8 +22,16 @@ key-prod.txt
 fredlab-secrets.values.yaml
 gcp-c1/helm/**/fredlab-secrets.values.yaml
 gcp-c1/helm/**/fredlab-secrets.values.yaml.*
+# Real user roster for bin/fredlab-keycloak-provision-users.sh — names,
+# emails, temporary passwords. Never git-tracked; see
+# config/fredlab-keycloak-identity.example.json for the shape.
 config/fredlab-keycloak-identity.json
 config/fredlab-keycloak-identity.local.json
+
+# Real team/role bundle for Fred's declarative import (DEPLOY-CLOUD.md §5.2)
+# — real names/emails, no passwords, never git-tracked.
+/config/fredlab-platform-import/
+/config/fredlab-platform-import*.zip
 
 # Checkpoint snapshots (Docker volume archives — can be large)
 /checkpoints/

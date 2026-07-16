@@ -68,6 +68,22 @@ Status: `[ ]` todo · `[~]` in progress · `[x]` done. IDs are referenced from t
       developer may want to pick up later; this closure does not solve it, it only records
       that the script this item tracked no longer exists.
 
+      **(2026-07-16) Swift-native path built, closing the underlying need.** New
+      `bin/fredlab-keycloak-provision-users.sh` (+ tracked
+      `config/fredlab-keycloak-identity.example.json`) does exactly part (a) above and nothing
+      more: reads a git-ignored roster (`username`/`email`/`firstName`/`lastName`, optional
+      `temporaryPassword`), creates each missing Keycloak user via `kcadm`, sets a one-time
+      password with Keycloak's own `set-password --temporary` (forces `UPDATE_PASSWORD` at
+      first login) - no groups, no app roles, idempotent (existing usernames untouched). Part
+      (b) - team/role grants - turns out not to need a new script at all: `fred`'s existing
+      declarative platform-import (`PLATFORM-IMPORT-RFC.md` §10, `POST
+      /import-export/import`) already resolves `username` → team/platform roles read-only,
+      exactly the control-plane-API contract this item called for, once identities exist. The
+      two steps are documented end-to-end in `docs/DEPLOY-CLOUD.md` §5 (5.1 identity, 5.2
+      authorization). The prior first-platform-admin bootstrap concern this item flagged as a
+      blocker is itself closed separately by **AUTHZ-07** (root bootstrap, `fred` repo) - no
+      remaining blocker. Closing SEC-3 for real this time.
+
 ## VALID — auth/isolation validation (release gate)
 
 - [x] **VALID-1** Swift clean demo identity matrix (2026-07-10, superseded by **VALID-7**
@@ -390,3 +406,17 @@ the **git host + GitOps mechanism**, and the **three classification knobs** chan
       contract (`fred`'s `deploy/README.md` "Root bootstrap secret contract"). A future AKS/Flux
       overlay for this item reuses that exact contract unchanged — it supplies its own namespace,
       pre-existing Secret name/key, and Foundation endpoints; no new bootstrap mechanism to design.
+- [ ] **INST-2** Shared Foundation, multiple Apps-only instances on the same cluster —
+      distinguished by each component's own tenancy primitive (Postgres database, Keycloak
+      realm, OpenFGA store, Temporal namespace, OpenSearch index; full mapping RFC-0001 §2.1).
+      All five are already plain config fields in `fred` and already Helm values here — no
+      product-code change needed. Needed to build: (1) a new-instance bootstrap that creates
+      the Postgres database, the Keycloak realm + its OIDC clients (today's
+      `keycloak-provision-job.yaml` assumes one realm named `app` per Foundation), and the
+      Temporal namespace; (2) point a new Apps-only namespace's chart values at the
+      Foundation's cross-namespace service DNS instead of bare names; (3) make the
+      Foundation's connection secret reachable from the new Apps namespace — Secrets are
+      namespace-scoped, needs a small sync step or **SEC-1**'s External-Secrets-Operator.
+      Motivating case: a customer demo instance (stable tagged images) and a team
+      integration instance (nightly images) sharing one Foundation instead of each spawning
+      its own Postgres/Keycloak/OpenFGA/OpenSearch/Temporal.

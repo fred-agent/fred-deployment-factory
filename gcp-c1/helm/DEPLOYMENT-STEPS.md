@@ -507,31 +507,28 @@ kubectl logs deploy/control-plane-backend --tail=200
 
 If logs mention `KEYCLOAK_CONTROL_PLANE_CLIENT_SECRET is not set`, the control-plane pod is missing the exact env var named by `security.m2m.secret_env_var`.
 
-## 14. Provision Initial Keycloak Users (no Swift-native path yet)
+## 14. Provision Initial Keycloak Users (AUTHZ-07 root bootstrap + declarative import)
 
-There is no cloud onboarding script in this repo anymore. The prior step's script
-(`bin/fredlab-keycloak-identity.sh`) provisioned Keycloak groups/app-roles for the
-pre-AUTHZ-05 shape and was removed outright rather than adapted, not replaced - see
-**SEC-3** in `docs/BACKLOG.md` for the current state and what a Swift-native replacement
-would need.
+**Superseded 2026-07-15 — this used to say "no Swift-native path yet" (SEC-3). There is one
+now.** Full step-by-step: [`../../docs/DEPLOY-CLOUD.md`](../../docs/DEPLOY-CLOUD.md) §4-§5. Summary:
 
-In Swift, Keycloak creates identity only; a team is a `team_metadata` row + OpenFGA relations
-created via the control-plane team APIs (see the boundary note below) - never a Keycloak
-group. `POST /teams` (platform-admin bootstrap with an explicit `initial_team_admin_ids`),
-then `POST /teams/{team_id}/members/{user_id}/roles` / `DELETE
-/teams/{team_id}/members/{user_id}/roles/{relation}` grant/revoke individual, cumulative
-roles (`team_admin`/`team_editor`/`team_analyst`/`team_member`) - the same contract
-`fred`'s own `validation/conftest.py::_bootstrap_collaborative_teams` exercises against a
-local stack.
-Platform roles (`platform_admin`/`platform_observer`) are stored-only OpenFGA relations on
-`organization:fred`.
+1. **`registrationAllowed` is `false` on this (GKE) realm template, by design** — unlike
+   local/k3d dev, there is no public sign-up form on this instance. The first account (yours)
+   is **admin-created** via `kcadm create users` + `kcadm set-password` (`DEPLOY-CLOUD.md` §4.1)
+   — never self-registration.
+2. **Root bootstrap**: `POST /control-plane/v1/bootstrap/platform-admin` with `{token}` (the
+   deploy-time secret from `fredlab-secrets.values.yaml`) + your own bearer JWT. Grants
+   `platform_admin` to the caller's own `sub`, one-shot, durable (`DEPLOY-CLOUD.md` §4.2).
+3. **Everyone else**: `POST /import-export/import` (**Admin → Migration**) — a
+   `manifest.json`/`users.json` bundle that creates any missing Keycloak identity **and**
+   grants the declared team/platform roles in one call (`fred`'s
+   `docs/swift/rfc/PLATFORM-IMPORT-RFC.md` §10). Every target user must already exist in
+   Keycloak or be creatable by this same import call — never a Keycloak group.
 
-Important boundary: team ownership and application permissions inside Fred/OpenFGA are a
-separate application-domain step from Keycloak identity. Swift's official team bootstrap path
-(`POST /teams`, `POST/DELETE /teams/{team_id}/members/{user_id}/roles/{relation}` -
-control-plane API, exercised end-to-end by `fred`'s own
-`validation/conftest.py::_bootstrap_collaborative_teams` release-gate harness) never derives a
-team from a Keycloak group.
+In Swift, Keycloak creates identity only; a team is a `team_metadata` row + OpenFGA relations,
+never a Keycloak group. Platform roles (`platform_admin`/`platform_observer`) are stored-only
+OpenFGA relations on `organization:fred`, granted exclusively by root bootstrap (the first one)
+or the declarative import (every one after).
 
 Final browser validation:
 

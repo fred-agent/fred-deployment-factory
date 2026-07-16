@@ -30,7 +30,7 @@ out-of-band secrets layer.
 
 | Layer | Contents | Mechanism | Source of truth | Change-rate |
 | --- | --- | --- | --- | --- |
-| **A — infra** | Postgres, OpenSearch (stateful); Keycloak, OpenFGA, Temporal; the shared Ingress, ManagedCertificates, BackendConfigs, `fredlab-infra-secrets` | imperative Helm (`gcp-c1/helm`, release `fredlab-infra`), driven by `bin/fredlab-deploy.sh` | the chart + reviewed `--set`/values | rare, deliberate |
+| **A — infra (Foundation)** | Postgres, OpenSearch (stateful); Keycloak, OpenFGA, Temporal; the shared Ingress, ManagedCertificates, BackendConfigs, `fredlab-infra-secrets` — deployed **once per environment**, shared by every Fred instance in it (see "Instance model" below) | imperative Helm (`gcp-c1/helm`, release `fredlab-infra`), driven by `bin/fredlab-deploy.sh` | the chart + reviewed `--set`/values | rare, deliberate |
 | **B — apps** | cp, kf-backend, kf-worker, fa, fr (Deployments, Services, ConfigMaps, fa/kf ServiceAccounts) | **GitOps** — ArgoCD `Application: fred-apps` rendering `gcp-c1/argocd/fred-apps` | **git** (`values-fredlab.yaml` tags) | every release |
 | **C — secrets/identity** | `fredlab-secrets.values.yaml`, `config/fredlab-keycloak-identity.json` | injected at deploy; **git-ignored** | external (today: local file) | — |
 
@@ -43,12 +43,50 @@ out-of-band secrets layer.
 - **One-way dependency: B → A.** Apps reference infra by **stable name** only (DNS + named
   Secret), e.g. `POSTGRES_HOST=postgres`, `TEMPORAL_ADDRESS=temporal:7233`,
   `OPENFGA_URL=http://openfga:8080`, creds via the `fredlab-infra.secretName` helper.
+- **Layer C splits again, along the same "different owner, different sensitivity" line.**
+  `config/fredlab-keycloak-identity.json` (this repo, `bin/fredlab-keycloak-provision-users.sh`,
+  §5 addendum below) declares real names, emails and one-time temporary passwords — it is purely
+  Keycloak-native (identity only, no team, no role) and never carries a Fred-defined field. Team
+  and platform roles are a *separate*, Fred-owned concern (`fred`'s `users.json` declarative
+  import) that never needs a password, because by the time it runs the identity already exists.
+  Conflating the two into one format was the mistake the deleted Kea-legacy
+  `fredlab-keycloak-identity.sh`/`.example.json` made (`docs/BACKLOG.md` **SEC-3**) — it mixed
+  `appRoles`/`teams`/`teamRoles` into the same file as passwords, so the file could never be
+  Fred-defined *and* safe to reason about independently of secrets.
+
+## 2.1 Instance model — one Foundation, many Fred instances
+
+**Layer A is per-environment, not per Fred instance.** A cluster can host several
+independent Fred instances side by side — e.g. a customer demo (stable tagged images)
+and a team integration environment (nightly images) — without each spawning its own
+Postgres/Keycloak/OpenFGA/OpenSearch/Temporal. Instances share the Foundation's pods and
+are kept apart by each component's own tenancy primitive:
+
+| Component | Tenancy primitive | Set by |
+| --- | --- | --- |
+| Postgres | database name | `storage.postgres.database` |
+| Keycloak | realm | `security.user.realm_url` / `keycloakIssuerUrl` |
+| OpenFGA | store name | `security.rebac.store_name` / `openfgaStoreName` (self-provisions on first use) |
+| Temporal | namespace | `scheduler.temporal_namespace` |
+| OpenSearch | index name | per-index config (vector store, KPI sink, observability) |
+
+Every one of these is already a plain config field in `fred` and already a Helm value in
+this repo's Apps chart — no `fred` code change needed. Not yet built (**INST-2**): a "new
+instance" bootstrap that creates the database, the Keycloak realm + its OIDC clients, and
+the Temporal namespace; points the new Apps namespace at the Foundation's cross-namespace
+service DNS; and makes the Foundation's connection secret reachable there (Secrets are
+namespace-scoped — a small sync step, or **SEC-1**'s External-Secrets-Operator).
+
+Today `fred-demo` is both the Foundation and the only Apps instance — this model has no
+second, Apps-only namespace yet.
 
 ## 3. The boundary contract (invariants)
 
 1. The `fred-apps` chart **never** creates a Secret, the infra Ingress, ManagedCertificates,
    or any StatefulSet/Service owned by infra.
-2. Apps find infra **by name**, not by co-deploying it. Names are a frozen contract.
+2. Apps find infra **by name** — an in-namespace service name, or a cross-namespace FQDN
+   when Foundation and Apps don't share a namespace — never by co-deploying it. Names are a
+   frozen contract.
 3. A new secret key / Keycloak client / database is an **infra change** (touch
    `gcp-c1/helm`), never an app change.
 4. Bootstrap order is fixed: infra up → identity provisioned → apps synced.
@@ -138,3 +176,5 @@ reference (roadmap steps 1–2) rather than fork a parallel model.
 3. **When to enable auto-sync + self-heal + prune** on `fred-apps`. (Backlog: GITOPS-2)
 4. **Multi-env shape:** ApplicationSet vs app-of-apps vs per-env folders. (Backlog: ENV-1)
 5. **Migrations under GitOps:** ArgoCD PreSync hook vs keep imperative. (Backlog: MIG-1)
+6. **Shared-Foundation instance bootstrap** — what's still manual for a new Apps-only
+   instance (§2.1). (Backlog: INST-2)
