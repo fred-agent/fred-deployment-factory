@@ -84,7 +84,21 @@ Status: `[ ]` todo · `[~]` in progress · `[x]` done. IDs are referenced from t
       blocker is itself closed separately by **AUTHZ-07** (root bootstrap, `fred` repo) - no
       remaining blocker. Closing SEC-3 for real this time.
 
-## VALID — auth/isolation validation (release gate)
+- [x] **SEC-4** (2026-07-16) Temporal UI's Keycloak role-gate (`temporal-ui-gate` browser
+      flow, `gcp-c1/helm/templates/keycloak-provision-job.yaml`) still required the deleted
+      legacy `app/admin` client role (AUTHZ-05/07 removed `admin`/`editor`/`viewer` from
+      every other realm path, but this GKE-only job predates that cleanup and was never
+      exercised until the first real GKE instance stood up) - locked out every Swift-native
+      user, since nothing in this repo's provisioning grants Keycloak client roles to
+      humans anymore. Fixed: `temporal.ui.auth.allowedAppRole` (`gcp-c1/helm/values.yaml`)
+      renamed `admin` -> `temporal_operator`, a name that was never part of the deleted
+      trio and is never referenced by `fred-core`/OpenFGA - closes the standing conflict
+      with `bin/fred-preflight.sh`'s "legacy app-client roles must be absent" guard. Applied
+      live on `fred-demo` via direct `kcadm` (the existing flow's execution order was
+      already correct - only the role-gate's `condUserRole` condition value was changed,
+      no flow rebuild), the dead `app/admin` role deleted, `temporal_operator` granted to
+      the platform admin. Documented in `gcp-c1/helm/README.md` for future platforms
+      (**INST-1**/TDP-AKS and beyond).
 
 - [x] **VALID-1** Swift clean demo identity matrix (2026-07-10, superseded by **VALID-7**
       on 2026-07-13): `config/configuration.yaml` is the clean Swift seed. `alice` is the

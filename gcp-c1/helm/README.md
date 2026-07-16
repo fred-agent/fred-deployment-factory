@@ -54,6 +54,28 @@ requires a Keycloak login (realm `app`) before it is shown. This is configured u
 `keycloak-provision` job. An optional Cloud Armor IP allowlist can be layered in front via
 `adminAccess.securityPolicyName` (empty = not used).
 
+**Login alone isn't enough — a second, role-based gate runs after authentication.** Any
+realm user can pass Keycloak login, but a custom browser flow bound only to the
+`temporal-ui` client (`temporal-ui-gate`, built by `keycloak-provision`) then denies anyone
+who doesn't hold the Keycloak client role named in `temporal.ui.auth.allowedAppRole`
+(default `temporal_operator`). Studio and the gRPC services are untouched by this flow —
+it's scoped to the `temporal-ui` client only. Set `allowedAppRole: ""` to drop the gate
+entirely (any authenticated realm user gets in).
+
+This role is deliberately **not** named `admin`/`editor`/`viewer` — those are Swift's
+deleted legacy Keycloak-role bridge (AUTHZ-05/07; `bin/fred-preflight.sh` treats their
+reappearance as a critical regression). `temporal_operator` means one thing only — "may
+view the Temporal admin UI" — and is never referenced by `fred-core`/OpenFGA.
+
+**Granting access to a new operator** (identities are Swift-native — see `docs/DEPLOY-CLOUD.md`
+§5.1 — this role is the one exception where a human still needs a Keycloak *client* role,
+because Temporal UI has no concept of Fred's OpenFGA-based teams/platform roles):
+
+```bash
+kubectl -n <instance> exec deploy/keycloak -- /opt/keycloak/bin/kcadm.sh add-roles \
+  -r app --uusername <their-keycloak-username> --cclientid app --rolename temporal_operator
+```
+
 ## Data Ownership
 
 PostgreSQL provisioning and application schema migrations are intentionally separated:

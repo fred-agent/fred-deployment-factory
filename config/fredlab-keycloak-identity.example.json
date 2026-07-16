@@ -1,0 +1,18 @@
+{
+  "realm": "app",
+  "users": [
+    {
+      "username": "alice.martin",
+      "email": "alice.martin@example.com",
+      "firstName": "Alice",
+      "lastName": "Martin"
+    },
+    {
+      "username": "bob.durand",
+      "email": "bob.durand@example.com",
+      "firstName": "Bob",
+      "lastName": "Durand",
+      "temporaryPassword": "Set-your-own-temp-Pw1"
+    }
+  ]
+}

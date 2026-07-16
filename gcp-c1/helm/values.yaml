@@ -304,7 +304,15 @@ temporal:
       # services that talk to Temporal over gRPC are untouched). The Temporal UI itself
       # cannot filter by role, so the gate lives in Keycloak. Empty = any authenticated
       # realm user may enter.
-      allowedAppRole: admin
+      #
+      # Deliberately NOT named admin/editor/viewer. Those are Swift's deleted legacy
+      # Keycloak-role bridge (AUTHZ-05/07) — bin/fred-preflight.sh treats their
+      # reappearance as a critical regression, and reusing the name risks a future
+      # engineer assuming app/admin still means what it used to (a business-authorization
+      # escalation path, reverted once already, RFC Part 8 §24.7). This role means one
+      # thing only: "may view the Temporal admin UI" — an infra-ops concern, not a Fred
+      # team/platform role, and it is never referenced by fred-core/OpenFGA.
+      allowedAppRole: temporal_operator
     service:
       type: ClusterIP
       port: 8080
