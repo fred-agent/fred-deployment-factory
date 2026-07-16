@@ -88,13 +88,20 @@ fredEvaluation:
     vertex:
       project: fredlab-playground
   image:
-    repository: europe-west1-docker.pkg.dev/fredlab-playground/fredlab-repo/fred-evaluation-api
-    tag: "20260708-swift-180a6ae"
+    # C5 (OPERATING-CONVENTIONS.md): sourced from ghcr.io, built by fred-agent-evaluator's
+    # OWN Build-and-push-docker.yml on its code/v* tag — same C5 pattern as the 4 apps
+    # above, just under the fred-agent org namespace (separate GitHub repo/org from
+    # thalesgroup/fred-agent, so the ghcr.io path differs; the tag scheme does not).
+    repository: ghcr.io/fred-agent/fred-evaluation-api
+    tag: "v0.1.1" # release-tag: fred-evaluation-api
 
 fredEvaluationWorker:
   enabled: true
   serviceAccount:
     gcpServiceAccount: fredlab-knowledge-flow-gcs@fredlab-playground.iam.gserviceaccount.com
   image:
-    repository: europe-west1-docker.pkg.dev/fredlab-playground/fredlab-repo/fred-evaluation-worker
-    tag: "20260708-swift-180a6ae"
+    # Same sourcing as fredEvaluation.image above (C5), but its OWN distinct image —
+    # built from dockerfiles/Dockerfile-worker, not the API image with an overridden
+    # entrypoint (unlike controlPlaneWorker/knowledgeFlowWorker, which reuse their API image).
+    repository: ghcr.io/fred-agent/fred-evaluation-worker
+    tag: "v0.1.1" # release-tag: fred-evaluation-worker

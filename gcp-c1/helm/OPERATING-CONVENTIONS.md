@@ -100,16 +100,25 @@ independently-built copy with its own `YYYYMMDD-<shortsha>` tag.
 `controlPlane`/`controlPlaneWorker`/`fredAgents`/`knowledgeFlow`/`knowledgeFlowWorker`/
 `fredFrontend` points at `ghcr.io/thalesgroup/fred-agent/<image>` with `tag: "vX.Y.Z"`
 (matching the `code/v*` tag on `fred`), and the release step becomes "edit the values
-file to the new release tag" instead of running `bin/fredlab-release.sh`. `fredEvaluation`
-images aren't built by this workflow and stay on Artifact Registry regardless.
+file to the new release tag" instead of running `bin/fredlab-release.sh`.
 `bin/fredlab-release.sh`/Cloud Build remain useful for testing an unpushed local commit
 before it lands on `swift` — this doesn't retire that path, only changes the default for
 routine redeploys of released code.
 
+**2026-07-16 — extended to `fredEvaluation`/`fredEvaluationWorker`.** `fred-agent-evaluator`
+(separate repo, separate GitHub org `fred-agent`) now has its own `Build-and-push-docker.yml`
++ `Package-and-push-charts.yml`, mirroring `fred`'s — same `code/v*`/`chart/v*` tag scheme,
+same public-ghcr.io-no-imagePullSecret property, just under `ghcr.io/fred-agent/<image>`
+instead of `ghcr.io/thalesgroup/fred-agent/<image>` (different repo owner, GHCR namespaces
+by pusher — this is the one unavoidable difference). `values-fredlab.yaml`'s `fredEvaluation`/
+`fredEvaluationWorker` now point at `ghcr.io/fred-agent/fred-evaluation-api` /
+`fred-evaluation-worker`, first cut at `v0.1.1`. No longer an Artifact Registry exception.
+
 **Status: proposed, not adopted.** Per this doc's own rule ("if it changes shared
 behaviour, get a 👍 from the other two first"), this needs Sébastien's and Arthur's
-sign-off before C1/C2 above stop being the default. Used once, live, on 2026-07-15
-(GKE C1 redeploy at `v2.1.1`) as the worked example this proposal is based on.
+sign-off before C1/C2 above stop being the default. Used live since 2026-07-15
+(GKE C1 redeploy at `v2.1.1`, now `v2.1.3`) as the worked example this proposal is based on;
+extended to `fredEvaluation` on 2026-07-16 under the same pending-ratification status.
 
 ## C2 — Deploy at the round's tag
 
