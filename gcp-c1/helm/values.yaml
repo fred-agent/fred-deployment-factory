@@ -577,13 +577,19 @@ knowledgeFlowWorker:
     repository: ""
     tag: ""
   # Worker does the heavy lifting (document parsing + embeddings), so it gets more
-  # headroom than the API pod.
+  # headroom than the API pod. Under "medium" (Docling + OCR), observed live
+  # 2026-07-16: CPU bursts past 1.5 cores (onnxruntime spawns threads for the
+  # node's full core count, not the pod's cgroup share) and memory exceeded the
+  # prior 1Gi request under real multi-file load, OOMKilled 3 times in 6
+  # minutes at the prior 3Gi limit. Mirrors gcp-c1/argocd/fred-apps'
+  # values-fredlab.yaml override (this chart has no separate env overlay).
   resources:
     requests:
-      cpu: 500m
-      memory: 1Gi
+      cpu: "2"
+      memory: "3Gi"
     limits:
-      memory: 3Gi
+      cpu: "4"
+      memory: "6Gi"
 
 # fred-agent-evaluator backend: FastAPI/uvicorn serving /evaluation/v1 on port 8336.
 # Submits evaluation campaign workflows onto the `evaluation` Temporal task queue; the
