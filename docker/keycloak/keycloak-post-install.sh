@@ -145,6 +145,9 @@ KEYCLOAK_CONTROL_PLANE_CLIENT_SECRET="${KEYCLOAK_CONTROL_PLANE_CLIENT_SECRET:-Az
 KEYCLOAK_EVAL_WORKER_CLIENT_SECRET="${KEYCLOAK_EVAL_WORKER_CLIENT_SECRET:-$(read_env_file_var KEYCLOAK_EVAL_WORKER_CLIENT_SECRET)}"
 KEYCLOAK_EVAL_WORKER_CLIENT_SECRET="${KEYCLOAK_EVAL_WORKER_CLIENT_SECRET:-Azerty123_}"
 
+KEYCLOAK_AI_WIKI_WORKER_CLIENT_SECRET="${KEYCLOAK_AI_WIKI_WORKER_CLIENT_SECRET:-$(read_env_file_var KEYCLOAK_AI_WIKI_WORKER_CLIENT_SECRET)}"
+[[ -n "${KEYCLOAK_AI_WIKI_WORKER_CLIENT_SECRET:-}" ]] || die "KEYCLOAK_AI_WIKI_WORKER_CLIENT_SECRET must be supplied via environment or docker/.env"
+
 KEYCLOAK_KF_ENABLE_MANAGE_USERS="${KEYCLOAK_KF_ENABLE_MANAGE_USERS:-$(read_env_file_var KEYCLOAK_KF_ENABLE_MANAGE_USERS)}"
 KEYCLOAK_KF_ENABLE_MANAGE_USERS="${KEYCLOAK_KF_ENABLE_MANAGE_USERS:-true}"
 
@@ -474,6 +477,7 @@ knowledge_flow_client_uuid="$(ensure_service_client_confidential knowledge-flow 
 control_plane_client_uuid="$(ensure_service_client_confidential control-plane "$KEYCLOAK_CONTROL_PLANE_CLIENT_SECRET")"
 # Evaluation worker (Fworker) — dedicated least-privilege service identity (RFC EVAL-AUTH).
 eval_worker_client_uuid="$(ensure_service_client_confidential fred-evaluation-worker "$KEYCLOAK_EVAL_WORKER_CLIENT_SECRET")"
+ai_wiki_worker_client_uuid="$(ensure_service_client_confidential fred-ai-wiki-worker "$KEYCLOAK_AI_WIKI_WORKER_CLIENT_SECRET")"
 
 ensure_client_role app service_agent "application service agent role"
 
@@ -481,6 +485,7 @@ agentic_service_user="$(wait_for_service_account_username agentic)"
 knowledge_flow_service_user="$(wait_for_service_account_username knowledge-flow)"
 control_plane_service_user="$(wait_for_service_account_username control-plane)"
 eval_worker_service_user="$(wait_for_service_account_username fred-evaluation-worker)"
+ai_wiki_worker_service_user="$(wait_for_service_account_username fred-ai-wiki-worker)"
 
 # Neither agentic (fred-agents), knowledge-flow, nor control-plane call any
 # Keycloak group-admin API (a_get_groups/a_get_group_members) - confirmed
@@ -507,6 +512,7 @@ ensure_user_client_role "$agentic_service_user" app service_agent
 ensure_user_client_role "$knowledge_flow_service_user" app service_agent
 ensure_user_client_role "$control_plane_service_user" app service_agent
 ensure_user_client_role "$eval_worker_service_user" app service_agent
+ensure_user_client_role "$ai_wiki_worker_service_user" app service_agent
 
 # AUTHZ-05/06: Swift never represents a team as a Keycloak group - a team is a
 # team_metadata row + OpenFGA relations, created later via the control-plane

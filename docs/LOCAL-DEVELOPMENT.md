@@ -169,9 +169,15 @@ Tear down: `make k3d-down` (uninstall release) · `make k3d-delete` (delete clus
 One mode, no flags. Both backends provision the same thing: Keycloak with an **empty realm**
 (self-registration enabled), OpenFGA with an **empty store** and the Swift authorization model
 only, Postgres, and Temporal - infrastructure only, zero business data. There are no demo
-users, no Keycloak groups, no app roles, and no OpenFGA tuples baked in by either backend. The
+users, no Keycloak groups, no human app roles, and no OpenFGA tuples baked in by either backend. The
 imported Keycloak realm template never carries team groups, and no script in this repo ever
 creates a Keycloak group.
+
+For AI Wiki scheduled automation, the realm templates include the confidential service client
+`fred-ai-wiki-worker` with service accounts enabled and audience `app`. Its secret is supplied
+at runtime through env/Kubernetes Secret plumbing; no secret value is committed. The factory
+does not assign this service account to any team and does not seed service-to-team OpenFGA
+tuples. Team-scoped service delegation remains a Fred Control Plane operation after startup.
 
 Databases created: `fred` (Fred), `keycloak`, `data` (tabular/vector), `openfga`, `temporal`,
 `temporal_visibility`.

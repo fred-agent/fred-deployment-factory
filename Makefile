@@ -572,12 +572,16 @@ check-pure-infrastructure: ## Offline guard: fail if a tracked artifact carries 
 	  groups="$$(jq '.groups | length' "$$template")"; \
 	  extra_roles="$$(jq -r '[(.roles.client.app // [])[].name] - ["service_agent"] | length' "$$template")"; \
 	  has_service_agent="$$(jq -r '([(.roles.client.app // [])[].name] | index("service_agent")) != null' "$$template")"; \
+	  ai_wiki_worker_count="$$(jq '[.clients[]? | select(.clientId == "fred-ai-wiki-worker")] | length' "$$template")"; \
+	  ai_wiki_worker_valid="$$(jq -r '[.clients[]? | select(.clientId == "fred-ai-wiki-worker" and .enabled == true and .publicClient == false and .serviceAccountsEnabled == true and .clientAuthenticatorType == "client-secret" and (.secret? | not))] | length == 1' "$$template")"; \
 	  [ "$$users" = "0" ] || { echo "✗ $$template: .users is not empty ($$users)"; exit 1; }; \
 	  [ "$$groups" = "0" ] || { echo "✗ $$template: .groups is not empty ($$groups)"; exit 1; }; \
 	  [ "$$extra_roles" = "0" ] || { echo "✗ $$template: .roles.client.app carries a role other than service_agent (legacy admin/editor/viewer?)"; exit 1; }; \
 	  [ "$$has_service_agent" = "true" ] || { echo "✗ $$template: app:service_agent client role is missing"; exit 1; }; \
+	  [ "$$ai_wiki_worker_count" = "1" ] || { echo "✗ $$template: fred-ai-wiki-worker client missing or duplicated"; exit 1; }; \
+	  [ "$$ai_wiki_worker_valid" = "true" ] || { echo "✗ $$template: fred-ai-wiki-worker must be confidential, service-account enabled, and carry no committed secret"; exit 1; }; \
 	done
-	@echo "✓ docker and k3d realm templates: zero users, zero groups, only app:service_agent"
+	@echo "✓ docker and k3d realm templates: zero users, zero groups, only app:service_agent, fred-ai-wiki-worker without committed secret"
 	@echo "▶ fred-preflight.sh must not require legacy app:admin/editor/viewer roles"
 	@! grep -qE '^REQUIRED_APP_CLIENT_ROLES=' bin/fred-preflight.sh || { echo "✗ bin/fred-preflight.sh reintroduces REQUIRED_APP_CLIENT_ROLES - admin/editor/viewer must never be required, only flagged as legacy"; exit 1; }
 	@grep -qE '^LEGACY_APP_CLIENT_ROLES=\(admin editor viewer\)' bin/fred-preflight.sh || { echo "✗ bin/fred-preflight.sh must flag admin/editor/viewer as legacy via LEGACY_APP_CLIENT_ROLES"; exit 1; }

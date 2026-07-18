@@ -166,6 +166,27 @@
                                 "type": "user"
                             }
                         ]
+                    },
+                    "wiki_review_assistant_runner": {
+                        "directly_related_user_types": [
+                            {
+                                "type": "user"
+                            }
+                        ]
+                    },
+                    "wiki_guarded_auto_apply_runner": {
+                        "directly_related_user_types": [
+                            {
+                                "type": "user"
+                            }
+                        ]
+                    },
+                    "wiki_autonomous_apply_runner": {
+                        "directly_related_user_types": [
+                            {
+                                "type": "user"
+                            }
+                        ]
                     }
                 }
             },
@@ -284,13 +305,35 @@
                     }
                 },
                 "can_run_wiki_autonomous_apply": {
-                    "computedUserset": {
-                        "relation": "team_admin"
+                    "union": {
+                        "child": [
+                            {
+                                "computedUserset": {
+                                    "relation": "team_admin"
+                                }
+                            },
+                            {
+                                "computedUserset": {
+                                    "relation": "wiki_autonomous_apply_runner"
+                                }
+                            }
+                        ]
                     }
                 },
                 "can_run_wiki_guarded_auto_apply": {
-                    "computedUserset": {
-                        "relation": "team_admin"
+                    "union": {
+                        "child": [
+                            {
+                                "computedUserset": {
+                                    "relation": "team_admin"
+                                }
+                            },
+                            {
+                                "computedUserset": {
+                                    "relation": "wiki_guarded_auto_apply_runner"
+                                }
+                            }
+                        ]
                     }
                 },
                 "can_update_agents": {
@@ -314,8 +357,19 @@
                     }
                 },
                 "can_use_wiki_review_assistant": {
-                    "computedUserset": {
-                        "relation": "team_admin"
+                    "union": {
+                        "child": [
+                            {
+                                "computedUserset": {
+                                    "relation": "team_admin"
+                                }
+                            },
+                            {
+                                "computedUserset": {
+                                    "relation": "wiki_review_assistant_runner"
+                                }
+                            }
+                        ]
                     }
                 },
                 "organization": {
@@ -356,6 +410,15 @@
                             }
                         ]
                     }
+                },
+                "wiki_review_assistant_runner": {
+                    "this": {}
+                },
+                "wiki_guarded_auto_apply_runner": {
+                    "this": {}
+                },
+                "wiki_autonomous_apply_runner": {
+                    "this": {}
                 }
             },
             "type": "team"

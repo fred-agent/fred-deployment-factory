@@ -90,6 +90,9 @@ KEYCLOAK_KNOWLEDGE_FLOW_CLIENT_SECRET="${KEYCLOAK_KNOWLEDGE_FLOW_CLIENT_SECRET:-
 KEYCLOAK_CONTROL_PLANE_CLIENT_SECRET="${KEYCLOAK_CONTROL_PLANE_CLIENT_SECRET:-$(read_env_file_var KEYCLOAK_CONTROL_PLANE_CLIENT_SECRET)}"
 KEYCLOAK_CONTROL_PLANE_CLIENT_SECRET="${KEYCLOAK_CONTROL_PLANE_CLIENT_SECRET:-Azerty123_}"
 
+KEYCLOAK_AI_WIKI_WORKER_CLIENT_SECRET="${KEYCLOAK_AI_WIKI_WORKER_CLIENT_SECRET:-$(read_env_file_var KEYCLOAK_AI_WIKI_WORKER_CLIENT_SECRET)}"
+[[ -n "${KEYCLOAK_AI_WIKI_WORKER_CLIENT_SECRET:-}" ]] || die "KEYCLOAK_AI_WIKI_WORKER_CLIENT_SECRET must be supplied via environment or Kubernetes Secret"
+
 KEYCLOAK_KF_ENABLE_MANAGE_USERS="${KEYCLOAK_KF_ENABLE_MANAGE_USERS:-$(read_env_file_var KEYCLOAK_KF_ENABLE_MANAGE_USERS)}"
 KEYCLOAK_KF_ENABLE_MANAGE_USERS="${KEYCLOAK_KF_ENABLE_MANAGE_USERS:-true}"
 
@@ -381,6 +384,7 @@ ensure_client_role app service_agent "application service agent role"
 agentic_service_user="$(wait_for_service_account_username agentic)"
 knowledge_flow_service_user="$(wait_for_service_account_username knowledge-flow)"
 control_plane_service_user="$(wait_for_service_account_username control-plane)"
+ai_wiki_worker_service_user="$(wait_for_service_account_username fred-ai-wiki-worker)"
 
 # Neither agentic (fred-agents), knowledge-flow, nor control-plane call any
 # Keycloak group-admin API (a_get_groups/a_get_group_members) - confirmed
@@ -402,6 +406,7 @@ ensure_user_client_role "$control_plane_service_user" realm-management manage-us
 ensure_user_client_role "$agentic_service_user" app service_agent
 ensure_user_client_role "$knowledge_flow_service_user" app service_agent
 ensure_user_client_role "$control_plane_service_user" app service_agent
+ensure_user_client_role "$ai_wiki_worker_service_user" app service_agent
 
 if should_force_relogin; then
   if kc_http_post_empty "/logout-all"; then

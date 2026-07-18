@@ -15,6 +15,9 @@ Status: `[ ]` todo · `[~]` in progress · `[x]` done. IDs are referenced from t
 ## Proven / done (baseline — do not regress)
 
 - [x] All four apps (cp, kf+worker, fa, fr) under ArgoCD `fred-apps`, pinned to the running tag.
+- [x] AUTHZ-WIKI-08 scheduled automation infra foundation: Docker and k3d realm templates define
+      the dedicated confidential `fred-ai-wiki-worker` service client with service accounts enabled,
+      app audience, runtime-only secret plumbing, and no seeded team delegation tuples.
 - [x] A/B boundary enforced in `gcp-c1/argocd/fred-apps/Chart.yaml`; apps reference infra by name.
 - [x] Config-faithful cutover method (render + byte-diff vs live ConfigMap) — keep using it.
 - [x] Frontend edge decoupled via `fredFrontend.ingressEnabled` (Ingress/cert/BackendConfig
