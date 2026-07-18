@@ -747,6 +747,20 @@
         "jsonType.label" : "String",
         "usermodel.clientRoleMapping.clientId" : "app"
       }
+    }, {
+      "id" : "6e279517-9e49-44ca-93e2-55367ecedb20",
+      "name" : "app-audience",
+      "protocol" : "openid-connect",
+      "protocolMapper" : "oidc-audience-mapper",
+      "consentRequired" : false,
+      "config" : {
+        "access.token.claim" : "true",
+        "id.token.claim" : "false",
+        "included.client.audience" : "app",
+        "introspection.token.claim" : "true",
+        "lightweight.claim" : "true",
+        "userinfo.token.claim" : "false"
+      }
     } ],
     "defaultClientScopes" : [ "web-origins", "acr", "profile", "roles", "basic", "email" ],
     "optionalClientScopes" : [ "address", "phone", "offline_access", "microprofile-jwt" ]
