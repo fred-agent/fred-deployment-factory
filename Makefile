@@ -582,6 +582,10 @@ check-pure-infrastructure: ## Offline guard: fail if a tracked artifact carries 
 	  [ "$$ai_wiki_worker_valid" = "true" ] || { echo "✗ $$template: fred-ai-wiki-worker must be confidential, service-account enabled, and carry no committed secret"; exit 1; }; \
 	done
 	@echo "✓ docker and k3d realm templates: zero users, zero groups, only app:service_agent, fred-ai-wiki-worker without committed secret"
+	@echo "▶ Keycloak post-install scripts must reconcile fred-ai-wiki-worker from runtime secrets"
+	@grep -q 'ensure_service_client_confidential fred-ai-wiki-worker "$$KEYCLOAK_AI_WIKI_WORKER_CLIENT_SECRET"' docker/keycloak/keycloak-post-install.sh || { echo "✗ docker post-install must reconcile fred-ai-wiki-worker client secret"; exit 1; }
+	@grep -q 'ensure_service_client_confidential fred-ai-wiki-worker "$$KEYCLOAK_AI_WIKI_WORKER_CLIENT_SECRET"' k3d/files/scripts/keycloak-post-install-k8s.sh || { echo "✗ k3d post-install must reconcile fred-ai-wiki-worker client secret"; exit 1; }
+	@echo "✓ docker and k3d post-install reconcile fred-ai-wiki-worker without committed secrets"
 	@echo "▶ fred-preflight.sh must not require legacy app:admin/editor/viewer roles"
 	@! grep -qE '^REQUIRED_APP_CLIENT_ROLES=' bin/fred-preflight.sh || { echo "✗ bin/fred-preflight.sh reintroduces REQUIRED_APP_CLIENT_ROLES - admin/editor/viewer must never be required, only flagged as legacy"; exit 1; }
 	@grep -qE '^LEGACY_APP_CLIENT_ROLES=\(admin editor viewer\)' bin/fred-preflight.sh || { echo "✗ bin/fred-preflight.sh must flag admin/editor/viewer as legacy via LEGACY_APP_CLIENT_ROLES"; exit 1; }
