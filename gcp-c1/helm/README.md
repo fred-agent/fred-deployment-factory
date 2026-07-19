@@ -14,6 +14,8 @@ Helm chart for Fredlab Playground on GKE Autopilot.
 | Temporal UI | Protected admin UI | `temporal-ui:8080` | `temporal.playground.fredlab.dev` |
 | Control Plane backend | Private | `control-plane-backend:8080` | none |
 | Fred frontend | Public | `fred-frontend:8080` | `studio.playground.fredlab.dev` |
+| GMP query frontend | Private | `gmp-frontend:9090` | none |
+| Grafana | Protected admin UI | `grafana:3000` | `grafana.playground.fredlab.dev` |
 
 All services use `ClusterIP`. Public routing is handled by the GKE `gce` Ingress named `fredlab-infra-ingress`.
 
@@ -24,6 +26,7 @@ Each public hostname has its own GKE `ManagedCertificate`, all attached to the s
 - `fredlab-infra-cert` for Keycloak
 - `fredlab-temporal-cert` for Temporal UI
 - `fredlab-studio-cert` for Studio
+- `fredlab-grafana-cert` for Grafana
 
 This avoids mutating an already-attached Google-managed certificate when new public hosts are added.
 
@@ -168,6 +171,21 @@ Required values:
 - `keycloak.admin.password`
 - `keycloak.clients.controlPlane.secret`
 - `openfga.auth.apiToken`
+
+If knowledge-flow's GCS content store is in play anywhere in this environment —
+including when `knowledgeFlow.enabled: false` on **this** release, if
+`migration.enabled` or `knowledgeFlowWorker.enabled` still render the
+`knowledge-flow-config` ConfigMap (see STORAGE-INVENTORY.md §3) — also set:
+
+- `knowledgeFlow.config.storage.signingServiceAccountEmail`
+- `knowledgeFlow.config.models.project`
+
+Neither has a safe empty default; leaving either blank crashes
+`knowledge-flow-backend` at startup. Worse, this chart and
+`gcp-c1/argocd/fred-apps` currently render the same ConfigMap name, so a
+Foundation deploy with these unset can silently overwrite a correct
+GitOps-managed copy with a broken one — see `docs/DEPLOYMENT-GUIDE.md` §4 for
+what actually happened and how to check for this on any deploy.
 
 Validate that the secret file is ignored:
 
