@@ -1,0 +1,198 @@
+# Fred deployment guide — replicating this pattern on a new platform
+
+Who this is for: someone standing up a Fred instance on a **different platform**
+from the reference here (GKE/GCP) — e.g. **S3NS** (also GKE Autopilot) or a
+**Thales-managed AKS** cluster (not Autopilot, object storage on **SeaweedFS**
+instead of GCS). This is a practical checklist + a record of what actually broke
+building the GKE reference, so you don't re-discover the same things the hard way.
+
+---
+
+## 1. The pattern, in one paragraph
+
+Two layers. A **Foundation** — the stateful backbone (Postgres, OpenSearch,
+Keycloak, OpenFGA, Temporal, plus the shared Ingress/TLS/secrets) — deployed
+**imperatively** (a reviewed `helm upgrade`), changed rarely. And an **Apps**
+layer — the stateless Fred apps (control-plane, fred-agents, frontend,
+knowledge-flow backend+worker) — deployed by a **GitOps controller** (ArgoCD
+today) that reconciles the cluster to git. Apps reference the Foundation **by
+name** (a DNS hostname, a Secret name) and never create it. This split, and the
+rule that Apps never create Foundation resources, is the part that must survive
+unchanged on any platform — everything else (which cluster, which object store,
+which git host) is a knob.
+
+---
+
+## 2. What any platform must provide (checklist)
+
+Go through this before writing a single line of platform-specific config.
+
+- [ ] **Kubernetes with elastic node capacity.** Doesn't have to be
+      "Autopilot" specifically — just something that adds capacity without you
+      hand-sizing every node pool. On plain AKS this means turning on and sizing
+      the **cluster autoscaler** explicitly; there's no zero-config equivalent.
+- [ ] **Pod-level cloud credentials with no static keys.** GCP calls this
+      Workload Identity; Azure calls it Azure AD Workload Identity (OIDC
+      federation). Different plumbing, same shape: a pod gets a scoped,
+      short-lived credential without a JSON key or an access key sitting in a
+      Secret.
+- [ ] **Object storage that can mint time-limited signed/presigned URLs.**
+      knowledge-flow's tabular (Parquet) reads need this. GCS does it via IAM
+      `signBlob`; an S3-compatible store (SeaweedFS, MinIO, real S3) does it via
+      standard SigV4 presigned URLs — different mechanism, same requirement.
+- [ ] **A Prometheus-compatible metrics source, and somewhere to run Grafana.**
+      Needed for the capacity/cost dashboard (§5). GKE gives you this for free
+      (Google Managed Prometheus); most other platforms don't — budget an
+      explicit enable step or a self-hosted `kube-prometheus-stack`.
+- [ ] **A secrets injection path outside git.** The simplest version (what this
+      repo does today) is a git-ignored local values file fed to Helm. Fine for
+      a playground; harden it (Vault, sealed-secrets, CI-injected) as the
+      classification of the target goes up.
+- [ ] **Ingress + automatic TLS**, and **a git host + GitOps controller** for
+      the Apps layer (this repo: GitHub + ArgoCD).
+
+---
+
+## 3. How GKE/GCP does each of these (the reference)
+
+| Requirement | GKE/GCP implementation |
+| --- | --- |
+| Elastic capacity | GKE **Autopilot** — nodes provisioned automatically, no node pool sizing |
+| Pod-level credentials | **Workload Identity**: one Google Service Account (GSA) per concern, bound to the Kubernetes ServiceAccount that needs it, via `bin/fredlab-gcp-gcs-prereqs.sh` / `bin/fredlab-gcp-monitoring-prereqs.sh` |
+| Signed URLs | GCS + a dedicated `signing_service_account_email` — the GSA signs its own blobs (IAM `signBlob`, granted by the prereq script) |
+| Metrics + Grafana | Google Managed Prometheus (GMP) query frontend (in-cluster, stateless) + a self-deployed `kube-state-metrics` + Grafana, all as Foundation components |
+| Secrets | Local git-ignored `gcp-c1/helm/fredlab-secrets.values.yaml` |
+| Ingress/TLS | GKE `gce` Ingress + one `ManagedCertificate` per public hostname |
+| Git host + GitOps | GitHub + ArgoCD |
+
+Two GCP-specific values that have **no safe default** and will crash
+`knowledge-flow-backend` at startup if left empty:
+
+- `knowledgeFlow.config.storage.signingServiceAccountEmail`
+- `knowledgeFlow.config.models.project` (Vertex AI project id)
+
+On a new platform these become whatever the equivalent required field is for
+your object store's signing mechanism and your model provider — same failure
+mode (a hard crash with no fallback) if you leave them blank, so check for them
+explicitly rather than assuming "empty means use the default."
+
+---
+
+## 4. Gotchas we actually hit (read before you build the same thing)
+
+**Two charts writing the same object name will fight over it, silently.**
+This repo currently has two Helm chart trees — one for the imperative
+Foundation deploy, one for the GitOps Apps layer — that, today, both render a
+ConfigMap under the same name in the same namespace for a couple of apps. A
+routine Foundation deploy can overwrite the GitOps-managed ConfigMap with its
+own (possibly incomplete) values, with no warning. This actually happened and
+took a service down for two hours. **Before trusting any deploy on a new
+platform:** render both chart trees (`helm template`) and diff the object names
+they produce — anything that collides is a landmine. This is being fixed
+upstream (converging on one shared chart), but until it's fixed, check for it
+by hand on every chart change.
+
+**Grafana's Cloud Monitoring datasource needs the project set on every panel,
+explicitly.** If you point Grafana at Google Cloud Monitoring, don't rely on
+the datasource's default-project setting alone — Grafana's frontend query
+editor (as of Grafana 11.1.x) doesn't reliably fall back to it. A panel built
+without an explicit `projectName` inside its query silently never fires: no
+error, no network request, just a permanently empty panel that looks like a
+data problem when it's actually a missing field. If you hit "panel shows no
+data but the exact same query works fine when you run it directly against the
+API," check this first. (This specific plugin bug is GCP/Grafana-specific and
+won't apply to Azure Monitor's Grafana datasource — but the debugging method
+generalizes: bypass the browser, replay the exact query against the backend
+directly, to tell a real backend problem from a frontend one.)
+
+**On GKE Autopilot, "% of capacity requested" is not a growth signal.**
+Autopilot adds nodes on demand, so a CPU/memory-requested-vs-allocatable ratio
+self-corrects every time it scales up — it can sit near 100% forever without
+anything being wrong, and it hides real usage growth because the denominator
+keeps expanding to match. Track actual growth with **absolute** requested
+cores/memory against a fixed budget instead, not a percentage. This still
+applies conceptually on a non-Autopilot cluster, just less dramatically, since
+capacity there doesn't expand automatically.
+
+**GKE's *managed* Prometheus collection is a curated allowlist, not "every
+metric."** Confirming a scrape target shows `up=1` does not mean its full
+metric catalog reaches your queries — `kube-state-metrics`' resource-request/
+allocatable/restart metrics were silently excluded from the managed collection
+and needed a self-deployed, least-privilege `kube-state-metrics` feeding the
+same pipeline to actually show up. Verify by querying for the specific metric
+you need, not by checking scrape-target health.
+
+---
+
+## 5. The monitoring/FinOps dashboard pattern (platform-agnostic part)
+
+Regardless of platform, the useful pattern is:
+- Dashboard JSON committed to git, loaded via Grafana's **file provisioning**
+  (a ConfigMap + a file-based dashboard provider) — not built by hand in the UI.
+- Separate **capacity** signals (requested vs. allocatable — "can I schedule
+  more right now") from **FinOps** signals (absolute requested cores/memory
+  against a fixed budget — "am I growing beyond what I planned for"). The first
+  is a live scheduling fact; the second is a trend you set thresholds on
+  yourself. Conflating them (coloring a scheduling fact red like an outage) is
+  the mistake we made and then fixed.
+- A "how healthy is the autoscaler itself" panel pair: current node count +
+  node count over time (shows scale events directly), and pending-pod count +
+  pending-pod count over time (the actual "can't schedule right now" signal —
+  brief spikes during a rollout are normal, a sustained plateau isn't).
+
+Only the datasource type and the exact queries change per platform (Cloud
+Monitoring/`stackdriver` here; Azure Monitor's Grafana datasource on AKS); the
+shape of the dashboard doesn't need to.
+
+---
+
+## 6. What changes for each target platform
+
+### S3NS (same substrate — GKE Autopilot)
+
+Expect near-total reuse. Same chart, same Workload Identity pattern, same
+GMP/Grafana stack. What changes is environment-scoped values only — project id,
+region, hostnames, the secrets file contents — not the pattern or the chart
+structure. Still re-check §4's ConfigMap-collision issue after any chart
+change; it's a chart-structure risk, not a GKE-specific one.
+
+### Thales AKS + SeaweedFS (different substrate)
+
+| Concern | GKE reference | AKS + SeaweedFS equivalent |
+| --- | --- | --- |
+| Elastic capacity | Autopilot (automatic) | AKS **cluster autoscaler**, configured explicitly on a standard node pool — no Autopilot-equivalent zero-config mode. Size a baseline node pool for slower scale-up reaction than Autopilot's. |
+| Pod-level credentials | Workload Identity (KSA↔GSA binding) | **Azure AD Workload Identity** — same no-static-keys shape, different setup: a federated credential + a pod annotation instead of an IAM binding. |
+| Object storage | GCS + IAM `signBlob` | **SeaweedFS**, S3-compatible. `content_storage.type` becomes `s3`, not `gcs`. SeaweedFS issues presigned URLs via standard S3 SigV4 — no `signing_service_account_email`-style indirection needed — but you still need a real credential-injection path for the access key/secret (a Secret at minimum; check whether SeaweedFS supports a federated-identity-issued token if you need to avoid static keys entirely). |
+| Metrics source | Google Managed Prometheus (free, built into Autopilot) | **Azure Monitor managed service for Prometheus**, or self-hosted `kube-prometheus-stack` if that's not available. Nothing is free-by-default the way GMP is — budget an explicit enable step or an extra in-cluster workload. |
+| Model provider (chat/embedding/vision) | Vertex AI, `knowledgeFlow.config.models.project` | Azure OpenAI or self-hosted, per Fred's own model-provider config (an app concern, not a deployment one) — but expect the same failure mode: a required field with no safe default (endpoint/deployment/project) crashes the app the same way if left empty. Check for it explicitly. |
+| Dashboard-as-code | Grafana file-provisioned JSON, `stackdriver` datasource | Same file-provisioning pattern — reuse it. Only the datasource type (Azure Monitor instead of Cloud Monitoring) and the panel queries change. Treat any new datasource plugin as unproven until you've verified it panel-by-panel against real data — don't assume a plugin's frontend is bug-free just because the backend query works (§4). |
+| Git host + GitOps | GitHub + ArgoCD | GitLab + its native GitOps (or ArgoCD pointed at GitLab) |
+
+**Bottom line:** the two-layer split and the boundary rule (Apps never create
+Foundation resources) transfer unchanged. The real new work is re-deriving the
+credential-federation and object-storage wiring for Azure, and choosing a
+metrics source since nothing is free-by-default the way GMP is on GKE. The
+ConfigMap-collision check in §4 applies identically no matter what cloud you're
+on.
+
+---
+
+## 7. Pre-flight checklist for a new platform
+
+- [ ] Elastic node capacity confirmed working (a test pod that needs more than
+      current headroom actually gets scheduled, within a time budget you're
+      okay with).
+- [ ] Pod-level federated credentials working end-to-end (a pod can read from
+      object storage / call the model provider with zero static keys anywhere).
+- [ ] Object storage can mint a signed/presigned URL and you've confirmed the
+      required config field for it (§3) is filled — not left on a default that
+      doesn't exist.
+- [ ] Metrics source reachable from Grafana; each dashboard panel confirmed
+      against **real returned data**, not just "the panel didn't error."
+- [ ] Rendered both chart trees (Foundation + Apps) and confirmed no object
+      name collides between them (§4).
+- [ ] Secrets file is git-ignored and confirmed as such
+      (`git status --short --ignored <file>`).
+- [ ] Ingress + TLS cert issued and `Active` for every public hostname.
+- [ ] GitOps controller synced at least once, Application shows `Synced` /
+      `Healthy`.
