@@ -108,6 +108,8 @@ metadata:
 data:
   resource-finops.json: |
 {{ .Files.Get "files/grafana-dashboards/resource-finops.json" | indent 4 }}
+  application-kpis.json: |
+{{ .Files.Get "files/grafana-dashboards/application-kpis.json" | indent 4 }}
 ---
 apiVersion: v1
 kind: Service

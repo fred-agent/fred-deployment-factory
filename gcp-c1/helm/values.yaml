@@ -573,8 +573,11 @@ controlPlane:
     observability:
       log:
         enabled: true
+      # Dedicated exporter (prometheus_client.start_http_server), separate from the
+      # API port. Feeds the "Application KPIs" Grafana dashboard via a PodMonitoring
+      # CR (gcp-c1/argocd/fred-apps) — GMP scrapes this port directly, no Service hop.
       prometheus:
-        enabled: false
+        enabled: true
         address: 0.0.0.0
         port: 9222
       # KPI OpenSearch sink: writes KPI events to OpenSearch AND backs the analytics
@@ -898,6 +901,16 @@ fredAgents:
       password: admin
     # No Langfuse in fredlab — use plain logging tracer.
     tracer: logging
+    # Dedicated exporter (prometheus_client.start_http_server, via fred-runtime's
+    # shared context.py), separate from the API port. fred-runtime's own default
+    # (enabled=true, address=127.0.0.1) is unreachable for scraping — address must
+    # be explicit. Feeds the "Application KPIs" Grafana dashboard via a
+    # PodMonitoring CR (gcp-c1/argocd/fred-apps).
+    observability:
+      prometheus:
+        enabled: true
+        address: 0.0.0.0
+        port: 9000
 
 fredFrontend:
   enabled: false

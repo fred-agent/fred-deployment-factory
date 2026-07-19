@@ -47,6 +47,11 @@ data:
 
     observability:
       tracer: {{ .Values.fredAgents.config.tracer | quote }}
+      kpi:
+        prometheus:
+          enabled: {{ .Values.fredAgents.config.observability.prometheus.enabled }}
+          address: {{ .Values.fredAgents.config.observability.prometheus.address | quote }}
+          port: {{ .Values.fredAgents.config.observability.prometheus.port }}
 
     storage:
       # Durable runtime store: the LangGraph checkpointer + session history use this

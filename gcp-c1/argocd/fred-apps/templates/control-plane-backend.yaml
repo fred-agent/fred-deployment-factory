@@ -139,6 +139,8 @@ spec:
           ports:
             - name: http
               containerPort: {{ .Values.controlPlane.containerPort }}
+            - name: metrics
+              containerPort: {{ .Values.controlPlane.config.observability.prometheus.port }}
           readinessProbe:
             httpGet:
               path: {{ .Values.controlPlane.health.path | quote }}

@@ -1,0 +1,328 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "id": 100,
+      "type": "row",
+      "title": "Agent & tool execution",
+      "gridPos": { "x": 0, "y": 0, "w": 24, "h": 1 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Tool call p95 latency, by tool",
+      "description": "agent.tool_latency_ms (histogram). Surviving labels: tool_name, template_agent_id.",
+      "datasource": { "type": "prometheus", "uid": "gmp" },
+      "gridPos": { "x": 0, "y": 1, "w": 12, "h": 3 },
+      "fieldConfig": { "defaults": { "unit": "ms" }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        {
+          "refId": "A",
+          "legendFormat": "{{tool_name}}",
+          "datasource": { "type": "prometheus", "uid": "gmp" },
+          "expr": "histogram_quantile(0.95, sum(rate(agent_tool_latency_ms_bucket[5m])) by (le, tool_name))"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Tool failure rate, by tool",
+      "description": "agent.tool_failed_total ÷ agent.tool_latency_ms count. Surviving labels: tool_name, template_agent_id, status, error_code, exception_type.",
+      "datasource": { "type": "prometheus", "uid": "gmp" },
+      "gridPos": { "x": 12, "y": 1, "w": 12, "h": 3 },
+      "fieldConfig": { "defaults": { "unit": "percentunit" }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        {
+          "refId": "A",
+          "legendFormat": "{{tool_name}}",
+          "datasource": { "type": "prometheus", "uid": "gmp" },
+          "expr": "sum(rate(agent_tool_failed_total[5m])) by (tool_name) / sum(rate(agent_tool_latency_ms_count[5m])) by (tool_name)"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Agent turn completion rate, by template",
+      "description": "agent.turn_completed (histogram, used here as a rate). Surviving labels: template_agent_id, runtime_id, model_name, finish_reason.",
+      "datasource": { "type": "prometheus", "uid": "gmp" },
+      "gridPos": { "x": 0, "y": 4, "w": 12, "h": 3 },
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        {
+          "refId": "A",
+          "legendFormat": "{{template_agent_id}}",
+          "datasource": { "type": "prometheus", "uid": "gmp" },
+          "expr": "sum(rate(agent_turn_completed_count[5m])) by (template_agent_id)"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Agent turn error rate, by template",
+      "description": "agent.turn_error_total ÷ agent.turn_completed count — only emitted when a turn errors.",
+      "datasource": { "type": "prometheus", "uid": "gmp" },
+      "gridPos": { "x": 12, "y": 4, "w": 12, "h": 3 },
+      "fieldConfig": { "defaults": { "unit": "percentunit" }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        {
+          "refId": "A",
+          "legendFormat": "{{template_agent_id}}",
+          "datasource": { "type": "prometheus", "uid": "gmp" },
+          "expr": "sum(rate(agent_turn_error_total[5m])) by (template_agent_id) / sum(rate(agent_turn_completed_count[5m])) by (template_agent_id)"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Token throughput (input vs. output)",
+      "description": "agent.turn_completed_quantity_{input,output}_tokens_total — this is where token counts actually live today, not any cost.* series (those have zero call sites).",
+      "datasource": { "type": "prometheus", "uid": "gmp" },
+      "gridPos": { "x": 0, "y": 7, "w": 24, "h": 3 },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        {
+          "refId": "A",
+          "legendFormat": "input tokens/s",
+          "datasource": { "type": "prometheus", "uid": "gmp" },
+          "expr": "sum(rate(agent_turn_completed_quantity_input_tokens_total[5m]))"
+        },
+        {
+          "refId": "B",
+          "legendFormat": "output tokens/s",
+          "datasource": { "type": "prometheus", "uid": "gmp" },
+          "expr": "sum(rate(agent_turn_completed_quantity_output_tokens_total[5m]))"
+        }
+      ]
+    },
+    {
+      "id": 200,
+      "type": "row",
+      "title": "API & LLM calls",
+      "gridPos": { "x": 0, "y": 10, "w": 24, "h": 1 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "API p95 latency, by route",
+      "description": "api.request_latency_ms (histogram), emitted for every HTTP request to control-plane, knowledge-flow, and fred-agents alike. Surviving labels: route, method, status, http_status, error_code, exception_type.",
+      "datasource": { "type": "prometheus", "uid": "gmp" },
+      "gridPos": { "x": 0, "y": 11, "w": 12, "h": 3 },
+      "fieldConfig": { "defaults": { "unit": "ms" }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        {
+          "refId": "A",
+          "legendFormat": "{{route}}",
+          "datasource": { "type": "prometheus", "uid": "gmp" },
+          "expr": "histogram_quantile(0.95, sum(rate(api_request_latency_ms_bucket[5m])) by (le, route))"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "API error rate, by route",
+      "description": "api.error_total ÷ api.request_latency_ms count — only non-2xx/3xx.",
+      "datasource": { "type": "prometheus", "uid": "gmp" },
+      "gridPos": { "x": 12, "y": 11, "w": 12, "h": 3 },
+      "fieldConfig": { "defaults": { "unit": "percentunit" }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        {
+          "refId": "A",
+          "legendFormat": "{{route}}",
+          "datasource": { "type": "prometheus", "uid": "gmp" },
+          "expr": "sum(rate(api_error_total[5m])) by (route) / sum(rate(api_request_latency_ms_count[5m])) by (route)"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "API request rate, by route",
+      "description": "api.request_latency_ms count, as a rate — overall traffic shape across control-plane, knowledge-flow and fred-agents.",
+      "datasource": { "type": "prometheus", "uid": "gmp" },
+      "gridPos": { "x": 0, "y": 14, "w": 12, "h": 3 },
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        {
+          "refId": "A",
+          "legendFormat": "{{route}}",
+          "datasource": { "type": "prometheus", "uid": "gmp" },
+          "expr": "sum(rate(api_request_latency_ms_count[5m])) by (route)"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "LLM call latency p95, by model",
+      "description": "llm.call_latency_ms (histogram). Only model_name survives as a label — agent_id and operation are sent but dropped.",
+      "datasource": { "type": "prometheus", "uid": "gmp" },
+      "gridPos": { "x": 12, "y": 14, "w": 12, "h": 3 },
+      "fieldConfig": { "defaults": { "unit": "ms" }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        {
+          "refId": "A",
+          "legendFormat": "{{model_name}}",
+          "datasource": { "type": "prometheus", "uid": "gmp" },
+          "expr": "histogram_quantile(0.95, sum(rate(llm_call_latency_ms_bucket[5m])) by (le, model_name))"
+        }
+      ]
+    },
+    {
+      "id": 300,
+      "type": "row",
+      "title": "Retrieval & ingestion (knowledge-flow)",
+      "gridPos": { "x": 0, "y": 17, "w": 24, "h": 1 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "RAG search hit ratio, by status",
+      "description": "rag.search_hit_ratio (gauge). Only status survives as a label.",
+      "datasource": { "type": "prometheus", "uid": "gmp" },
+      "gridPos": { "x": 0, "y": 18, "w": 12, "h": 3 },
+      "fieldConfig": { "defaults": { "unit": "percentunit", "max": 1, "min": 0 }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        {
+          "refId": "A",
+          "legendFormat": "{{status}}",
+          "datasource": { "type": "prometheus", "uid": "gmp" },
+          "expr": "avg(rag_search_hit_ratio) by (status)"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "RAG search rate (total / error / empty), by status",
+      "description": "rag.search_total, rag.search_error_total, rag.search_empty_total — status is the only surviving label on all three.",
+      "datasource": { "type": "prometheus", "uid": "gmp" },
+      "gridPos": { "x": 12, "y": 18, "w": 12, "h": 3 },
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        {
+          "refId": "A",
+          "legendFormat": "total ({{status}})",
+          "datasource": { "type": "prometheus", "uid": "gmp" },
+          "expr": "sum(rate(rag_search_total[5m])) by (status)"
+        },
+        {
+          "refId": "B",
+          "legendFormat": "errors ({{status}})",
+          "datasource": { "type": "prometheus", "uid": "gmp" },
+          "expr": "sum(rate(rag_search_error_total[5m])) by (status)"
+        },
+        {
+          "refId": "C",
+          "legendFormat": "empty ({{status}})",
+          "datasource": { "type": "prometheus", "uid": "gmp" },
+          "expr": "sum(rate(rag_search_empty_total[5m])) by (status)"
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "Document created / deleted rate, by file type",
+      "description": "document.created_total / document.deleted_total. Only file_type survives — source_type and team_id are sent but dropped (per-team breakdowns live in product analytics, not here).",
+      "datasource": { "type": "prometheus", "uid": "gmp" },
+      "gridPos": { "x": 0, "y": 21, "w": 12, "h": 3 },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        {
+          "refId": "A",
+          "legendFormat": "created ({{file_type}})",
+          "datasource": { "type": "prometheus", "uid": "gmp" },
+          "expr": "sum(rate(document_created_total[5m])) by (file_type)"
+        },
+        {
+          "refId": "B",
+          "legendFormat": "deleted ({{file_type}})",
+          "datasource": { "type": "prometheus", "uid": "gmp" },
+          "expr": "sum(rate(document_deleted_total[5m])) by (file_type)"
+        }
+      ]
+    },
+    {
+      "id": 13,
+      "type": "timeseries",
+      "title": "Ingestion duration p95, by file type",
+      "description": "ingestion.document_duration_ms (histogram). Surviving labels: file_type, status — source is sent but dropped.",
+      "datasource": { "type": "prometheus", "uid": "gmp" },
+      "gridPos": { "x": 12, "y": 21, "w": 12, "h": 3 },
+      "fieldConfig": { "defaults": { "unit": "ms" }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        {
+          "refId": "A",
+          "legendFormat": "{{file_type}}",
+          "datasource": { "type": "prometheus", "uid": "gmp" },
+          "expr": "histogram_quantile(0.95, sum(rate(ingestion_document_duration_ms_bucket[5m])) by (le, file_type))"
+        }
+      ]
+    },
+    {
+      "id": 14,
+      "type": "timeseries",
+      "title": "Temporal ingestion workflows / documents rate, by status",
+      "description": "temporal.ingestion.workflows_total / temporal.ingestion.documents_total, emitted by the knowledge-flow Temporal worker. Only status survives as a label.",
+      "datasource": { "type": "prometheus", "uid": "gmp" },
+      "gridPos": { "x": 0, "y": 24, "w": 24, "h": 3 },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        {
+          "refId": "A",
+          "legendFormat": "workflows ({{status}})",
+          "datasource": { "type": "prometheus", "uid": "gmp" },
+          "expr": "sum(rate(temporal_ingestion_workflows_total[5m])) by (status)"
+        },
+        {
+          "refId": "B",
+          "legendFormat": "documents ({{status}})",
+          "datasource": { "type": "prometheus", "uid": "gmp" },
+          "expr": "sum(rate(temporal_ingestion_documents_total[5m])) by (status)"
+        }
+      ]
+    }
+  ],
+  "refresh": "1m",
+  "schemaVersion": 39,
+  "tags": ["fredlab", "application", "kpis"],
+  "templating": { "list": [] },
+  "time": { "from": "now-6h", "to": "now" },
+  "timepicker": {},
+  "timezone": "",
+  "title": "Fredlab — Application KPIs",
+  "uid": "fredlab-application-kpis",
+  "version": 1,
+  "weekStart": ""
+}
