@@ -372,6 +372,7 @@ KEYCLOAK_ADMIN_HTTP_TOKEN="$(kc_http_admin_token)"
 
 app_client_uuid="$(client_uuid app)"
 [[ -n "$app_client_uuid" ]] || die "cannot resolve client 'app' from imported realm"
+ensure_service_client_confidential fred-ai-wiki-worker "$KEYCLOAK_AI_WIKI_WORKER_CLIENT_SECRET" >/dev/null
 
 ensure_client_role app service_agent "application service agent role"
 
