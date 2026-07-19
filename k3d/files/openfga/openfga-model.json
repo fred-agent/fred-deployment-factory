@@ -16,6 +16,13 @@
                     "can_observe_platform": {},
                     "can_rescue_team_admin": {},
                     "can_run_benchmark": {},
+                    "personal_team": {
+                        "directly_related_user_types": [
+                            {
+                                "type": "team"
+                            }
+                        ]
+                    },
                     "platform_admin": {
                         "directly_related_user_types": [
                             {
@@ -27,6 +34,13 @@
                         "directly_related_user_types": [
                             {
                                 "type": "user"
+                            }
+                        ]
+                    },
+                    "team": {
+                        "directly_related_user_types": [
+                            {
+                                "type": "team"
                             }
                         ]
                     }
@@ -78,6 +92,9 @@
                         "relation": "platform_admin"
                     }
                 },
+                "personal_team": {
+                    "this": {}
+                },
                 "platform_admin": {
                     "this": {}
                 },
@@ -94,6 +111,9 @@
                             }
                         ]
                     }
+                },
+                "team": {
+                    "this": {}
                 }
             },
             "type": "organization"
@@ -167,7 +187,7 @@
                             }
                         ]
                     },
-                    "wiki_review_assistant_runner": {
+                    "wiki_autonomous_apply_runner": {
                         "directly_related_user_types": [
                             {
                                 "type": "user"
@@ -181,7 +201,7 @@
                             }
                         ]
                     },
-                    "wiki_autonomous_apply_runner": {
+                    "wiki_review_assistant_runner": {
                         "directly_related_user_types": [
                             {
                                 "type": "user"
@@ -411,13 +431,13 @@
                         ]
                     }
                 },
-                "wiki_review_assistant_runner": {
+                "wiki_autonomous_apply_runner": {
                     "this": {}
                 },
                 "wiki_guarded_auto_apply_runner": {
                     "this": {}
                 },
-                "wiki_autonomous_apply_runner": {
+                "wiki_review_assistant_runner": {
                     "this": {}
                 }
             },
@@ -827,6 +847,165 @@
                 }
             },
             "type": "resource"
+        },
+        {
+            "metadata": {
+                "relations": {
+                    "can_manage": {},
+                    "can_use": {},
+                    "default_on": {
+                        "directly_related_user_types": [
+                            {
+                                "type": "organization"
+                            }
+                        ]
+                    },
+                    "disabled": {
+                        "directly_related_user_types": [
+                            {
+                                "type": "team"
+                            }
+                        ]
+                    },
+                    "enabled": {
+                        "directly_related_user_types": [
+                            {
+                                "type": "team"
+                            }
+                        ]
+                    },
+                    "inherited": {},
+                    "organization": {
+                        "directly_related_user_types": [
+                            {
+                                "type": "organization"
+                            }
+                        ]
+                    },
+                    "personal_block": {},
+                    "personal_disabled": {
+                        "directly_related_user_types": [
+                            {
+                                "type": "organization"
+                            }
+                        ]
+                    },
+                    "personal_grant": {},
+                    "personal_on": {
+                        "directly_related_user_types": [
+                            {
+                                "type": "organization"
+                            }
+                        ]
+                    }
+                }
+            },
+            "relations": {
+                "can_manage": {
+                    "tupleToUserset": {
+                        "computedUserset": {
+                            "relation": "platform_admin"
+                        },
+                        "tupleset": {
+                            "relation": "organization"
+                        }
+                    }
+                },
+                "can_use": {
+                    "difference": {
+                        "base": {
+                            "union": {
+                                "child": [
+                                    {
+                                        "computedUserset": {
+                                            "relation": "enabled"
+                                        }
+                                    },
+                                    {
+                                        "computedUserset": {
+                                            "relation": "inherited"
+                                        }
+                                    }
+                                ]
+                            }
+                        },
+                        "subtract": {
+                            "computedUserset": {
+                                "relation": "disabled"
+                            }
+                        }
+                    }
+                },
+                "default_on": {
+                    "this": {}
+                },
+                "disabled": {
+                    "this": {}
+                },
+                "enabled": {
+                    "this": {}
+                },
+                "inherited": {
+                    "difference": {
+                        "base": {
+                            "union": {
+                                "child": [
+                                    {
+                                        "tupleToUserset": {
+                                            "computedUserset": {
+                                                "relation": "team"
+                                            },
+                                            "tupleset": {
+                                                "relation": "default_on"
+                                            }
+                                        }
+                                    },
+                                    {
+                                        "computedUserset": {
+                                            "relation": "personal_grant"
+                                        }
+                                    }
+                                ]
+                            }
+                        },
+                        "subtract": {
+                            "computedUserset": {
+                                "relation": "personal_block"
+                            }
+                        }
+                    }
+                },
+                "organization": {
+                    "this": {}
+                },
+                "personal_block": {
+                    "tupleToUserset": {
+                        "computedUserset": {
+                            "relation": "personal_team"
+                        },
+                        "tupleset": {
+                            "relation": "personal_disabled"
+                        }
+                    }
+                },
+                "personal_disabled": {
+                    "this": {}
+                },
+                "personal_grant": {
+                    "tupleToUserset": {
+                        "computedUserset": {
+                            "relation": "personal_team"
+                        },
+                        "tupleset": {
+                            "relation": "personal_on"
+                        }
+                    }
+                },
+                "personal_on": {
+                    "this": {}
+                }
+            },
+            "type": "capability"
         }
     ]
 }
