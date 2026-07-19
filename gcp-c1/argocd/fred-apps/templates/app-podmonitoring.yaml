@@ -1,0 +1,81 @@
+# GMP self-deployed collection (the cluster-wide collector already running as part
+# of GKE's default GMP install — no extra RBAC, no DaemonSet of our own) scraping
+# each app's dedicated Prometheus exporter port (separate from its API port — see
+# each Deployment's `metrics` containerPort). Feeds the same gmp-frontend query
+# path the "Application KPIs" Grafana dashboard reads, no separate datasource.
+#
+# Lives here, not in gcp-c1/helm: these apps are only ever actually deployed by
+# this chart (their gcp-c1/helm counterparts are `enabled: false`), so a
+# PodMonitoring in the Foundation chart would never have a matching pod to select
+# — no point creating it there, and no ConfigMap-name-collision risk either way.
+{{- if and .Values.controlPlane.enabled .Values.controlPlane.config.observability.prometheus.enabled }}
+apiVersion: monitoring.googleapis.com/v1
+kind: PodMonitoring
+metadata:
+  name: {{ include "fredlab-infra.controlPlaneBackendName" . }}
+  labels:
+    {{- include "fredlab-infra.labels" . | nindent 4 }}
+    app.kubernetes.io/component: control-plane-backend
+spec:
+  selector:
+    matchLabels:
+      {{- include "fredlab-infra.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: control-plane-backend
+  endpoints:
+    - port: metrics
+      interval: 30s
+{{- end }}
+{{- if and .Values.fredAgents.enabled .Values.fredAgents.config.observability.prometheus.enabled }}
+---
+apiVersion: monitoring.googleapis.com/v1
+kind: PodMonitoring
+metadata:
+  name: {{ include "fredlab-infra.agentsName" . }}
+  labels:
+    {{- include "fredlab-infra.labels" . | nindent 4 }}
+    app.kubernetes.io/component: fred-agents
+spec:
+  selector:
+    matchLabels:
+      {{- include "fredlab-infra.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: fred-agents
+  endpoints:
+    - port: metrics
+      interval: 30s
+{{- end }}
+{{- if .Values.knowledgeFlow.enabled }}
+---
+apiVersion: monitoring.googleapis.com/v1
+kind: PodMonitoring
+metadata:
+  name: {{ include "fredlab-infra.knowledgeFlowName" . }}
+  labels:
+    {{- include "fredlab-infra.labels" . | nindent 4 }}
+    app.kubernetes.io/component: knowledge-flow-backend
+spec:
+  selector:
+    matchLabels:
+      {{- include "fredlab-infra.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: knowledge-flow-backend
+  endpoints:
+    - port: metrics
+      interval: 30s
+{{- end }}
+{{- if .Values.knowledgeFlowWorker.enabled }}
+---
+apiVersion: monitoring.googleapis.com/v1
+kind: PodMonitoring
+metadata:
+  name: {{ include "fredlab-infra.knowledgeFlowWorkerName" . }}
+  labels:
+    {{- include "fredlab-infra.labels" . | nindent 4 }}
+    app.kubernetes.io/component: knowledge-flow-worker
+spec:
+  selector:
+    matchLabels:
+      {{- include "fredlab-infra.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: knowledge-flow-worker
+  endpoints:
+    - port: metrics
+      interval: 30s
+{{- end }}

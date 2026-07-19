@@ -104,6 +104,8 @@ spec:
           ports:
             - name: http
               containerPort: {{ .Values.fredAgents.containerPort }}
+            - name: metrics
+              containerPort: {{ .Values.fredAgents.config.observability.prometheus.port }}
           # The agents runtime exposes no /healthz, so probe the TCP port: it confirms
           # uvicorn is listening without needing an unauthenticated HTTP route.
           startupProbe:
