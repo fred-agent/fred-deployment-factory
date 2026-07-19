@@ -246,9 +246,9 @@ ensure_service_client_confidential() {
 
   current_secret="$(kc get "clients/${uuid}/client-secret" -r "$KEYCLOAK_REALM" -c | jq -r '.value // empty')"
   if [[ "$current_secret" != "$desired_secret" ]]; then
-    if ! kc create "clients/${uuid}/client-secret" -r "$KEYCLOAK_REALM" -s "value=${desired_secret}" >/dev/null 2>&1; then
-      kc update "clients/${uuid}" -r "$KEYCLOAK_REALM" -s "secret=${desired_secret}" >/dev/null
-    fi
+    # The /client-secret create endpoint always regenerates a random value; it
+    # cannot set an explicit secret. Update the client representation directly.
+    kc update "clients/${uuid}" -r "$KEYCLOAK_REALM" -s "secret=${desired_secret}" >/dev/null
     mark_changed
   fi
 
