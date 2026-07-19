@@ -33,6 +33,10 @@ spec:
             - secretRef:
                 name: {{ include "fredlab-infra.secretName" . }}
           env:
+            {{- if and .Values.grafana.enabled .Values.grafana.datasources.postgres.enabled }}
+            - name: POSTGRES_GRAFANA_USER
+              value: {{ .Values.postgresql.grafana.user | quote }}
+            {{- end }}
             - name: PGHOST
               value: {{ include "fredlab-infra.postgresName" . }}
             - name: PGPORT
@@ -49,6 +53,13 @@ spec:
                 secretKeyRef:
                   name: {{ include "fredlab-infra.secretName" . }}
                   key: POSTGRES_ADMIN_PASSWORD
+            {{- if and .Values.grafana.enabled .Values.grafana.datasources.postgres.enabled }}
+            - name: POSTGRES_GRAFANA_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fredlab-infra.secretName" . }}
+                  key: POSTGRES_GRAFANA_PASSWORD
+            {{- end }}
           command:
             - /bin/sh
             - -ec
@@ -82,6 +93,41 @@ spec:
               provision_db "$POSTGRES_TEMPORAL_VISIBILITY_DB" "$POSTGRES_TEMPORAL_USER" "$POSTGRES_TEMPORAL_PASSWORD"
               provision_db "$POSTGRES_FRED_DB" "$POSTGRES_FRED_USER" "$POSTGRES_FRED_PASSWORD"
               provision_db "$POSTGRES_EVALUATION_DB" "$POSTGRES_EVALUATION_USER" "$POSTGRES_EVALUATION_PASSWORD"
+
+              {{- if and .Values.grafana.enabled .Values.grafana.datasources.postgres.enabled }}
+              # Read-only observability role for Grafana's Postgres datasource (DB-size
+              # dashboard panels). CONNECT-only on every database + pg_read_all_stats
+              # membership is enough to call pg_database_size()/pg_total_relation_size();
+              # it grants no SELECT on any table, so it cannot read business data.
+              psql \
+                -v ON_ERROR_STOP=1 \
+                -v user="$POSTGRES_GRAFANA_USER" \
+                -v password="$POSTGRES_GRAFANA_PASSWORD" <<'SQL'
+              SELECT format('CREATE ROLE %I NOSUPERUSER LOGIN PASSWORD %L', :'user', :'password')
+              WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = :'user')\gexec
+              SELECT format('ALTER ROLE %I WITH PASSWORD %L', :'user', :'password')\gexec
+              SELECT format('GRANT pg_read_all_stats TO %I', :'user')\gexec
+              SQL
+
+              grant_connect() {
+                local db="$1"
+                local user="$2"
+
+                psql \
+                  -v ON_ERROR_STOP=1 \
+                  -v db="$db" \
+                  -v user="$user" <<'SQL'
+              SELECT format('GRANT CONNECT ON DATABASE %I TO %I', :'db', :'user')\gexec
+              SQL
+              }
+
+              grant_connect "$POSTGRES_KEYCLOAK_DB" "$POSTGRES_GRAFANA_USER"
+              grant_connect "$POSTGRES_OPENFGA_DB" "$POSTGRES_GRAFANA_USER"
+              grant_connect "$POSTGRES_TEMPORAL_DB" "$POSTGRES_GRAFANA_USER"
+              grant_connect "$POSTGRES_TEMPORAL_VISIBILITY_DB" "$POSTGRES_GRAFANA_USER"
+              grant_connect "$POSTGRES_FRED_DB" "$POSTGRES_GRAFANA_USER"
+              grant_connect "$POSTGRES_EVALUATION_DB" "$POSTGRES_GRAFANA_USER"
+              {{- end }}
 
               # Knowledge Flow's pgvector store needs the "vector" extension. It is an
               # untrusted extension, so only a superuser can create it — the fred app

@@ -303,6 +303,12 @@ knowledgeFlow:
       # the embedding model, use a new index name. Tracked in STORAGE-INVENTORY.md.
       vectorIndex: knowledge-flow-vectors
       vectorBulkSize: 1000
+    # In-cluster Google Cloud Managed Service for Prometheus (GMP) query frontend
+    # (the gmpFrontend Foundation component, gcp-c1/helm). baseUrl must match its
+    # Service name — flip enabled once that Deployment is actually live.
+    prometheus:
+      enabled: false
+      baseUrl: http://gmp-frontend:9090
     # Vertex AI models (authenticate via ADC). Needs roles/aiplatform.user on the GSA.
     models:
       # Empty project → resolved from ADC. Location must be a Vertex AI region.

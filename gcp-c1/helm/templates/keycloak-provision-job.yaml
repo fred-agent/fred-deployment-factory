@@ -120,6 +120,21 @@ spec:
             - name: TEMPORAL_UI_ALLOWED_APP_ROLE
               value: {{ .Values.temporal.ui.auth.allowedAppRole | quote }}
             {{- end }}
+            {{- if and .Values.grafana.enabled .Values.grafana.auth.enabled }}
+            - name: KEYCLOAK_GRAFANA_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fredlab-infra.secretName" . }}
+                  key: KEYCLOAK_GRAFANA_CLIENT_SECRET
+            - name: GRAFANA_CLIENT_ID
+              value: {{ .Values.keycloak.provision.clients.grafana.clientId | quote }}
+            - name: GRAFANA_REDIRECT_URIS
+              value: {{ .Values.keycloak.provision.clients.grafana.redirectUris | toJson | quote }}
+            - name: GRAFANA_WEB_ORIGINS
+              value: {{ .Values.keycloak.provision.clients.grafana.webOrigins | toJson | quote }}
+            - name: GRAFANA_ALLOWED_APP_ROLE
+              value: {{ .Values.grafana.auth.allowedAppRole | quote }}
+            {{- end }}
           command:
             - /bin/sh
             - -ec
@@ -555,6 +570,149 @@ spec:
               echo "Binding '$TEMPORAL_UI_FLOW' as browser override on '$TEMPORAL_UI_CLIENT_ID'."
               "$KCADM" update "clients/$TEMPORAL_UI_ID" -r "$REALM" \
                 -s "authenticationFlowBindingOverrides.browser=$(flow_id)"
+              {{- end }}
+              {{- end }}
+              {{- if and .Values.grafana.enabled .Values.grafana.auth.enabled }}
+              GRAFANA_ID="$(client_id "$GRAFANA_CLIENT_ID")"
+              if [ -n "$GRAFANA_ID" ]; then
+                echo "Updating confidential client '$GRAFANA_CLIENT_ID'."
+                "$KCADM" update "clients/$GRAFANA_ID" -r "$REALM" \
+                  -s "clientId=$GRAFANA_CLIENT_ID" \
+                  -s enabled=true \
+                  -s publicClient=false \
+                  -s standardFlowEnabled=true \
+                  -s serviceAccountsEnabled=false \
+                  -s implicitFlowEnabled=false \
+                  -s directAccessGrantsEnabled=false \
+                  -s "redirectUris=$GRAFANA_REDIRECT_URIS" \
+                  -s "webOrigins=$GRAFANA_WEB_ORIGINS" \
+                  -s "secret=$KEYCLOAK_GRAFANA_CLIENT_SECRET"
+              else
+                echo "Creating confidential client '$GRAFANA_CLIENT_ID'."
+                "$KCADM" create clients -r "$REALM" \
+                  -s "clientId=$GRAFANA_CLIENT_ID" \
+                  -s enabled=true \
+                  -s publicClient=false \
+                  -s standardFlowEnabled=true \
+                  -s serviceAccountsEnabled=false \
+                  -s implicitFlowEnabled=false \
+                  -s directAccessGrantsEnabled=false \
+                  -s "redirectUris=$GRAFANA_REDIRECT_URIS" \
+                  -s "webOrigins=$GRAFANA_WEB_ORIGINS" \
+                  -s "secret=$KEYCLOAK_GRAFANA_CLIENT_SECRET"
+              fi
+
+              {{- if .Values.grafana.auth.allowedAppRole }}
+              # Authorization gate: only holders of the app/<role> client role may log in
+              # to Grafana. Same shape as the Temporal UI gate above — see its comments
+              # for why the structure matters (REQUIRED/CONDITIONAL vs ALTERNATIVE).
+              # Re-fetch the UUID since the client may have just been created.
+              GRAFANA_ID="$(client_id "$GRAFANA_CLIENT_ID")"
+              GRAFANA_FLOW="grafana-gate"
+
+              # The condition references app/<role>; ensure that role exists first,
+              # otherwise "user lacks the role" is true for everyone and locks all out.
+              ensure_client_role "$APP_CLIENT_ID" "$GRAFANA_ALLOWED_APP_ROLE" \
+                "Role required to access the Grafana UI"
+
+              # NOTE: the Keycloak image ships no `awk`, so all CSV parsing below uses
+              # only grep/head/cut/tr (tr strips any trailing CR from kcadm output).
+              grafana_flow_exists() {
+                "$KCADM" get authentication/flows -r "$REALM" \
+                  --fields alias --format csv --noquotes 2>/dev/null \
+                  | tr -d '\r' | grep -qx "$GRAFANA_FLOW"
+              }
+
+              # id of the flow itself (for the client binding).
+              grafana_flow_id() {
+                "$KCADM" get authentication/flows -r "$REALM" \
+                  --fields id,alias --format csv --noquotes 2>/dev/null \
+                  | tr -d '\r' | grep -E ",$GRAFANA_FLOW\$" | head -n 1 | cut -d, -f1
+              }
+
+              # id of an execution within the flow, matched on a given column value.
+              grafana_exec_id() {
+                "$KCADM" get "authentication/flows/$GRAFANA_FLOW/executions" -r "$REALM" \
+                  --fields "id,$1" --format csv --noquotes 2>/dev/null \
+                  | tr -d '\r' | grep -E ",$2\$" | head -n 1 | cut -d, -f1
+              }
+
+              # Set an execution's requirement. The executions endpoint returns a JSON
+              # ARRAY, so a `-s` merge fails ("ObjectNode from Array"); send a raw body.
+              grafana_set_requirement() {
+                "$KCADM" update "authentication/flows/$GRAFANA_FLOW/executions" -r "$REALM" \
+                  -b "{\"id\":\"$1\",\"requirement\":\"$2\"}"
+              }
+
+              if grafana_flow_exists; then
+                # Created on a previous run. If a run ever fails half-way, delete the
+                # flow in Keycloak and re-deploy to rebuild it cleanly.
+                echo "Auth flow '$GRAFANA_FLOW' already exists; leaving as-is."
+              else
+                echo "Creating restricted login flow '$GRAFANA_FLOW'."
+                "$KCADM" create authentication/flows -r "$REALM" \
+                  -s "alias=$GRAFANA_FLOW" -s providerId=basic-flow \
+                  -s topLevel=true -s builtIn=false
+
+                # Auth wrapper (REQUIRED): cookie SSO or the username/password form. Keeping
+                # these alternatives inside their own REQUIRED subflow is what lets the role
+                # gate sit beside them without Keycloak ignoring the password form.
+                "$KCADM" create "authentication/flows/$GRAFANA_FLOW/executions/flow" -r "$REALM" \
+                  -s alias=grafana-gate-auth -s type=basic-flow
+                "$KCADM" create "authentication/flows/grafana-gate-auth/executions/execution" -r "$REALM" \
+                  -s provider=auth-cookie
+                "$KCADM" create "authentication/flows/grafana-gate-auth/executions/flow" -r "$REALM" \
+                  -s alias=grafana-gate-forms -s type=basic-flow
+                "$KCADM" create "authentication/flows/grafana-gate-forms/executions/execution" -r "$REALM" \
+                  -s provider=auth-username-password-form
+
+                # Role gate (CONDITIONAL): deny when the user lacks app/<role>.
+                "$KCADM" create "authentication/flows/$GRAFANA_FLOW/executions/flow" -r "$REALM" \
+                  -s alias=grafana-gate-admin -s type=basic-flow
+                "$KCADM" create "authentication/flows/grafana-gate-admin/executions/execution" -r "$REALM" \
+                  -s provider=conditional-user-role
+                "$KCADM" create "authentication/flows/grafana-gate-admin/executions/execution" -r "$REALM" \
+                  -s provider=deny-access-authenticator
+
+                # Requirements (executions endpoint needs a raw body, see set_requirement).
+                grafana_set_requirement "$(grafana_exec_id displayName grafana-gate-auth)"      REQUIRED
+                grafana_set_requirement "$(grafana_exec_id providerId auth-cookie)"                 ALTERNATIVE
+                grafana_set_requirement "$(grafana_exec_id displayName grafana-gate-forms)"     ALTERNATIVE
+                grafana_set_requirement "$(grafana_exec_id providerId auth-username-password-form)" REQUIRED
+                GRAFANA_ADMIN_SUBFLOW_ID="$(grafana_exec_id displayName grafana-gate-admin)"
+                grafana_set_requirement "$GRAFANA_ADMIN_SUBFLOW_ID" CONDITIONAL
+                GRAFANA_COND_ID="$(grafana_exec_id providerId conditional-user-role)"
+                GRAFANA_DENY_ID="$(grafana_exec_id providerId deny-access-authenticator)"
+                grafana_set_requirement "$GRAFANA_COND_ID" REQUIRED
+                grafana_set_requirement "$GRAFANA_DENY_ID" REQUIRED
+
+                # Deny when the user is NOT app/<role>. condUserRole uses a dot to
+                # separate the client id from the role name. (Condition order within the
+                # subflow does not matter: Keycloak evaluates it as a guard for the subflow.)
+                "$KCADM" create "authentication/executions/$GRAFANA_COND_ID/config" -r "$REALM" \
+                  -s alias=grafana-gate-condition \
+                  -s "config.\"condUserRole\"=$APP_CLIENT_ID.$GRAFANA_ALLOWED_APP_ROLE" \
+                  -s 'config."negate"=true'
+
+                # CRITICAL: a freshly created subflow lands FIRST in the flow. The role gate
+                # MUST run LAST, after authentication — otherwise the condition evaluates with
+                # no authenticated user (everyone "lacks" the role) and Deny Access blocks ALL
+                # logins. Lower its priority once per top-level execution to push it to the
+                # bottom (extra calls once it is last are harmless no-ops).
+                GRAFANA_TOP_LEVEL_COUNT="$("$KCADM" get "authentication/flows/$GRAFANA_FLOW/executions" -r "$REALM" \
+                  --fields level --format csv --noquotes 2>/dev/null | tr -d '\r' | grep -c '^0$')"
+                i=0
+                while [ "$i" -lt "$GRAFANA_TOP_LEVEL_COUNT" ]; do
+                  "$KCADM" create "authentication/executions/$GRAFANA_ADMIN_SUBFLOW_ID/lower-priority" -r "$REALM" >/dev/null 2>&1 || true
+                  i=$((i + 1))
+                done
+              fi
+
+              # Bind the flow as this client's browser override (idempotent). The dotted
+              # key sets the nested map entry without disturbing other client fields.
+              echo "Binding '$GRAFANA_FLOW' as browser override on '$GRAFANA_CLIENT_ID'."
+              "$KCADM" update "clients/$GRAFANA_ID" -r "$REALM" \
+                -s "authenticationFlowBindingOverrides.browser=$(grafana_flow_id)"
               {{- end }}
               {{- end }}
 

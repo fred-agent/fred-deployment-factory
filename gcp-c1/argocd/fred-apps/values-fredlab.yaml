@@ -47,6 +47,9 @@ knowledgeFlow:
     models:
       # Vertex AI project (matches the imperative deploy's VERTEX_PROJECT=PROJECT_ID).
       project: fredlab-playground
+    prometheus:
+      # gcp-c1/helm's gmpFrontend Foundation component is now live (OPS-3).
+      enabled: true
 
 knowledgeFlowWorker:
   enabled: true

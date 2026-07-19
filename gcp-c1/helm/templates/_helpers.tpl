@@ -47,6 +47,18 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- default "temporal-ui" .Values.temporal.ui.fullnameOverride | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 
+{{- define "fredlab-infra.gmpFrontendName" -}}
+{{- default "gmp-frontend" .Values.gmpFrontend.fullnameOverride | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+
+{{- define "fredlab-infra.grafanaName" -}}
+{{- default "grafana" .Values.grafana.fullnameOverride | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+
+{{- define "fredlab-infra.kubeStateMetricsName" -}}
+{{- default "kube-state-metrics" .Values.kubeStateMetrics.fullnameOverride | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+
 {{- define "fredlab-infra.controlPlaneBackendName" -}}
 {{- default "control-plane-backend" .Values.controlPlane.fullnameOverride | trunc 63 | trimSuffix "-" -}}
 {{- end -}}

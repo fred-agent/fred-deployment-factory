@@ -1,0 +1,139 @@
+{{- if .Values.kubeStateMetrics.enabled }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "fredlab-infra.kubeStateMetricsName" . }}
+  labels:
+    {{- include "fredlab-infra.labels" . | nindent 4 }}
+    app.kubernetes.io/component: kube-state-metrics
+---
+# Cluster-wide but least-privilege: list/watch ONLY on the resource kinds
+# kubeStateMetrics.resources actually collects (see the --resources flag on the
+# Deployment below), not upstream kube-state-metrics' full default ClusterRole
+# (which also covers secrets/configmaps/etc.). No get on individual objects, no
+# writes, nothing beyond what's needed to produce the resource-request/allocatable/
+# restart-count metrics the "Resources & FinOps" Grafana dashboard reads.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "fredlab-infra.kubeStateMetricsName" . }}
+  labels:
+    {{- include "fredlab-infra.labels" . | nindent 4 }}
+    app.kubernetes.io/component: kube-state-metrics
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "nodes"]
+    verbs: ["list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "fredlab-infra.kubeStateMetricsName" . }}
+  labels:
+    {{- include "fredlab-infra.labels" . | nindent 4 }}
+    app.kubernetes.io/component: kube-state-metrics
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "fredlab-infra.kubeStateMetricsName" . }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "fredlab-infra.kubeStateMetricsName" . }}
+    namespace: {{ .Release.Namespace }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "fredlab-infra.kubeStateMetricsName" . }}
+  labels:
+    {{- include "fredlab-infra.labels" . | nindent 4 }}
+    app.kubernetes.io/component: kube-state-metrics
+spec:
+  type: ClusterIP
+  ports:
+    - name: http-metrics
+      port: 8080
+      targetPort: http-metrics
+  selector:
+    {{- include "fredlab-infra.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: kube-state-metrics
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "fredlab-infra.kubeStateMetricsName" . }}
+  labels:
+    {{- include "fredlab-infra.labels" . | nindent 4 }}
+    app.kubernetes.io/component: kube-state-metrics
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "fredlab-infra.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: kube-state-metrics
+  template:
+    metadata:
+      labels:
+        {{- include "fredlab-infra.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: kube-state-metrics
+    spec:
+      enableServiceLinks: false
+      serviceAccountName: {{ include "fredlab-infra.kubeStateMetricsName" . }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: kube-state-metrics
+          image: {{ .Values.images.kubeStateMetrics | quote }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          args:
+            - {{ printf "--resources=%s" (join "," .Values.kubeStateMetrics.collectResources) | quote }}
+          ports:
+            - name: http-metrics
+              containerPort: 8080
+            - name: telemetry
+              containerPort: 8081
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http-metrics
+            initialDelaySeconds: 5
+            timeoutSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http-metrics
+            initialDelaySeconds: 5
+            timeoutSeconds: 5
+          resources:
+            {{- toYaml .Values.kubeStateMetrics.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+---
+# GMP self-deployed collection: tells the collector already running on every GKE
+# node (part of the default GMP install, no extra RBAC needed for it) to scrape
+# this pod and feed the results into the same Cloud Monitoring backend the
+# gmp-frontend queries — no separate datasource, no separate query path.
+apiVersion: monitoring.googleapis.com/v1
+kind: PodMonitoring
+metadata:
+  name: {{ include "fredlab-infra.kubeStateMetricsName" . }}
+  labels:
+    {{- include "fredlab-infra.labels" . | nindent 4 }}
+    app.kubernetes.io/component: kube-state-metrics
+spec:
+  selector:
+    matchLabels:
+      {{- include "fredlab-infra.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: kube-state-metrics
+  endpoints:
+    - port: http-metrics
+      interval: 30s
+{{- end }}

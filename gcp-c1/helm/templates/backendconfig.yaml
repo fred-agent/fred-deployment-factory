@@ -63,4 +63,28 @@ spec:
     healthyThreshold: {{ .Values.fredFrontend.backendConfig.healthCheck.healthyThreshold }}
     unhealthyThreshold: {{ .Values.fredFrontend.backendConfig.healthCheck.unhealthyThreshold }}
 {{- end }}
+{{- if and .Values.grafana.enabled .Values.grafana.hostname }}
+---
+apiVersion: cloud.google.com/v1
+kind: BackendConfig
+metadata:
+  name: {{ .Values.grafana.backendConfig.name }}
+  labels:
+    {{- include "fredlab-infra.labels" . | nindent 4 }}
+spec:
+  {{- if .Values.adminAccess.securityPolicyName }}
+  # Same optional defense-in-depth as Temporal UI's BackendConfig: a Cloud Armor
+  # IP allowlist IN FRONT of the OIDC login. Primary gate is OIDC (grafana.auth).
+  securityPolicy:
+    name: {{ .Values.adminAccess.securityPolicyName | quote }}
+  {{- end }}
+  healthCheck:
+    requestPath: {{ .Values.grafana.backendConfig.healthCheck.requestPath | quote }}
+    port: {{ .Values.grafana.backendConfig.healthCheck.port }}
+    type: {{ .Values.grafana.backendConfig.healthCheck.type }}
+    checkIntervalSec: {{ .Values.grafana.backendConfig.healthCheck.checkIntervalSec }}
+    timeoutSec: {{ .Values.grafana.backendConfig.healthCheck.timeoutSec }}
+    healthyThreshold: {{ .Values.grafana.backendConfig.healthCheck.healthyThreshold }}
+    unhealthyThreshold: {{ .Values.grafana.backendConfig.healthCheck.unhealthyThreshold }}
+{{- end }}
 {{- end }}
