@@ -20,6 +20,11 @@ instance, per classification, and per platform.
 > from (`targetRevision: swift`), so "the default branch" and "what's running in the cluster"
 > stay the same thing by construction. (`kea` was the previous release line.)
 
+> **Bootstrapping locally? Don't stop after the demo import.** Every tool and agent
+> template is admin-gated by default now (CAPAB-01/CTRLP-14) — right after import,
+> every demo team has an empty toolbox. One more step turns it on: `docs/LOCAL-DEVELOPMENT.md`
+> → "Full bootstrap walkthrough" → **step 5b**.
+
 ---
 
 ## Documentation

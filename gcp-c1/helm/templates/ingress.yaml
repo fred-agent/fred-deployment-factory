@@ -6,6 +6,9 @@
 {{- if .Values.fredFrontend.ingressEnabled -}}
 {{- $managedCertificates = append $managedCertificates .Values.fredFrontend.managedCertificateName -}}
 {{- end -}}
+{{- if and .Values.grafana.enabled .Values.grafana.hostname -}}
+{{- $managedCertificates = append $managedCertificates .Values.grafana.managedCertificateName -}}
+{{- end -}}
 {{- range .Values.ingress.extraManagedCertificates -}}
 {{- $managedCertificates = append $managedCertificates .name -}}
 {{- end }}
@@ -55,6 +58,18 @@ spec:
             backend:
               service:
                 name: {{ include "fredlab-infra.fredFrontendName" . }}
+                port:
+                  name: http
+    {{- end }}
+    {{- if and .Values.grafana.enabled .Values.grafana.hostname }}
+    - host: {{ .Values.grafana.hostname | quote }}
+      http:
+        paths:
+          - path: {{ .Values.ingress.path | quote }}
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: {{ include "fredlab-infra.grafanaName" . }}
                 port:
                   name: http
     {{- end }}

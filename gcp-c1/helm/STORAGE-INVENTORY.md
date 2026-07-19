@@ -113,6 +113,16 @@ Created by `bin/fredlab-gcp-gcs-prereqs.sh`. GSA
 > Control Plane content storage is **not** GCS — it is `type: local`
 > (`/tmp/control-plane-content`, ephemeral) and only holds team-banner images.
 
+**Required, no safe default:** `content_storage.signing_service_account_email` — the SA that
+signs V4 URLs (IAM `signBlob` on itself, granted by the prereq script) for tabular Parquet
+reads. Empty (and its fallback `serviceAccount.gcpServiceAccount` also empty) crashes
+`knowledge-flow-backend` at startup — this took the platform down for 2+ hours on 2026-07-18,
+because it was unset in `gcp-c1/helm`'s copy of the secrets values while
+`gcp-c1/argocd/fred-apps`' copy had it set correctly, and a routine Foundation deploy
+overwrote the correct live ConfigMap with the broken one. Same story for
+`knowledgeFlow.config.models.project` (Vertex AI) — no safe default, same incident, same
+fix. See `docs/DEPLOYMENT-GUIDE.md` §4 for the full story and how to check for it.
+
 ---
 
 ## 4. Quick "what is where" summary
@@ -122,4 +132,21 @@ Created by `bin/fredlab-gcp-gcs-prereqs.sh`. GSA
 - Vector / hybrid search → OpenSearch `knowledge-flow-vectors`.
 - Documents, objects, tabular, file store → GCS content buckets.
 - Agent/team virtual filesystem → GCS VFS bucket.
-- KF logs → in-memory (not persisted). KF KPIs → Prometheus.
+- KF logs → in-memory (not persisted). KF KPIs → in-cluster GMP query frontend
+  (`gmpFrontend`, stateless — no PVC, proxies Cloud Monitoring).
+- Grafana dashboard/user state (not business data) → its own 5Gi PVC
+  (`grafana-data`, `standard-rwo`), the only other PVC besides `opensearch`/`postgres`.
+- Grafana's "Resources & FinOps" dashboard (`gcp-c1/helm/files/grafana-dashboards/
+  resource-finops.json`, file-provisioned — `allowUiUpdates: true`, so a UI edit
+  persists until the next file sync re-applies this source of truth, not a hard
+  read-only lock) reads storage size directly from each store, no separate
+  size-tracking system: PostgreSQL via `pg_database_size()` (read-only role
+  `grafana_readonly` — CONNECT + `pg_read_all_stats` only, no table access), GCS via
+  Cloud Monitoring's own `storage.googleapis.com/storage/total_bytes` metric,
+  OpenSearch via its own `_cat/indices` / `_cluster/stats` HTTP API (through
+  Grafana's Infinity datasource plugin — no exporter, no extra Deployment).
+  **Gotcha:** every Cloud Monitoring panel target must set `projectName` explicitly
+  inside `timeSeriesList` — Grafana 11.1.4's `stackdriver` plugin frontend doesn't
+  reliably fall back to the datasource's `jsonData.defaultProject`, and a panel
+  missing it silently never fires a query at all (no error, no request). See
+  `docs/DEPLOYMENT-GUIDE.md` §4 for the diagnostic trail if this resurfaces.

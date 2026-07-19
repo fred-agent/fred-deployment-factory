@@ -1,0 +1,585 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "id": 100,
+      "type": "row",
+      "title": "Capacity & headroom (\"do I have room for more?\")",
+      "gridPos": { "x": 0, "y": 0, "w": 24, "h": 1 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "CPU requested / allocatable",
+      "description": "Autopilot bills by requested CPU, not used CPU, and expands allocatable on demand — so this ratio is a point-in-time capacity/scheduling signal, not a health check. Blue at >=90% just means Autopilot is packed tight right now; it self-corrects as soon as a new node joins. For an actual growth/cost trend, watch the FinOps absolute-value panels below instead — this ratio resets every time capacity grows.",
+      "datasource": { "type": "prometheus", "uid": "gmp" },
+      "gridPos": { "x": 0, "y": 1, "w": 6, "h": 2 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 70 },
+              { "color": "blue", "value": 90 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "background",
+        "graphMode": "none",
+        "text": { "valueSize": 20, "titleSize": 11 }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "gmp" },
+          "expr": "sum(kube_pod_container_resource_requests{resource=\"cpu\"}) / sum(kube_node_status_allocatable{resource=\"cpu\"}) * 100"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Memory requested / allocatable",
+      "description": "Same as CPU: this is the request-vs-capacity number that determines whether a new pod can schedule right now, not a growth trend — Autopilot expands allocatable to match, so the ratio self-corrects after every scale-up. Blue at >=90% = tightly packed, not an outage. Use the FinOps absolute-value panels below to track real growth.",
+      "datasource": { "type": "prometheus", "uid": "gmp" },
+      "gridPos": { "x": 6, "y": 1, "w": 6, "h": 2 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 70 },
+              { "color": "blue", "value": 90 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "background",
+        "graphMode": "none",
+        "text": { "valueSize": 20, "titleSize": 11 }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "gmp" },
+          "expr": "sum(kube_pod_container_resource_requests{resource=\"memory\"}) / sum(kube_node_status_allocatable{resource=\"memory\"}) * 100"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "CPU overprovisioning (requested ÷ used)",
+      "description": "FinOps signal, not a health check. Green = safe (using at or under what's requested — the normal, expected state here, even if it costs more than strictly needed). Red = actually using MORE than requested, a real capacity-risk signal worth a look.",
+      "datasource": { "type": "prometheus", "uid": "gmp" },
+      "gridPos": { "x": 12, "y": 1, "w": 6, "h": 2 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 2,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "green", "value": 1 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "background",
+        "graphMode": "none",
+        "text": { "valueSize": 20, "titleSize": 11 }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "gmp" },
+          "expr": "sum(kube_pod_container_resource_requests{resource=\"cpu\"}) / sum(rate(container_cpu_usage_seconds_total{container!=\"\", container!=\"POD\"}[5m]))"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Memory overprovisioning (requested ÷ used)",
+      "description": "Same FinOps signal for memory, not a health check. Green = safe (using at or under what's requested). Red = actually using MORE than requested, a real capacity-risk signal (possible OOM risk if it also nears the container's memory limit).",
+      "datasource": { "type": "prometheus", "uid": "gmp" },
+      "gridPos": { "x": 18, "y": 1, "w": 6, "h": 2 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 2,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "green", "value": 1 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "background",
+        "graphMode": "none",
+        "text": { "valueSize": 20, "titleSize": 11 }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "gmp" },
+          "expr": "sum(kube_pod_container_resource_requests{resource=\"memory\"}) / sum(container_memory_working_set_bytes{container!=\"\", container!=\"POD\"})"
+        }
+      ]
+    },
+    {
+      "id": 26,
+      "type": "row",
+      "title": "Autopilot behavior & FinOps budget (\"is Autopilot keeping up, and am I growing beyond a playground?\")",
+      "gridPos": { "x": 0, "y": 3, "w": 24, "h": 1 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 20,
+      "type": "stat",
+      "title": "Pods Pending (current)",
+      "description": "0 = everything is scheduled. >0 = Autopilot is provisioning a node for you — normal for a few minutes during a rollout or scale-up. If it stays orange for more than ~5 minutes, check the 'Pods Pending over time' panel and `kubectl describe pod` for FailedScheduling events.",
+      "datasource": { "type": "prometheus", "uid": "gmp" },
+      "gridPos": { "x": 0, "y": 4, "w": 6, "h": 2 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 1 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "background",
+        "graphMode": "none",
+        "text": { "valueSize": 20, "titleSize": 11 }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "gmp" },
+          "expr": "sum(kube_pod_status_phase{phase=\"Pending\"})"
+        }
+      ]
+    },
+    {
+      "id": 21,
+      "type": "stat",
+      "title": "Nodes (current)",
+      "description": "Autopilot node count. Every extra node is a direct cost increment. Thresholds are a playground budget guess (~4 nodes baseline as of 2026-07-18) — tighten or loosen to match what you actually expect to pay for.",
+      "datasource": { "type": "prometheus", "uid": "gmp" },
+      "gridPos": { "x": 6, "y": 4, "w": 6, "h": 2 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 6 },
+              { "color": "red", "value": 8 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "background",
+        "graphMode": "none",
+        "text": { "valueSize": 20, "titleSize": 11 }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "gmp" },
+          "expr": "count(kube_node_info)"
+        }
+      ]
+    },
+    {
+      "id": 22,
+      "type": "stat",
+      "title": "CPU requested (FinOps budget, absolute)",
+      "description": "Absolute cores requested cluster-wide — NOT a ratio, so it doesn't self-correct when Autopilot adds capacity. This is the real 'am I getting more traffic than a playground should' signal. Thresholds are a starting guess (~19 cores baseline as of 2026-07-18) — adjust to your actual budget.",
+      "datasource": { "type": "prometheus", "uid": "gmp" },
+      "gridPos": { "x": 12, "y": 4, "w": 6, "h": 2 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 24 },
+              { "color": "red", "value": 32 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "background",
+        "graphMode": "none",
+        "text": { "valueSize": 20, "titleSize": 11 }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "gmp" },
+          "expr": "sum(kube_pod_container_resource_requests{resource=\"cpu\"})"
+        }
+      ]
+    },
+    {
+      "id": 23,
+      "type": "stat",
+      "title": "Memory requested (FinOps budget, absolute)",
+      "description": "Absolute memory requested cluster-wide — NOT a ratio, so it doesn't self-correct when Autopilot adds capacity. Thresholds are a starting guess (80Gi/110Gi, scaled from the CPU budget using this cluster's ~1:3.5 core:memory node shape) — adjust to your actual budget.",
+      "datasource": { "type": "prometheus", "uid": "gmp" },
+      "gridPos": { "x": 18, "y": 4, "w": 6, "h": 2 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "decimals": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 85899345920 },
+              { "color": "red", "value": 118111600640 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "background",
+        "graphMode": "none",
+        "text": { "valueSize": 20, "titleSize": 11 }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "gmp" },
+          "expr": "sum(kube_pod_container_resource_requests{resource=\"memory\"})"
+        }
+      ]
+    },
+    {
+      "id": 24,
+      "type": "timeseries",
+      "title": "Nodes over time (Autopilot scaling)",
+      "description": "Each step is Autopilot adding or removing a node. Useful to correlate a scale-up with a load spike, a rollout, or a crash-loop (a broken pod that keeps restarting can itself trigger scale-ups).",
+      "datasource": { "type": "prometheus", "uid": "gmp" },
+      "gridPos": { "x": 0, "y": 6, "w": 12, "h": 3 },
+      "fieldConfig": { "defaults": { "unit": "short", "decimals": 0 }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        {
+          "refId": "A",
+          "legendFormat": "node count",
+          "datasource": { "type": "prometheus", "uid": "gmp" },
+          "expr": "count(kube_node_info)"
+        }
+      ]
+    },
+    {
+      "id": 25,
+      "type": "timeseries",
+      "title": "Pods Pending over time",
+      "description": "A brief spike (seconds to a few minutes) during a rollout or scale-up is normal — Autopilot is provisioning. A sustained plateau means something can't schedule (quota, a request bigger than any available machine shape, etc.) — worth a `kubectl describe pod`.",
+      "datasource": { "type": "prometheus", "uid": "gmp" },
+      "gridPos": { "x": 12, "y": 6, "w": 12, "h": 3 },
+      "fieldConfig": { "defaults": { "unit": "short", "decimals": 0 }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        {
+          "refId": "A",
+          "legendFormat": "pending pods",
+          "datasource": { "type": "prometheus", "uid": "gmp" },
+          "expr": "sum(kube_pod_status_phase{phase=\"Pending\"})"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "CPU: requested vs. used",
+      "datasource": { "type": "prometheus", "uid": "gmp" },
+      "gridPos": { "x": 0, "y": 9, "w": 12, "h": 4 },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        {
+          "refId": "A",
+          "legendFormat": "requested (cores)",
+          "datasource": { "type": "prometheus", "uid": "gmp" },
+          "expr": "sum(kube_pod_container_resource_requests{resource=\"cpu\"})"
+        },
+        {
+          "refId": "B",
+          "legendFormat": "used (cores)",
+          "datasource": { "type": "prometheus", "uid": "gmp" },
+          "expr": "sum(rate(container_cpu_usage_seconds_total{container!=\"\", container!=\"POD\"}[5m]))"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Memory: requested vs. used",
+      "datasource": { "type": "prometheus", "uid": "gmp" },
+      "gridPos": { "x": 12, "y": 9, "w": 12, "h": 4 },
+      "fieldConfig": { "defaults": { "unit": "bytes" }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        {
+          "refId": "A",
+          "legendFormat": "requested",
+          "datasource": { "type": "prometheus", "uid": "gmp" },
+          "expr": "sum(kube_pod_container_resource_requests{resource=\"memory\"})"
+        },
+        {
+          "refId": "B",
+          "legendFormat": "used",
+          "datasource": { "type": "prometheus", "uid": "gmp" },
+          "expr": "sum(container_memory_working_set_bytes{container!=\"\", container!=\"POD\"})"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Pod restarts by namespace (hourly)",
+      "description": "A rising trend here often shows up as wasted resource churn before it shows up anywhere else.",
+      "datasource": { "type": "prometheus", "uid": "gmp" },
+      "gridPos": { "x": 0, "y": 13, "w": 24, "h": 3 },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        {
+          "refId": "A",
+          "legendFormat": "{{namespace}}",
+          "datasource": { "type": "prometheus", "uid": "gmp" },
+          "expr": "sum(increase(kube_pod_container_status_restarts_total[1h])) by (namespace)"
+        }
+      ]
+    },
+    {
+      "id": 200,
+      "type": "row",
+      "title": "Data volume (\"how much data do I actually have?\")",
+      "gridPos": { "x": 0, "y": 16, "w": 24, "h": 1 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 10,
+      "type": "table",
+      "title": "PostgreSQL — size per database",
+      "description": "Read-only role (grafana_readonly): CONNECT + pg_read_all_stats only, no table access.",
+      "datasource": { "type": "postgres", "uid": "postgres-grafana" },
+      "gridPos": { "x": 0, "y": 17, "w": 12, "h": 4 },
+      "fieldConfig": {
+        "defaults": { "custom": { "align": "auto" } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "size_bytes" }, "properties": [{ "id": "unit", "value": "bytes" }] }
+        ]
+      },
+      "options": { "showHeader": true },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "datasource": { "type": "postgres", "uid": "postgres-grafana" },
+          "rawSql": "SELECT datname AS database, pg_database_size(datname) AS size_bytes FROM pg_database WHERE datistemplate = false ORDER BY size_bytes DESC;"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "type": "stat",
+      "title": "PostgreSQL — total size",
+      "datasource": { "type": "postgres", "uid": "postgres-grafana" },
+      "gridPos": { "x": 12, "y": 17, "w": 4, "h": 4 },
+      "fieldConfig": { "defaults": { "unit": "bytes" }, "overrides": [] },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "text": { "valueSize": 24, "titleSize": 13 }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "datasource": { "type": "postgres", "uid": "postgres-grafana" },
+          "rawSql": "SELECT sum(pg_database_size(datname)) AS total_bytes FROM pg_database WHERE datistemplate = false;"
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "GCS bucket size",
+      "description": "Google Cloud Monitoring's own storage.googleapis.com/storage/total_bytes metric — collected automatically, ~5min granularity.",
+      "datasource": { "type": "stackdriver", "uid": "cloud-monitoring" },
+      "gridPos": { "x": 16, "y": 17, "w": 8, "h": 4 },
+      "fieldConfig": { "defaults": { "unit": "bytes" }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "stackdriver", "uid": "cloud-monitoring" },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "fredlab-playground",
+            "filters": ["metric.type", "=", "storage.googleapis.com/storage/total_bytes"],
+            "groupBys": ["resource.label.bucket_name"],
+            "crossSeriesReducer": "REDUCE_MEAN",
+            "perSeriesAligner": "ALIGN_MEAN",
+            "alignmentPeriod": "+3600s"
+          }
+        }
+      ]
+    },
+    {
+      "id": 13,
+      "type": "table",
+      "title": "OpenSearch — size per index",
+      "description": "Via the Infinity datasource hitting OpenSearch's own _cat/indices API directly — no exporter, no plugin data beyond the Infinity plugin itself.",
+      "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "opensearch-infinity" },
+      "gridPos": { "x": 0, "y": 21, "w": 16, "h": 4 },
+      "fieldConfig": {
+        "defaults": { "custom": { "align": "auto" } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "size_bytes" }, "properties": [{ "id": "unit", "value": "bytes" }] }
+        ]
+      },
+      "options": { "showHeader": true },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "opensearch-infinity" },
+          "type": "json",
+          "source": "url",
+          "format": "table",
+          "url": "http://opensearch:9200/_cat/indices?format=json&bytes=b",
+          "url_options": { "method": "GET" },
+          "root_selector": "",
+          "columns": [
+            { "selector": "index", "text": "index", "type": "string" },
+            { "selector": "health", "text": "health", "type": "string" },
+            { "selector": "docs.count", "text": "docs", "type": "number" },
+            { "selector": "store.size", "text": "size_bytes", "type": "number" }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 14,
+      "type": "stat",
+      "title": "OpenSearch — total cluster storage",
+      "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "opensearch-infinity" },
+      "gridPos": { "x": 16, "y": 21, "w": 8, "h": 4 },
+      "fieldConfig": { "defaults": { "unit": "bytes" }, "overrides": [] },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "text": { "valueSize": 24, "titleSize": 13 }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "opensearch-infinity" },
+          "type": "json",
+          "source": "url",
+          "format": "table",
+          "url": "http://opensearch:9200/_cluster/stats",
+          "url_options": { "method": "GET" },
+          "root_selector": "",
+          "columns": [
+            { "selector": "indices.store.size_in_bytes", "text": "total_bytes", "type": "number" }
+          ]
+        }
+      ]
+    }
+  ],
+  "refresh": "1m",
+  "schemaVersion": 39,
+  "tags": ["fredlab", "resources", "finops"],
+  "templating": { "list": [] },
+  "time": { "from": "now-6h", "to": "now" },
+  "timepicker": {},
+  "timezone": "",
+  "title": "Fredlab — Resources & FinOps",
+  "uid": "fredlab-resources-finops",
+  "version": 7,
+  "weekStart": ""
+}

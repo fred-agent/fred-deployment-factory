@@ -1,0 +1,289 @@
+{{- if .Values.grafana.enabled }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ .Values.grafana.serviceAccount.name }}
+  labels:
+    {{- include "fredlab-infra.labels" . | nindent 4 }}
+    app.kubernetes.io/component: grafana
+  {{- if .Values.grafana.datasources.cloudMonitoring.enabled }}
+  annotations:
+    iam.gke.io/gcp-service-account: {{ required "grafana.serviceAccount.gcpServiceAccount is required when grafana.datasources.cloudMonitoring.enabled=true (Workload Identity). Run bin/fredlab-gcp-monitoring-prereqs.sh." .Values.grafana.serviceAccount.gcpServiceAccount | quote }}
+  {{- end }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "fredlab-infra.grafanaName" . }}-datasources
+  labels:
+    {{- include "fredlab-infra.labels" . | nindent 4 }}
+    app.kubernetes.io/component: grafana
+data:
+  datasources.yml: |
+    apiVersion: 1
+    datasources:
+      - name: GMP (Cloud Monitoring)
+        uid: gmp
+        type: prometheus
+        access: proxy
+        url: {{ printf "http://%s:%d" (include "fredlab-infra.gmpFrontendName" .) (int .Values.gmpFrontend.service.port) | quote }}
+        isDefault: true
+        editable: true
+      {{- if .Values.grafana.datasources.postgres.enabled }}
+      - name: PostgreSQL
+        uid: postgres-grafana
+        type: postgres
+        access: proxy
+        url: {{ printf "%s:%d" (include "fredlab-infra.postgresName" .) (int .Values.postgresql.service.port) | quote }}
+        database: postgres
+        user: {{ .Values.postgresql.grafana.user | quote }}
+        editable: true
+        # Read-only role (postgresql.grafana), no owned database — connects to the
+        # maintenance "postgres" db and reads every other database's size via
+        # pg_database_size()/pg_total_relation_size(). No table SELECT access.
+        jsonData:
+          sslmode: disable
+          postgresVersion: 1500
+        # ${POSTGRES_GRAFANA_PASSWORD} is Grafana's own provisioning-file env
+        # expansion (not a shell/template variable) — set as a container env below.
+        secureJsonData:
+          password: ${POSTGRES_GRAFANA_PASSWORD}
+      {{- end }}
+      {{- if .Values.grafana.datasources.cloudMonitoring.enabled }}
+      - name: Google Cloud Monitoring
+        uid: cloud-monitoring
+        type: stackdriver
+        access: proxy
+        editable: true
+        # Workload Identity via grafana.serviceAccount (the ServiceAccount above,
+        # bound to the fredlab-monitoring GSA) — no key file, no secureJsonData.
+        jsonData:
+          authenticationType: gce
+          defaultProject: {{ required "gmpFrontend.projectId is required when grafana.datasources.cloudMonitoring.enabled=true." .Values.gmpFrontend.projectId | quote }}
+      {{- end }}
+      {{- if .Values.grafana.datasources.opensearch.enabled }}
+      - name: OpenSearch (Infinity)
+        uid: opensearch-infinity
+        type: yesoreyeram-infinity-datasource
+        access: proxy
+        editable: true
+        # No auth — the in-cluster OpenSearch runs with its security plugin
+        # disabled (plain HTTP; see knowledgeFlow.config.opensearch comments).
+        # Panels query the full http://opensearch:9200/... URL directly.
+      {{- end }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "fredlab-infra.grafanaName" . }}-dashboards-provider
+  labels:
+    {{- include "fredlab-infra.labels" . | nindent 4 }}
+    app.kubernetes.io/component: grafana
+data:
+  # Any .yml/.yaml file directly under /etc/grafana/provisioning/dashboards is read
+  # as a provider definition. The actual dashboard JSON files live one level down,
+  # in the SEPARATE ConfigMap/volume below (options.path) — keeping the provider
+  # config and the dashboard JSON in different directories is deliberate: Grafana's
+  # file provider would otherwise also try to parse this .yml as a dashboard.
+  dashboards.yml: |
+    apiVersion: 1
+    providers:
+      - name: fredlab
+        orgId: 1
+        folder: Fredlab
+        type: file
+        disableDeletion: false
+        updateIntervalSeconds: 30
+        allowUiUpdates: true
+        options:
+          path: /etc/grafana/provisioning/dashboards/json
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "fredlab-infra.grafanaName" . }}-dashboards-json
+  labels:
+    {{- include "fredlab-infra.labels" . | nindent 4 }}
+    app.kubernetes.io/component: grafana
+data:
+  resource-finops.json: |
+{{ .Files.Get "files/grafana-dashboards/resource-finops.json" | indent 4 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "fredlab-infra.grafanaName" . }}
+  labels:
+    {{- include "fredlab-infra.labels" . | nindent 4 }}
+    app.kubernetes.io/component: grafana
+  annotations:
+    cloud.google.com/neg: '{"ingress": true}'
+    cloud.google.com/backend-config: '{"ports": {"http":"{{ .Values.grafana.backendConfig.name }}"}}'
+spec:
+  type: {{ .Values.grafana.service.type }}
+  ports:
+    - name: http
+      port: {{ .Values.grafana.service.port }}
+      targetPort: http
+  selector:
+    {{- include "fredlab-infra.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: grafana
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "fredlab-infra.grafanaName" . }}
+  labels:
+    {{- include "fredlab-infra.labels" . | nindent 4 }}
+    app.kubernetes.io/component: grafana
+spec:
+  # Single replica: dashboard/user state lives on the PVC below, no leader
+  # election, RollingUpdate with maxSurge 0 avoids a second pod fighting the
+  # same ReadWriteOnce volume.
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+  selector:
+    matchLabels:
+      {{- include "fredlab-infra.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: grafana
+  template:
+    metadata:
+      labels:
+        {{- include "fredlab-infra.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: grafana
+    spec:
+      enableServiceLinks: false
+      serviceAccountName: {{ .Values.grafana.serviceAccount.name }}
+      securityContext:
+        runAsUser: 472
+        runAsGroup: 472
+        runAsNonRoot: true
+        fsGroup: 472
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: grafana
+          image: {{ .Values.images.grafana | quote }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          env:
+            # Local admin/password login — kept as a break-glass fallback that
+            # doesn't depend on Keycloak being reachable. Instance administration
+            # (datasources, org settings) stays on this account; OIDC logins below
+            # get grafana.auth.defaultOrgRole instead.
+            - name: GF_SECURITY_ADMIN_USER
+              value: {{ .Values.grafana.admin.user | quote }}
+            - name: GF_SECURITY_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fredlab-infra.secretName" . }}
+                  key: GRAFANA_ADMIN_PASSWORD
+            {{- if .Values.grafana.auth.enabled }}
+            - name: GF_SERVER_ROOT_URL
+              value: {{ printf "https://%s" .Values.grafana.hostname | quote }}
+            - name: GF_AUTH_GENERIC_OAUTH_ENABLED
+              value: "true"
+            - name: GF_AUTH_GENERIC_OAUTH_NAME
+              value: {{ .Values.grafana.auth.label | quote }}
+            - name: GF_AUTH_GENERIC_OAUTH_CLIENT_ID
+              value: {{ .Values.grafana.auth.clientId | quote }}
+            - name: GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fredlab-infra.secretName" . }}
+                  key: KEYCLOAK_GRAFANA_CLIENT_SECRET
+            - name: GF_AUTH_GENERIC_OAUTH_SCOPES
+              value: {{ .Values.grafana.auth.scopes | quote }}
+            - name: GF_AUTH_GENERIC_OAUTH_AUTH_URL
+              value: {{ printf "%s/protocol/openid-connect/auth" .Values.grafana.auth.providerUrl | quote }}
+            - name: GF_AUTH_GENERIC_OAUTH_TOKEN_URL
+              value: {{ printf "%s/protocol/openid-connect/token" .Values.grafana.auth.providerUrl | quote }}
+            - name: GF_AUTH_GENERIC_OAUTH_API_URL
+              value: {{ printf "%s/protocol/openid-connect/userinfo" .Values.grafana.auth.providerUrl | quote }}
+            - name: GF_AUTH_GENERIC_OAUTH_ALLOW_SIGN_UP
+              value: "true"
+            - name: GF_USERS_AUTO_ASSIGN_ORG_ROLE
+              value: {{ .Values.grafana.auth.defaultOrgRole | quote }}
+            {{- end }}
+            {{- if .Values.grafana.datasources.postgres.enabled }}
+            # Expanded into the PostgreSQL datasource's secureJsonData.password by
+            # Grafana's own provisioning-file variable expansion (see datasources.yml).
+            - name: POSTGRES_GRAFANA_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fredlab-infra.secretName" . }}
+                  key: POSTGRES_GRAFANA_PASSWORD
+            {{- end }}
+            {{- if .Values.grafana.datasources.opensearch.enabled }}
+            # Installed at container startup (needs outbound internet from the pod —
+            # Autopilot has default egress). No dedicated Deployment/exporter needed.
+            - name: GF_INSTALL_PLUGINS
+              value: yesoreyeram-infinity-datasource
+            {{- end }}
+          ports:
+            - name: http
+              containerPort: 3000
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 20
+          resources:
+            {{- toYaml .Values.grafana.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/grafana
+            - name: datasources
+              mountPath: /etc/grafana/provisioning/datasources
+              readOnly: true
+            - name: dashboards-provider
+              mountPath: /etc/grafana/provisioning/dashboards
+              readOnly: true
+            - name: dashboards-json
+              mountPath: /etc/grafana/provisioning/dashboards/json
+              readOnly: true
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ include "fredlab-infra.grafanaName" . }}-data
+        - name: datasources
+          configMap:
+            name: {{ include "fredlab-infra.grafanaName" . }}-datasources
+        - name: dashboards-provider
+          configMap:
+            name: {{ include "fredlab-infra.grafanaName" . }}-dashboards-provider
+        - name: dashboards-json
+          configMap:
+            name: {{ include "fredlab-infra.grafanaName" . }}-dashboards-json
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "fredlab-infra.grafanaName" . }}-data
+  labels:
+    {{- include "fredlab-infra.labels" . | nindent 4 }}
+    app.kubernetes.io/component: grafana
+spec:
+  accessModes:
+    {{- toYaml .Values.grafana.persistence.accessModes | nindent 4 }}
+  storageClassName: {{ .Values.grafana.persistence.storageClassName | quote }}
+  resources:
+    requests:
+      storage: {{ .Values.grafana.persistence.size | quote }}
+{{- end }}

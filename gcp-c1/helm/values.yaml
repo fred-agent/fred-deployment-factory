@@ -17,6 +17,12 @@ images:
   temporalServer: mirror.gcr.io/temporalio/server:1.28.0
   temporalAdminTools: mirror.gcr.io/temporalio/admin-tools:1.28
   temporalUi: mirror.gcr.io/temporalio/ui:2.38.3
+  # Google Cloud Managed Service for Prometheus query frontend. Verify this is
+  # still the current recommended tag before deploying:
+  # https://cloud.google.com/stackdriver/docs/managed-prometheus/query#ui-frontend
+  gmpFrontend: gke.gcr.io/prometheus-engine/frontend:v0.15.3-gke.0
+  grafana: grafana/grafana:11.1.4
+  kubeStateMetrics: registry.k8s.io/kube-state-metrics/kube-state-metrics:v2.13.0
 
 secret:
   fullnameOverride: fredlab-infra-secrets
@@ -88,6 +94,11 @@ postgresql:
     database: evaluation
     user: evaluation
     password: ""
+  # Read-only observability role (no owned database) for Grafana's Postgres
+  # datasource. Provisioned only when grafana.datasources.postgres.enabled.
+  grafana:
+    user: grafana_readonly
+    password: ""
 
 keycloak:
   fullnameOverride: keycloak
@@ -109,6 +120,8 @@ keycloak:
     evaluation:
       secret: ""
     temporalUi:
+      secret: ""
+    grafana:
       secret: ""
   provision:
     enabled: true
@@ -186,6 +199,16 @@ keycloak:
           - https://temporal.playground.fredlab.dev/*
         webOrigins:
           - https://temporal.playground.fredlab.dev
+      grafana:
+        # Same shape as temporalUi: confidential, interactive OIDC client, standard
+        # flow only, no service account/app roles. Redirect URI is Grafana's fixed
+        # generic-OAuth callback path (Grafana, not Keycloak, dictates this path).
+        # Provisioned only when grafana.auth.enabled.
+        clientId: grafana
+        redirectUris:
+          - https://grafana.playground.fredlab.dev/login/generic_oauth
+        webOrigins:
+          - https://grafana.playground.fredlab.dev
   resources:
     requests:
       cpu: 500m
@@ -252,6 +275,135 @@ opensearch:
       memory: 2Gi
     limits:
       memory: 3Gi
+
+# Google Cloud Managed Service for Prometheus (GMP) query frontend: a stateless
+# PromQL-compatible proxy in front of Cloud Monitoring. GKE Autopilot already
+# collects GKE system metrics (node/pod resource usage) into GMP for free with
+# no extra install; this Deployment just exposes them over the standard
+# Prometheus HTTP API so in-cluster clients (e.g. knowledge-flow's
+# PrometheusOpsController / MCP tools) can query them like any other Prometheus.
+# No node-level access needed (no DaemonSet) — Autopilot-safe.
+gmpFrontend:
+  enabled: true
+  fullnameOverride: gmp-frontend
+  replicaCount: 1
+  # Kubernetes service account annotated for Workload Identity. The GSA must hold
+  # roles/monitoring.viewer at the project level (see
+  # bin/fredlab-gcp-monitoring-prereqs.sh).
+  serviceAccount:
+    name: gmp-frontend
+    gcpServiceAccount: fredlab-monitoring@fredlab-playground.iam.gserviceaccount.com
+  # GCP project whose Cloud Monitoring metrics to query. Required — the frontend
+  # does not infer this from ADC for its --query.project-id flag.
+  projectId: fredlab-playground
+  service:
+    type: ClusterIP
+    port: 9090
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 512Mi
+
+# Grafana, reading the gmpFrontend datasource above. Protected admin UI — same
+# pattern as Temporal UI: public hostname behind the shared Ingress, gated by a
+# Keycloak OIDC login restricted to grafana.auth.allowedAppRole (see auth block
+# below and gcp-c1/helm/templates/keycloak-provision-job.yaml). The local
+# admin/password login (above) still works too, as a break-glass fallback that
+# doesn't depend on Keycloak being reachable.
+grafana:
+  enabled: true
+  fullnameOverride: grafana
+  # Grafana's own Kubernetes service account. Only needs Workload Identity
+  # (gcpServiceAccount set) when datasources.cloudMonitoring.enabled — reuses the
+  # fredlab-monitoring GSA gmpFrontend already holds (same roles/monitoring.viewer
+  # covers GCS/Cloud Monitoring metrics too); no new GSA. Binding is added by
+  # bin/fredlab-gcp-monitoring-prereqs.sh (KSA_NAMES includes "grafana").
+  serviceAccount:
+    name: grafana
+    gcpServiceAccount: fredlab-monitoring@fredlab-playground.iam.gserviceaccount.com
+  # Extra datasources beyond the always-on gmpFrontend one (see the ConfigMap in
+  # grafana.yaml). Each is independently toggleable and adds its own credential/
+  # IAM requirement — see the comments at each field this gates.
+  datasources:
+    postgres:
+      enabled: true
+    opensearch:
+      enabled: true
+    cloudMonitoring:
+      enabled: true
+  admin:
+    user: admin
+    # Set in fredlab-secrets.values.yaml when grafana.enabled=true — see
+    # gcp-c1/helm/templates/secret.yaml (GRAFANA_ADMIN_PASSWORD).
+    password: ""
+  persistence:
+    storageClassName: standard-rwo
+    size: 5Gi
+    accessModes:
+      - ReadWriteOnce
+  service:
+    type: ClusterIP
+    port: 3000
+  hostname: grafana.playground.fredlab.dev
+  managedCertificateName: fredlab-grafana-cert
+  auth:
+    enabled: true
+    # Login button label shown on Grafana's sign-in screen.
+    label: Keycloak
+    providerUrl: https://keycloak.playground.fredlab.dev/realms/app
+    # Confidential client provisioned in keycloak.provision.clients.grafana.
+    clientId: grafana
+    scopes: "openid profile email"
+    # Grafana's own fixed generic-OAuth callback path — not configurable.
+    callbackUrl: https://grafana.playground.fredlab.dev/login/generic_oauth
+    # Same restricted-login-flow pattern as temporal.ui.auth.allowedAppRole
+    # (see keycloak-provision-job.yaml): only holders of this app/<role> client
+    # role may log in. Empty = any authenticated realm user may enter.
+    allowedAppRole: grafana_operator
+    # Org role granted to new/synced OAuth users. Editor (not Admin/GrafanaAdmin)
+    # — instance administration stays on the local admin account above.
+    defaultOrgRole: Editor
+  backendConfig:
+    name: fredlab-grafana-backendconfig
+    healthCheck:
+      requestPath: /api/health
+      port: 3000
+      type: HTTP
+      checkIntervalSec: 15
+      timeoutSec: 5
+      healthyThreshold: 1
+      unhealthyThreshold: 3
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 512Mi
+
+# Self-deployed kube-state-metrics, feeding the same GMP pipeline gmpFrontend
+# queries (via the PodMonitoring CR below), because GKE's default/managed GMP
+# system-metrics collection is a curated allowlist that excludes KSM's resource-
+# request/allocatable/restart-count metrics — confirmed empirically (2026-07-18):
+# {__name__=~"kube_.+"} returned zero series even though the managed
+# "kube-state-metrics" scrape target itself shows up=1.
+kubeStateMetrics:
+  enabled: true
+  fullnameOverride: kube-state-metrics
+  # Kubernetes resource kinds to collect (kube-state-metrics --resources flag) —
+  # kept to exactly what the "Resources & FinOps" Grafana dashboard reads. This
+  # also scopes the ClusterRole: it only needs list/watch on what's collected.
+  # Extend both together if a future dashboard needs e.g. deployments/namespaces.
+  collectResources:
+    - pods
+    - nodes
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      memory: 256Mi
 
 temporal:
   enabled: true
@@ -545,6 +697,12 @@ knowledgeFlow:
       # the embedding model, use a new index name. Tracked in STORAGE-INVENTORY.md.
       vectorIndex: knowledge-flow-vectors
       vectorBulkSize: 1000
+    # In-cluster Google Cloud Managed Service for Prometheus (GMP) query frontend
+    # (the gmpFrontend Foundation component below). baseUrl must match its
+    # Service name — flip enabled once that Deployment is actually live.
+    prometheus:
+      enabled: false
+      baseUrl: http://gmp-frontend:9090
     # Vertex AI models (authenticate via ADC). Needs roles/aiplatform.user on the GSA.
     models:
       # Empty project → resolved from ADC. Location must be a Vertex AI region.

@@ -1,0 +1,86 @@
+{{- if .Values.gmpFrontend.enabled }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ .Values.gmpFrontend.serviceAccount.name }}
+  labels:
+    {{- include "fredlab-infra.labels" . | nindent 4 }}
+    app.kubernetes.io/component: gmp-frontend
+  annotations:
+    iam.gke.io/gcp-service-account: {{ required "gmpFrontend.serviceAccount.gcpServiceAccount is required when gmpFrontend.enabled=true (Workload Identity). Run bin/fredlab-gcp-monitoring-prereqs.sh." .Values.gmpFrontend.serviceAccount.gcpServiceAccount | quote }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "fredlab-infra.gmpFrontendName" . }}
+  labels:
+    {{- include "fredlab-infra.labels" . | nindent 4 }}
+    app.kubernetes.io/component: gmp-frontend
+spec:
+  type: {{ .Values.gmpFrontend.service.type }}
+  ports:
+    - name: web
+      port: {{ .Values.gmpFrontend.service.port }}
+      targetPort: web
+  selector:
+    {{- include "fredlab-infra.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: gmp-frontend
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "fredlab-infra.gmpFrontendName" . }}
+  labels:
+    {{- include "fredlab-infra.labels" . | nindent 4 }}
+    app.kubernetes.io/component: gmp-frontend
+spec:
+  replicas: {{ .Values.gmpFrontend.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "fredlab-infra.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: gmp-frontend
+  template:
+    metadata:
+      labels:
+        {{- include "fredlab-infra.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: gmp-frontend
+    spec:
+      enableServiceLinks: false
+      serviceAccountName: {{ .Values.gmpFrontend.serviceAccount.name }}
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: frontend
+          image: {{ .Values.images.gmpFrontend | quote }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          # Stateless query proxy only — no scrape config, no node access, no
+          # DaemonSet. Autopilot-safe. Queries Cloud Monitoring as
+          # gmpFrontend.serviceAccount.gcpServiceAccount via Workload Identity.
+          args:
+            - --web.listen-address=:9090
+            - {{ printf "--query.project-id=%s" (required "gmpFrontend.projectId is required when gmpFrontend.enabled=true." .Values.gmpFrontend.projectId) | quote }}
+          ports:
+            - name: web
+              containerPort: 9090
+          readinessProbe:
+            httpGet:
+              path: /-/ready
+              port: web
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /-/healthy
+              port: web
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          resources:
+            {{- toYaml .Values.gmpFrontend.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+{{- end }}

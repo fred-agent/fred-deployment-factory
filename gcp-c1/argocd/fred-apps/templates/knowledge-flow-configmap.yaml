@@ -263,6 +263,13 @@ data:
         index: {{ .Values.knowledgeFlow.config.opensearch.vectorIndex | quote }}
         bulk_size: {{ .Values.knowledgeFlow.config.opensearch.vectorBulkSize }}
 
+    integrations:
+      # In-cluster GMP query frontend — see knowledgeFlow.config.prometheus.
+      prometheus:
+        base_url: {{ .Values.knowledgeFlow.config.prometheus.baseUrl | quote }}
+        verify_ssl: false
+        timeout_seconds: 15.0
+
     mcp:
       reports_enabled: true
       kpi_enabled: true
@@ -272,7 +279,7 @@ data:
       templates_enabled: true
       resources_enabled: true
       opensearch_ops_enabled: false
-      prometheus_ops_enabled: false
+      prometheus_ops_enabled: {{ .Values.knowledgeFlow.config.prometheus.enabled }}
       neo4j_enabled: false
       filesystem_enabled: true
       filesystem_read_default_limit: 100

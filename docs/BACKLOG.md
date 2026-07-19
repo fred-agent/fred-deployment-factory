@@ -380,6 +380,202 @@ Status: `[ ]` todo · `[~]` in progress · `[x]` done. IDs are referenced from t
 - [ ] **OPS-2** Backup/restore runbook for Layer A only (Postgres + OpenSearch) — the one thing
       that must be backed up.
 
+- [x] **OPS-3** (2026-07-17, branch `grafana`) In-cluster Google Cloud Managed
+      Service for Prometheus (GMP) query frontend: `gcp-c1/helm/templates/gmp-frontend.yaml`
+      (new Foundation component `gmpFrontend`, gated `enabled: false` by default) +
+      `bin/fredlab-gcp-monitoring-prereqs.sh` (GSA `fredlab-monitoring`,
+      `roles/monitoring.viewer`, Workload Identity binding for KSA `gmp-frontend`,
+      mirrors `fredlab-gcp-gcs-prereqs.sh`). GKE Autopilot already collects GKE
+      system metrics (node/pod resource usage) into GMP for free; the frontend just
+      exposes them over the standard Prometheus HTTP API — no node-level access, no
+      DaemonSet, Autopilot-safe (a self-hosted `node-exporter` is not, since Autopilot
+      blocks the hostNetwork/hostPID access it needs). Wired
+      `knowledge-flow-backend`'s existing `PrometheusOpsController`/MCP tools
+      (`prometheus_query`, `_query_range`, `_series`, `_labels`, `_label_values`,
+      `_metrics*`) at it via `knowledgeFlow.config.prometheus.{enabled,baseUrl}` →
+      `integrations.prometheus.base_url` + `mcp.prometheus_ops_enabled` in both
+      `gcp-c1/helm/templates/knowledge-flow-configmap.yaml` and its ArgoCD
+      `fred-apps` twin (kept byte-identical, pre-CHART-2). Known GMP-frontend
+      limitation: `/api/v1/targets` and `/api/v1/metadata` are not implemented (it's
+      a stateless Cloud Monitoring proxy, not a real Prometheus server), so the
+      `prometheus_targets`/`prometheus_metadata` MCP tools will return empty against
+      it. Chart-rendered (`helm template`) both `gcp-c1/helm` and
+      `gcp-c1/argocd/fred-apps` with the new values — both succeed. **Not yet run
+      against the live cluster**: needs `bin/fredlab-gcp-monitoring-prereqs.sh`,
+      then `gmpFrontend.serviceAccount.gcpServiceAccount` /
+      `gmpFrontend.projectId` filled in `gcp-c1/helm/values.yaml`, then
+      `gmpFrontend.enabled: true` + `knowledgeFlow.config.prometheus.enabled: true`
+      (both `gcp-c1/helm/values.yaml` and `gcp-c1/argocd/fred-apps/values.yaml`),
+      then `bin/fredlab-infra-deploy.sh` and an ArgoCD sync of `fred-apps`.
+      App-level custom `/metrics` (still `observability.prometheus.enabled: false`
+      per app) are out of scope for this item — GMP only sees Fred's own metrics if
+      a follow-up `PodMonitoring` CR is added later.
+
+      **(2026-07-18) `gmpFrontend` deployed and verified live** on `fredlab-infra`
+      (namespace `fred-demo`, revision 4): pod `Running`, and an in-cluster
+      `curl http://gmp-frontend:9090/api/v1/query?query=up` returned real
+      `gmp-kubelet-cadvisor` / `gmp-kubelet-metrics` / `kube-state-metrics` series
+      for all 3 nodes — the Workload Identity → Cloud Monitoring path works
+      end-to-end. The `knowledge-flow-configmap.yaml` MCP wiring is still only on
+      the local `grafana` branch (uncommitted) — ArgoCD's `fred-apps` only deploys
+      from `origin/swift`, so that half is code-complete but not live yet; needs a
+      commit + a decision on how this branch lands on `swift`.
+
+      Added a Grafana Foundation component (`gcp-c1/helm/templates/grafana.yaml`,
+      `grafana.enabled: false` by default) with a single pre-provisioned datasource
+      pointed at `gmpFrontend`, so KPIs are visible without waiting on the
+      knowledge-flow/ArgoCD side. Deliberately not exposed through the ingress —
+      reachable via `kubectl -n fred-demo port-forward svc/grafana 3000:3000` only;
+      public exposure is a separate admin-surface-hardening decision (RFC-0001 §6).
+      Needs `grafana.admin.password` in `fredlab-secrets.values.yaml` (human-supplied,
+      not generated — same convention as `controlPlaneBootstrapToken`) before
+      `bin/fredlab-infra-deploy.sh` can enable it.
+
+      **(2026-07-18) Grafana deployed and verified live** (revision 5): `1/1` ready,
+      PVC bound, `/api/health` OK, datasource "GMP (Cloud Monitoring)" provisioned
+      per the pod logs. Reachable today only via
+      `kubectl -n fred-demo port-forward svc/grafana 3000:3000` — the developer
+      wants "protected admin UI" exposure matching Temporal UI instead (public
+      hostname behind the shared Ingress, gated by Keycloak OIDC), not port-forward.
+      Added, following the Temporal UI pattern exactly (same shape, `grafana`
+      substituted for `temporal-ui` throughout):
+      - `grafana.hostname: grafana.playground.fredlab.dev`,
+        `managedCertificateName: fredlab-grafana-cert`, wired into
+        `ingress.yaml` / `managedcertificate.yaml` / `backendconfig.yaml`
+        (reuses `adminAccess.securityPolicyName` for the same optional Cloud
+        Armor allowlist layer Temporal UI's BackendConfig gets).
+      - New confidential Keycloak client `grafana` (`keycloak.provision.clients.grafana`,
+        `keycloak.clients.grafana.secret`, `KEYCLOAK_GRAFANA_CLIENT_SECRET`).
+      - Grafana's native generic-OAuth support wired to that client
+        (`grafana.auth.*` → `GF_AUTH_GENERIC_OAUTH_*` env in `grafana.yaml`); the
+        local `admin`/password login stays as a break-glass fallback.
+      - A `grafana-gate` restricted-login flow in `keycloak-provision-job.yaml`,
+        line-for-line the same shape as `temporal-ui-gate` — only holders of a new
+        `app/grafana_operator` client role reach the login screen at all. This was
+        a deliberate choice over the simpler "any authenticated realm user" option
+        (offered, not taken) — more provisioning surface, but matches Temporal UI.
+      - OAuth logins land as Grafana org role `Editor` (`grafana.auth.defaultOrgRole`),
+        not `Admin` — instance administration stays on the local admin account.
+
+      `helm template` validated (both `grafana.enabled=false` default and `=true`
+      with ingress/OIDC on) and the embedded `keycloak-provision-job.yaml` shell
+      script syntax-checked (`sh -n`) — **not yet applied to the live cluster.**
+      Still needed before it can go live:
+      1. A **manual DNS A record** for `grafana.playground.fredlab.dev` →
+         `8.233.26.38` (same as every other hostname here — DNS is explicitly kept
+         outside Helm) + ~15-60min for the `ManagedCertificate` to provision after
+         that resolves.
+      2. `keycloak.clients.grafana.secret` added to the human's local
+         `fredlab-secrets.values.yaml` (same convention as every other client
+         secret — not generated by tooling).
+      3. No one holds the `grafana_operator` role yet — until a
+         `platform_admin` grants it to at least one Keycloak user, the gate denies
+         everyone (this is correct/expected default-deny behavior, not a bug).
+      4. `bin/fredlab-infra-deploy.sh` to apply.
+
+      **(2026-07-18) Live and verified.** DNS added, `fredlab-grafana-cert` is
+      `Active`, deployed via `bin/fredlab-infra-deploy.sh`. Verified directly
+      against Keycloak (not just template output): the `grafana` client, the
+      `grafana-gate` flow (identical execution/requirement structure to
+      `temporal-ui-gate`), and the browser-flow override binding all provisioned
+      correctly (the binding briefly looked empty via `kcadm ... --fields
+      authenticationFlowBindingOverrides` — that's a `kcadm --fields` quirk with
+      nested objects, not a real gap; the full client representation confirmed it
+      was set). `grafana_operator` granted to `dimitri.tombroff@fredlab.dev`,
+      `simon.cariou`, `sebastien.ehling`, `benjamin-b.joly`, `sebastien.obled`
+      (confirmed present via `kcadm get-roles` for each). `https://grafana.playground.fredlab.dev`
+      is reachable and login-gated as designed.
+
+      Still open, not part of this item: the knowledge-flow MCP wiring to
+      `gmpFrontend` (`integrations.prometheus`, `mcp.prometheus_ops_enabled`) is
+      still only on the local `grafana` branch, uncommitted — ArgoCD's `fred-apps`
+      only deploys from `origin/swift`, so that half needs a commit + a decision on
+      how this branch lands on `swift` before Sentinel/the MCP tools can actually
+      query through it.
+
+      **(2026-07-18) Added a "Resources & FinOps" dashboard** (non-Fred-KPI scope —
+      capacity/headroom, GKE Autopilot cost-waste signal, and cross-store data
+      volume — Fred KPIs stay on the existing OpenSearch analytics dashboard).
+      Three new datasources beyond the existing `gmpFrontend` one, each with its
+      own credential/IAM path:
+      - **PostgreSQL** — new read-only role `grafana_readonly`
+        (`postgresql.grafana`, provisioned by `postgres-provision-job.yaml`):
+        `CONNECT` on every database + `pg_read_all_stats` membership, no table
+        `SELECT`. Reads database sizes via `pg_database_size()`.
+      - **Google Cloud Monitoring** — Grafana's own core `stackdriver` datasource,
+        `authenticationType: gce`. Needed giving the Grafana pod its own
+        `ServiceAccount` + Workload Identity binding (`grafana.serviceAccount`),
+        reusing the existing `fredlab-monitoring` GSA (already `roles/
+        monitoring.viewer`, which covers GCS storage metrics too — no new GSA, no
+        new IAM role). `bin/fredlab-gcp-monitoring-prereqs.sh`'s `KSA_NAMES`
+        default extended to `"gmp-frontend grafana"` and re-run live.
+      - **OpenSearch** — via the community **Infinity** datasource
+        (`yesoreyeram-infinity-datasource`, `GF_INSTALL_PLUGINS` at pod startup —
+        needs outbound internet, Autopilot has default egress) hitting OpenSearch's
+        own `_cat/indices` / `_cluster/stats` HTTP API directly. Deliberately not a
+        dedicated `elasticsearch_exporter` Deployment (offered as an alternative,
+        not taken) — no new long-running workload to maintain.
+
+      All four datasources given explicit `uid`s (`gmp`, `postgres-grafana`,
+      `cloud-monitoring`, `opensearch-infinity`) so the dashboard JSON can
+      reference them deterministically — provisioned datasources otherwise get
+      random UIDs. Dashboard JSON lives at `gcp-c1/helm/files/grafana-dashboards/
+      resource-finops.json`, embedded via Helm's `.Files.Get` into a dedicated
+      ConfigMap, provisioned through Grafana's file-based dashboard provider
+      (`gcp-c1/helm/templates/grafana.yaml`) — a second ConfigMap/volume for the
+      provider config, kept in a separate directory from the dashboard JSON itself
+      so Grafana's file provider doesn't also try to parse the provider YAML as a
+      dashboard.
+
+      `helm template` validated (both provisioning shell scripts additionally
+      syntax-checked with `sh -n`; the embedded dashboard JSON round-tripped
+      through `.Files.Get`/`indent` and re-validated as JSON). Deployed via
+      `bin/fredlab-infra-deploy.sh` — pod `Running`, Infinity plugin installed
+      (confirmed in pod logs), `grafana_readonly` role confirmed present in
+      Postgres, dashboard files confirmed correctly mounted in the pod, no errors
+      in Grafana's provisioning logs. **Not verified panel-by-panel in the UI** —
+      that needs a real login, which this agent deliberately doesn't have/request
+      (same admin-password-never-generated-or-seen convention as everywhere else
+      in this repo). The Cloud Monitoring and Infinity panel JSON shapes are the
+      two lowest-confidence parts of this change (schema knowledge, not
+      render-tested against a live Grafana) — check those two panels first if
+      anything looks wrong.
+
+      **(2026-07-18) First real look, three fixes.** Screenshot review found: (1)
+      layout too tall, needed browser zoom-out to see the whole dashboard —
+      tightened every panel's `gridPos.h` (~30% shorter overall); (2) GCS bucket
+      size panel showed "No data" — root cause confirmed by querying Cloud
+      Monitoring directly (`gcloud auth print-access-token` + REST): the metric
+      has real data at ~5min granularity, but the panel's `alignmentPeriod` was
+      `86400s` (24h), wider than the dashboard's default 6h window, so nothing
+      aligned — fixed to `3600s`; (3) CPU/memory requested-vs-allocatable,
+      overprovisioning ratio, and pod-restart panels all showed "No data" — NOT a
+      query bug: confirmed by querying gmp-frontend directly that
+      `{__name__=~"kube_.+"}` returns **zero series**, i.e. GKE's default/managed
+      GMP system-metrics collection is a curated allowlist that excludes
+      kube-state-metrics' resource-request/allocatable/restart metrics entirely
+      (the managed `kube-state-metrics` scrape target shows `up=1`, but that
+      doesn't mean its full metric catalog reaches GMP).
+
+      Fixed by deploying **self-managed kube-state-metrics** as a new Foundation
+      component (`gcp-c1/helm/templates/kube-state-metrics.yaml`,
+      `kubeStateMetrics.enabled: true`), feeding the same GMP pipeline via a
+      `PodMonitoring` CR (GMP's self-deployed collector, already running
+      cluster-wide by default, picks it up — no new collector, no new datasource,
+      same `gmp-frontend` query path). Scoped to least privilege throughout: KSM's
+      `--resources` flag limited to exactly `pods,nodes` (`kubeStateMetrics.
+      collectResources`, not upstream's full default set which also covers
+      secrets/configmaps/etc.), and the `ClusterRole` grants `list`/`watch` on
+      only those two resource kinds — no `get`, no writes, nothing else
+      cluster-wide. `helm template` validated; deployed via
+      `bin/fredlab-infra-deploy.sh`; all three previously-missing metrics
+      confirmed flowing within the 30s scrape interval (`kube_pod_container_
+      resource_requests` — 147 series, `kube_node_status_allocatable`, and
+      `kube_pod_container_status_restarts_total` — legitimately `0`, not absent).
+      Dashboard now fully live-verified end to end, panel by panel, via direct
+      queries against each backing datasource (not yet re-confirmed visually in
+      the Grafana UI after this round — worth one more look).
+
 ## CLASS — classification-driven hardening (C2 / C3)
 
 The repo is a **C1 reference sample** (RFC §6). These are per-level hardening knobs; the

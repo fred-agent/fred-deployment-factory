@@ -6,6 +6,9 @@
 {{- if .Values.fredFrontend.ingressEnabled -}}
 {{- $certificates = append $certificates (dict "name" .Values.fredFrontend.managedCertificateName "domains" (list .Values.fredFrontend.hostname)) -}}
 {{- end -}}
+{{- if and .Values.grafana.enabled .Values.grafana.hostname -}}
+{{- $certificates = append $certificates (dict "name" .Values.grafana.managedCertificateName "domains" (list .Values.grafana.hostname)) -}}
+{{- end -}}
 {{- range .Values.ingress.extraManagedCertificates -}}
 {{- $certificates = append $certificates . -}}
 {{- end }}
