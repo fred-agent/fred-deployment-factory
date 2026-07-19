@@ -146,7 +146,69 @@ shape of the dashboard doesn't need to.
 
 ---
 
-## 6. What changes for each target platform
+## 6. Application KPIs dashboard — what's needed
+
+Distinct from the Resources & FinOps dashboard (§5, which reads GKE/GCP infra
+metrics): this one reads metrics the **Fred apps themselves** emit — agent/tool
+execution, API latency, RAG search, ingestion. Three things have to be true
+before it shows anything.
+
+**1. Each app's Prometheus exporter must be turned on and bound to something
+the scraper can actually reach.** All three were broken or off by default:
+
+- `control-plane-backend`: `controlPlane.config.observability.prometheus.enabled`
+  was `false` — a deliberate default, just flip it to `true`.
+- `fred-agents`: had **no** `observability.kpi.prometheus` block rendered into
+  its ConfigMap at all — silently falling back to fred-runtime's own default
+  (`enabled=true`, but `address=127.0.0.1`). Exporter was already running,
+  just unreachable from outside the pod.
+- `knowledge-flow` (backend + worker, shared ConfigMap): rendered `port` only,
+  same `127.0.0.1`-default trap on `address`.
+
+The pattern for all three, and for whatever the next app is: set `enabled:
+true` and **always set `address: "0.0.0.0"` explicitly** — every app here
+shares the same underlying config schema (fred-core's
+`KpiPrometheusSinkConfig`), and its default bind address is loopback-only.
+Never assume "it's enabled" means "it's reachable."
+
+**2. A separate `metrics` containerPort on each app's Deployment**, distinct
+from its API `http` port — the exporter runs its own dedicated HTTP server
+(`prometheus_client.start_http_server`), not on the API port.
+
+**3. A `PodMonitoring` CR (GMP's scrape-config CRD) per app**, selecting on
+the pod's labels, `endpoints[].port: metrics`. This is **pod-based** service
+discovery — it does not go through a Kubernetes `Service` at all, so you do
+not need a Service port for this to work, only the named `containerPort` on
+the pod itself.
+
+**Source of truth for what to actually query — don't guess metric names or
+labels.** This repo's dashboard
+(`gcp-c1/helm/files/grafana-dashboards/application-kpis.json`) is built
+entirely from `fred-website`'s `static/docs/observability-and-kpis.html` — it
+documents every metric name, its Prometheus type, and, critically, exactly
+which labels **survive** (many are sent by the app but silently dropped
+before `/metrics` — e.g. no `team_id`, no `agent_instance_id`; per-team/
+per-agent breakdowns are a separate, access-scoped data stream by design, not
+an omission). A panel built against a label that doesn't survive returns
+nothing, silently — same failure shape as the Cloud Monitoring `projectName`
+bug in §4.
+
+**Chart ownership, not a collision this time.** The `PodMonitoring` CRs live
+only in the GitOps Apps chart (`gcp-c1/argocd/fred-apps`), not the Foundation
+chart — these app pods are only ever actually deployed by the Apps chart (the
+Foundation chart's copies of the same apps stay `enabled: false`). No point
+creating a `PodMonitoring` in a chart with no matching pod to select, and no
+collision risk either way since the Foundation chart never defines one.
+
+**A ConfigMap change alone does not restart pods.** After fixing the exporter
+config, running pods keep the *old* config in memory until restarted — a
+`kubectl rollout restart` (or the next natural rollout) is required. Don't
+assume a "successful" deploy picked up a ConfigMap-only change; check the pod's
+actual age/restart count against when the ConfigMap changed.
+
+---
+
+## 7. What changes for each target platform
 
 ### S3NS (same substrate — GKE Autopilot)
 
@@ -177,7 +239,7 @@ on.
 
 ---
 
-## 7. Pre-flight checklist for a new platform
+## 8. Pre-flight checklist for a new platform
 
 - [ ] Elastic node capacity confirmed working (a test pod that needs more than
       current headroom actually gets scheduled, within a time budget you're
@@ -189,6 +251,11 @@ on.
       doesn't exist.
 - [ ] Metrics source reachable from Grafana; each dashboard panel confirmed
       against **real returned data**, not just "the panel didn't error."
+- [ ] Application-level exporters (§6) confirmed separately from infra
+      metrics — `enabled: true` is not enough, confirm each app's `/metrics`
+      port actually answers (curl the pod IP directly) and that the scraper's
+      `PodMonitoring`/equivalent is picking it up, not just that the app
+      config says it should.
 - [ ] Rendered both chart trees (Foundation + Apps) and confirmed no object
       name collides between them (§4).
 - [ ] Secrets file is git-ignored and confirmed as such
