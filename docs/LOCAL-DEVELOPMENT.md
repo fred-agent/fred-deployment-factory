@@ -48,6 +48,17 @@ step matters — skipping step 1 is the single most common cause of "works on my
 fails in review."** All `make` commands below run inside the sibling `fred` monorepo
 checkout, not this repo.
 
+> **Since CAPAB-01 / CTRLP-14 (2026-07-17): don't skip step 5b.** Every tool (MCP
+> server) and every agent template is now admin-gated by default, platform-wide —
+> matching production policy. Importing the demo bundle (step 4) creates the demo
+> teams with **zero usable tools and zero visible agent templates** — that's expected,
+> not broken. If you stop after step 5 and jump straight to the frontend or
+> `make validation-report`, every demo user looks like they have no agents at all.
+> Step 5b is the one-time admin action that turns that on — it must come after step 5
+> (`fred-agents` running), not right after import; it's still a manual step today
+> (we're converging on a better default — see the note at the end of 5b) but it only
+> takes two commands.
+
 **0. Infra up** (this repo)
 
 ```bash
@@ -114,6 +125,65 @@ cd apps/knowledge-flow-backend && make run-prod &   # :8111
 cd apps/frontend && make run &                      # :5173 — needed for step 7
 ```
 
+**5b. Authorize Tools and Agents for the demo teams (CAPAB-01 / CTRLP-14)**
+
+Every capability — every MCP tool *and* every agent template — is `admin_gated`: a
+team can't see or use one until a `platform_admin` explicitly grants it. Nothing
+earlier in this walkthrough does that (import only provisions
+identities/teams/roles, not capability grants), so right now every demo team has an
+empty toolbox and an empty agent-template list. Simplest local-dev fix: flip every
+capability to platform-wide `default_on` — a deliberate admin action via this API,
+not a manifest default, so it doesn't violate the "nothing ships
+admin-gated-by-default" policy it's gating.
+
+**Must come after step 5, not before.** `default-on` itself has zero team
+dependency — it can be called right after step 3, before import even runs — but
+the catalog it operates on (`GET /admin/capabilities`) is fetched live from
+`fred-agents` (and any other configured runtime pod). Before step 5 starts
+`fred-agents`, that fetch is unreachable and best-effort-empty: the loop below
+would run, hit zero ids, and silently do nothing — no error, just an empty
+toolbox that looks authorized but isn't. `$TOKEN` from step 3 is still valid
+here (an AUTHZ-07 root `platform_admin` grant never expires or gets revoked by
+later steps).
+
+```bash
+CAP_IDS=$(curl -s http://localhost:8222/control-plane/v1/admin/capabilities \
+  -H "Authorization: Bearer $TOKEN" \
+  | python3 -c 'import sys,json; print("\n".join(i["id"] for i in json.load(sys.stdin)["items"]))')
+
+for id in $CAP_IDS; do
+  echo "default-on: $id"
+  curl -s -X PUT "http://localhost:8222/control-plane/v1/admin/capabilities/$id/default-on" \
+    -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+    -d '{"default_on": true}'
+  echo
+done
+```
+
+If `CAP_IDS` comes back empty, `fred-agents` isn't reachable yet — check its
+terminal from step 5 before assuming this step itself is broken.
+
+A capability with *required* team settings refuses default-on (`409`) — it needs a
+value only a team can supply, so it can't have a platform-wide default. For those,
+grant it to one demo team explicitly instead, with whatever settings it needs:
+
+```bash
+curl -s -X PUT "http://localhost:8222/control-plane/v1/admin/capabilities/<id>/teams/<team_id>" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"settings": {}}'
+```
+
+None of the current demo/stock capabilities require this — the loop above is normally
+enough. Same effect as **Admin → Capabilities** in the UI once the frontend is up —
+a "Tools" / "Agents" toggle at the top filters the same catalog by `kind`, and both
+are just admin actions on top of what this step already did.
+
+*Why this is a manual step today:* the demo bundle predates per-team capability
+grants and doesn't provision them; the "right" fix is a better default at import
+time, still being worked out. Until then, this is the one extra hop — do it once,
+right after step 5, and everything downstream (agents having tools, templates being
+visible, `validation-report`, the self-test) behaves exactly like before.
+
 **6. Run the automated cross-app validation suite** (from the `fred` repo root)
 
 ```bash
@@ -124,6 +194,10 @@ Logs in as every demo user from step 4 and asserts the full authorization matrix
 end-to-end. Writes `validation/report.md` (PASS/FAIL grouped by real-world claim, not
 by test name) and returns pytest's exit code. See `fred`'s `validation/README.md` for
 what it checks.
+
+Failures here that look like "no tools available", "template not found", or an agent
+answering with none of its expected capabilities almost always mean step 5b was
+skipped — go back and run it.
 
 **7. Finish with the UI self-test** (VALID-02 — real pipeline, no mocks, browser-driven)
 
@@ -183,6 +257,8 @@ Every identity and role - platform (`platform_admin`/`platform_observer`) and te
 for the exact step-by-step sequence (`make bootstrap-token` → become `platform_admin` →
 `make build-demo-bundle` + import), and [`../docker/README.md`](../docker/README.md)
 ("Platform and demo-data provisioning now lives in `fred`") for the underlying contract.
+Capability grants (which tools/agents each team can use) are a separate, later step —
+none of the above provisions them; see step 5b.
 
 ## Configuration
 
