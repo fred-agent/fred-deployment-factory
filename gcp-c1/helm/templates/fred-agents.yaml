@@ -68,6 +68,8 @@ spec:
               value: /etc/fred/fred-agents/configuration.yaml
             - name: ENV_FILE
               value: /etc/fred/fred-agents/empty.env
+            - name: FRED_MCP_CATALOG_FILE
+              value: /etc/fred/fred-agents/mcp_catalog.yaml
             # Writable home for model/cache writes (the runtime store is now Postgres,
             # not the emptyDir sqlite file).
             - name: HOME
