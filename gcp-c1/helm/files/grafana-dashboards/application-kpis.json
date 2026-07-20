@@ -21,9 +21,15 @@
       "title": "Tool call p95 latency, by tool",
       "description": "agent.tool_latency_ms (histogram). Surviving labels: tool_name, template_agent_id.",
       "datasource": { "type": "prometheus", "uid": "gmp" },
-      "gridPos": { "x": 0, "y": 1, "w": 12, "h": 3 },
-      "fieldConfig": { "defaults": { "unit": "ms" }, "overrides": [] },
-      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "gridPos": { "x": 0, "y": 1, "w": 12, "h": 6 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "custom": { "lineWidth": 2, "fillOpacity": 10, "showPoints": "auto", "pointSize": 5, "drawStyle": "line", "spanNulls": false }
+        },
+        "overrides": []
+      },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "calcs": ["lastNotNull"] }, "tooltip": { "mode": "multi" } },
       "targets": [
         {
           "refId": "A",
@@ -39,9 +45,15 @@
       "title": "Tool failure rate, by tool",
       "description": "agent.tool_failed_total ÷ agent.tool_latency_ms count. Surviving labels: tool_name, template_agent_id, status, error_code, exception_type.",
       "datasource": { "type": "prometheus", "uid": "gmp" },
-      "gridPos": { "x": 12, "y": 1, "w": 12, "h": 3 },
-      "fieldConfig": { "defaults": { "unit": "percentunit" }, "overrides": [] },
-      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "gridPos": { "x": 12, "y": 1, "w": 12, "h": 6 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "custom": { "lineWidth": 2, "fillOpacity": 10, "showPoints": "auto", "pointSize": 5, "drawStyle": "line", "spanNulls": false }
+        },
+        "overrides": []
+      },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "calcs": ["lastNotNull"] }, "tooltip": { "mode": "multi" } },
       "targets": [
         {
           "refId": "A",
@@ -57,9 +69,15 @@
       "title": "Agent turn completion rate, by template",
       "description": "agent.turn_completed (histogram, used here as a rate). Surviving labels: template_agent_id, runtime_id, model_name, finish_reason.",
       "datasource": { "type": "prometheus", "uid": "gmp" },
-      "gridPos": { "x": 0, "y": 4, "w": 12, "h": 3 },
-      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] },
-      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "gridPos": { "x": 0, "y": 7, "w": 12, "h": 6 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": { "lineWidth": 2, "fillOpacity": 10, "showPoints": "auto", "pointSize": 5, "drawStyle": "line", "spanNulls": false }
+        },
+        "overrides": []
+      },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "calcs": ["lastNotNull"] }, "tooltip": { "mode": "multi" } },
       "targets": [
         {
           "refId": "A",
@@ -75,9 +93,15 @@
       "title": "Agent turn error rate, by template",
       "description": "agent.turn_error_total ÷ agent.turn_completed count — only emitted when a turn errors.",
       "datasource": { "type": "prometheus", "uid": "gmp" },
-      "gridPos": { "x": 12, "y": 4, "w": 12, "h": 3 },
-      "fieldConfig": { "defaults": { "unit": "percentunit" }, "overrides": [] },
-      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "gridPos": { "x": 12, "y": 7, "w": 12, "h": 6 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "custom": { "lineWidth": 2, "fillOpacity": 10, "showPoints": "auto", "pointSize": 5, "drawStyle": "line", "spanNulls": false }
+        },
+        "overrides": []
+      },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "calcs": ["lastNotNull"] }, "tooltip": { "mode": "multi" } },
       "targets": [
         {
           "refId": "A",
@@ -93,9 +117,18 @@
       "title": "Token throughput (input vs. output)",
       "description": "agent.turn_completed_quantity_{input,output}_tokens_total — this is where token counts actually live today, not any cost.* series (those have zero call sites).",
       "datasource": { "type": "prometheus", "uid": "gmp" },
-      "gridPos": { "x": 0, "y": 7, "w": 24, "h": 3 },
-      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
-      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "gridPos": { "x": 0, "y": 13, "w": 24, "h": 6 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": { "lineWidth": 2, "fillOpacity": 10, "showPoints": "auto", "pointSize": 5, "drawStyle": "line", "spanNulls": false }
+        },
+        "overrides": [
+          { "matcher": { "id": "byFrameRefID", "options": "A" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "#2a78d6" } }] },
+          { "matcher": { "id": "byFrameRefID", "options": "B" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "#008300" } }] }
+        ]
+      },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "calcs": ["lastNotNull"] }, "tooltip": { "mode": "multi" } },
       "targets": [
         {
           "refId": "A",
@@ -115,7 +148,7 @@
       "id": 200,
       "type": "row",
       "title": "API & LLM calls",
-      "gridPos": { "x": 0, "y": 10, "w": 24, "h": 1 },
+      "gridPos": { "x": 0, "y": 19, "w": 24, "h": 1 },
       "collapsed": false,
       "panels": []
     },
@@ -125,9 +158,15 @@
       "title": "API p95 latency, by route",
       "description": "api.request_latency_ms (histogram), emitted for every HTTP request to control-plane, knowledge-flow, and fred-agents alike. Surviving labels: route, method, status, http_status, error_code, exception_type.",
       "datasource": { "type": "prometheus", "uid": "gmp" },
-      "gridPos": { "x": 0, "y": 11, "w": 12, "h": 3 },
-      "fieldConfig": { "defaults": { "unit": "ms" }, "overrides": [] },
-      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "gridPos": { "x": 0, "y": 20, "w": 12, "h": 6 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "custom": { "lineWidth": 2, "fillOpacity": 10, "showPoints": "auto", "pointSize": 5, "drawStyle": "line", "spanNulls": false }
+        },
+        "overrides": []
+      },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "calcs": ["lastNotNull"] }, "tooltip": { "mode": "multi" } },
       "targets": [
         {
           "refId": "A",
@@ -143,9 +182,15 @@
       "title": "API error rate, by route",
       "description": "api.error_total ÷ api.request_latency_ms count — only non-2xx/3xx.",
       "datasource": { "type": "prometheus", "uid": "gmp" },
-      "gridPos": { "x": 12, "y": 11, "w": 12, "h": 3 },
-      "fieldConfig": { "defaults": { "unit": "percentunit" }, "overrides": [] },
-      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "gridPos": { "x": 12, "y": 20, "w": 12, "h": 6 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "custom": { "lineWidth": 2, "fillOpacity": 10, "showPoints": "auto", "pointSize": 5, "drawStyle": "line", "spanNulls": false }
+        },
+        "overrides": []
+      },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "calcs": ["lastNotNull"] }, "tooltip": { "mode": "multi" } },
       "targets": [
         {
           "refId": "A",
@@ -161,9 +206,15 @@
       "title": "API request rate, by route",
       "description": "api.request_latency_ms count, as a rate — overall traffic shape across control-plane, knowledge-flow and fred-agents.",
       "datasource": { "type": "prometheus", "uid": "gmp" },
-      "gridPos": { "x": 0, "y": 14, "w": 12, "h": 3 },
-      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] },
-      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "gridPos": { "x": 0, "y": 26, "w": 12, "h": 6 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": { "lineWidth": 2, "fillOpacity": 10, "showPoints": "auto", "pointSize": 5, "drawStyle": "line", "spanNulls": false }
+        },
+        "overrides": []
+      },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "calcs": ["lastNotNull"] }, "tooltip": { "mode": "multi" } },
       "targets": [
         {
           "refId": "A",
@@ -179,9 +230,15 @@
       "title": "LLM call latency p95, by model",
       "description": "llm.call_latency_ms (histogram). Only model_name survives as a label — agent_id and operation are sent but dropped.",
       "datasource": { "type": "prometheus", "uid": "gmp" },
-      "gridPos": { "x": 12, "y": 14, "w": 12, "h": 3 },
-      "fieldConfig": { "defaults": { "unit": "ms" }, "overrides": [] },
-      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "gridPos": { "x": 12, "y": 26, "w": 12, "h": 6 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "custom": { "lineWidth": 2, "fillOpacity": 10, "showPoints": "auto", "pointSize": 5, "drawStyle": "line", "spanNulls": false }
+        },
+        "overrides": []
+      },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "calcs": ["lastNotNull"] }, "tooltip": { "mode": "multi" } },
       "targets": [
         {
           "refId": "A",
@@ -195,7 +252,7 @@
       "id": 300,
       "type": "row",
       "title": "Retrieval & ingestion (knowledge-flow)",
-      "gridPos": { "x": 0, "y": 17, "w": 24, "h": 1 },
+      "gridPos": { "x": 0, "y": 32, "w": 24, "h": 1 },
       "collapsed": false,
       "panels": []
     },
@@ -205,9 +262,21 @@
       "title": "RAG search hit ratio, by status",
       "description": "rag.search_hit_ratio (gauge). Only status survives as a label.",
       "datasource": { "type": "prometheus", "uid": "gmp" },
-      "gridPos": { "x": 0, "y": 18, "w": 12, "h": 3 },
-      "fieldConfig": { "defaults": { "unit": "percentunit", "max": 1, "min": 0 }, "overrides": [] },
-      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "gridPos": { "x": 0, "y": 33, "w": 12, "h": 6 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "max": 1,
+          "min": 0,
+          "custom": { "lineWidth": 2, "fillOpacity": 10, "showPoints": "auto", "pointSize": 5, "drawStyle": "line", "spanNulls": false }
+        },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "ok" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "#0ca30c" } }] },
+          { "matcher": { "id": "byName", "options": "error" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "#d03b3b" } }] },
+          { "matcher": { "id": "byName", "options": "empty" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "#fab219" } }] }
+        ]
+      },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "calcs": ["lastNotNull"] }, "tooltip": { "mode": "multi" } },
       "targets": [
         {
           "refId": "A",
@@ -223,9 +292,19 @@
       "title": "RAG search rate (total / error / empty), by status",
       "description": "rag.search_total, rag.search_error_total, rag.search_empty_total — status is the only surviving label on all three.",
       "datasource": { "type": "prometheus", "uid": "gmp" },
-      "gridPos": { "x": 12, "y": 18, "w": 12, "h": 3 },
-      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] },
-      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "gridPos": { "x": 12, "y": 33, "w": 12, "h": 6 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": { "lineWidth": 2, "fillOpacity": 10, "showPoints": "auto", "pointSize": 5, "drawStyle": "line", "spanNulls": false }
+        },
+        "overrides": [
+          { "matcher": { "id": "byFrameRefID", "options": "A" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "#2a78d6" } }] },
+          { "matcher": { "id": "byFrameRefID", "options": "B" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "#d03b3b" } }] },
+          { "matcher": { "id": "byFrameRefID", "options": "C" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "#fab219" } }] }
+        ]
+      },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "calcs": ["lastNotNull"] }, "tooltip": { "mode": "multi" } },
       "targets": [
         {
           "refId": "A",
@@ -253,9 +332,18 @@
       "title": "Document created / deleted rate, by file type",
       "description": "document.created_total / document.deleted_total. Only file_type survives — source_type and team_id are sent but dropped (per-team breakdowns live in product analytics, not here).",
       "datasource": { "type": "prometheus", "uid": "gmp" },
-      "gridPos": { "x": 0, "y": 21, "w": 12, "h": 3 },
-      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
-      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "gridPos": { "x": 0, "y": 39, "w": 12, "h": 6 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": { "lineWidth": 2, "fillOpacity": 10, "showPoints": "auto", "pointSize": 5, "drawStyle": "line", "spanNulls": false }
+        },
+        "overrides": [
+          { "matcher": { "id": "byFrameRefID", "options": "A" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "#2a78d6" } }] },
+          { "matcher": { "id": "byFrameRefID", "options": "B" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "#008300" } }] }
+        ]
+      },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "calcs": ["lastNotNull"] }, "tooltip": { "mode": "multi" } },
       "targets": [
         {
           "refId": "A",
@@ -277,9 +365,15 @@
       "title": "Ingestion duration p95, by file type",
       "description": "ingestion.document_duration_ms (histogram). Surviving labels: file_type, status — source is sent but dropped.",
       "datasource": { "type": "prometheus", "uid": "gmp" },
-      "gridPos": { "x": 12, "y": 21, "w": 12, "h": 3 },
-      "fieldConfig": { "defaults": { "unit": "ms" }, "overrides": [] },
-      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "gridPos": { "x": 12, "y": 39, "w": 12, "h": 6 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "custom": { "lineWidth": 2, "fillOpacity": 10, "showPoints": "auto", "pointSize": 5, "drawStyle": "line", "spanNulls": false }
+        },
+        "overrides": []
+      },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "calcs": ["lastNotNull"] }, "tooltip": { "mode": "multi" } },
       "targets": [
         {
           "refId": "A",
@@ -295,9 +389,18 @@
       "title": "Temporal ingestion workflows / documents rate, by status",
       "description": "temporal.ingestion.workflows_total / temporal.ingestion.documents_total, emitted by the knowledge-flow Temporal worker. Only status survives as a label.",
       "datasource": { "type": "prometheus", "uid": "gmp" },
-      "gridPos": { "x": 0, "y": 24, "w": 24, "h": 3 },
-      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
-      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "gridPos": { "x": 0, "y": 45, "w": 24, "h": 6 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": { "lineWidth": 2, "fillOpacity": 10, "showPoints": "auto", "pointSize": 5, "drawStyle": "line", "spanNulls": false }
+        },
+        "overrides": [
+          { "matcher": { "id": "byFrameRefID", "options": "A" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "#2a78d6" } }] },
+          { "matcher": { "id": "byFrameRefID", "options": "B" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "#008300" } }] }
+        ]
+      },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "calcs": ["lastNotNull"] }, "tooltip": { "mode": "multi" } },
       "targets": [
         {
           "refId": "A",
@@ -323,6 +426,6 @@
   "timezone": "",
   "title": "Fredlab — Application KPIs",
   "uid": "fredlab-application-kpis",
-  "version": 1,
+  "version": 2,
   "weekStart": ""
 }
