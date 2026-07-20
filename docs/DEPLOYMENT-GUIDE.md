@@ -122,6 +122,46 @@ and needed a self-deployed, least-privilege `kube-state-metrics` feeding the
 same pipeline to actually show up. Verify by querying for the specific metric
 you need, not by checking scrape-target health.
 
+**An app image can ship a *second* config file that hardcodes `localhost` —
+not just the main `configuration.yaml`.** fred-agents bundles its own
+`config/mcp_catalog.yaml`, listing every MCP tool server it connects to. Every
+knowledge-flow-backed entry (tabular, opensearch-ops, fs, corpus,
+prometheus-ops) hardcoded `http://localhost:8111/...` — correct for a
+docker-compose stack sharing one host, wrong the moment fred-agents and
+knowledge-flow-backend are separate pods. This stayed invisible until the day
+someone asked a question that actually routed to one of those tools (testing
+the SQL/tabular path) — a plain chat question never touches this file at all,
+so a basic smoke test won't catch it. **Before calling a new platform done,
+grep every app's bundled `config/` directory for `localhost` — not just the
+one file you already override.** The fix pattern generalizes: fred-runtime
+supports an env-var override for this exact file (`FRED_MCP_CATALOG_FILE`,
+same shape as `CONFIG_FILE`/`ENV_FILE`) — embed a corrected copy rather than
+assuming the bundled default is deployment-ready.
+
+**When you rewrite a `localhost:PORT` reference to the in-cluster DNS name,
+match it to the Service's port, not the pod's raw `containerPort`.** Made
+this exact mistake fixing the `mcp_catalog.yaml` above: rewrote
+`localhost:8111` (the pod's container port) to
+`knowledge-flow-backend:8111` — but the Service only listens on `8080`
+(forwarding internally to `8111`); port `8111` isn't reachable through the
+Service DNS name at all, only `8080` is. Confirmed by curl: `:8111` times
+out, `:8080` responds. A Service's `port:` and a pod's `containerPort` are
+independent numbers by design — always check the Service definition, don't
+assume the container's own listening port is what the DNS name answers on.
+
+**A routine app version bump is usually simple — but check every time, not
+just the first time.** One release needed a new Alembic migration and no new
+config; the next needed no migration but a new optional config field
+(off by default) and had silently dropped an old one. Neither followed the
+same shape as the last. Before bumping any version: diff the new release's
+Alembic `versions/` directories (a new migration must run **before** the new
+image starts serving, not after — a live incident here took a service down
+for hours the first time), and diff the config schema for both new
+required-with-no-default fields (crash risk, §3) and removed fields your
+values still set (usually harmless if the app's config model doesn't forbid
+extra fields — check whether it does — but worth cleaning up rather than
+leaving stale).
+
 ---
 
 ## 5. The monitoring/FinOps dashboard pattern (platform-agnostic part)
@@ -206,6 +246,27 @@ config, running pods keep the *old* config in memory until restarted — a
 assume a "successful" deploy picked up a ConfigMap-only change; check the pod's
 actual age/restart count against when the ConfigMap changed.
 
+**Design the dashboard for when it's actually full, not for when it's empty.**
+A dense, condensed panel layout (small panel heights, tight legends) looks
+harmless while every panel says "No data" — there's nothing to read either
+way. The moment real traffic flows, cramped timeseries hide exactly the trend
+shapes the dashboard exists to show. Ship a panel layout sized for real
+data from the start (roughly double the height a purely-empty-state review
+would suggest), with fixed colors for every bounded-cardinality series
+(a status enum, an in/out pair) so Grafana's index-based auto-palette can't
+repaint a series when the label set changes — reserve the auto-palette for
+genuinely open-cardinality series (by route, by tool, by model) where no
+fixed entity set exists to assign colors to.
+
+**Prometheus counters are per-pod-instance — a restart resets them to
+zero.** A metric that worked five minutes ago can show "No data" after a
+routine pod restart (a new deploy, a config fix, node rescheduling) with
+nothing actually broken — the *previous* pod's counter simply isn't the
+*current* pod's counter. Before treating a suddenly-empty panel as a
+regression, check whether the pod restarted since the last confirmed data
+point, and re-exercise the code path once against the new pod before
+concluding something is actually wrong.
+
 ---
 
 ## 7. What changes for each target platform
@@ -256,6 +317,14 @@ on.
       port actually answers (curl the pod IP directly) and that the scraper's
       `PodMonitoring`/equivalent is picking it up, not just that the app
       config says it should.
+- [ ] Grepped every app image's bundled `config/` directory for `localhost` —
+      not just the main config file (§4). Exercised every distinct feature
+      path at least once (a tool-routing / SQL question, a document upload,
+      not just a plain chat message) so a `localhost`-only-reachable-through-
+      one-code-path bug can't hide behind a passing smoke test.
+- [ ] Every `localhost:PORT` rewritten to an in-cluster DNS name was checked
+      against the target Service's actual `port:` — not assumed to equal the
+      pod's `containerPort` (§4).
 - [ ] Rendered both chart trees (Foundation + Apps) and confirmed no object
       name collides between them (§4).
 - [ ] Secrets file is git-ignored and confirmed as such
