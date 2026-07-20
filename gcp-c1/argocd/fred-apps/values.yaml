@@ -117,6 +117,7 @@ controlPlane:
       featureFlags:
         enableK8Features: false
         enableElecWarfare: false
+        enableEvaluation: true
       uiSettings:
         siteDisplayName: Fredlab
         agentsNicknameSingular: agent
