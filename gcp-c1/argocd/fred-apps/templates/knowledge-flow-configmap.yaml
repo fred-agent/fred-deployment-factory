@@ -254,6 +254,7 @@ data:
         artifacts_prefix: "tabular/datasets"
         format: "parquet"
         compression: "snappy"
+        pointer_chunks_enabled: {{ .Values.knowledgeFlow.config.tabularStore.pointerChunksEnabled }}
         query:
           engine: "duckdb"
           # GCS on pure Workload Identity does not support presigned URLs, so the
@@ -278,7 +279,6 @@ data:
       reports_enabled: true
       kpi_enabled: true
       tabular_enabled: true
-      statistic_enabled: true
       text_enabled: true
       templates_enabled: true
       resources_enabled: true
