@@ -68,7 +68,7 @@ Three commands. **Sync is manual by design** (auto-sync is off — no `automated
 bin/fredlab-release.sh all               # 1. build all four app images from ~/fred HEAD + bump tags
 git commit -am "release <tag>" && git push   # 2. push -> ArgoCD sees the new tags
 bin/fredlab-argocd-sync.sh               # 3. trigger the sync (UI -> fred-apps -> SYNC also works)
-bin/fredlab-status.sh                    # 4. verify: new tag, healthy
+NAMESPACE=fred-demo bin/fredlab-status.sh # 4. verify: new tag, healthy
 ```
 
 `bin/fredlab-release.sh` takes `all` or a single component (`control-plane`, `frontend`,
@@ -76,6 +76,20 @@ bin/fredlab-status.sh                    # 4. verify: new tag, healthy
 `[tag]` to reuse an already-built image. The tags live in `gcp-c1/argocd/fred-apps/values-fredlab.yaml`
 (marked `# release-tag: <image>`); the script rewrites them. `bin/fredlab-argocd-sync.sh` drives
 the Application via `kubectl` (no `argocd` CLI needed) and warns if HEAD isn't pushed.
+
+> **In practice, every fredlab release since v2.1.1 has used the `C5` ghcr.io path instead**
+> (`OPERATING-CONVENTIONS.md`): hand-edit the `tag:` lines in `values-fredlab.yaml` to the
+> `fred`/`fred-agent-evaluator` release tag (`vX.Y.Z`) instead of running `fredlab-release.sh`,
+> then `git commit`/`push`/sync as above. Same loop, no local Cloud Build round.
+
+> **Migrations are never run by the sync, for any path.** If the new tag for `control-plane` or
+> `knowledge-flow` includes a new alembic revision, ArgoCD only rolls the new code — the schema
+> stays behind until you separately run `NAMESPACE=fred-demo bin/fredlab-deploy.sh <app> migrate
+> <tag>` (imperative, see `OPERATING-CONVENTIONS.md` C2). Symptom if you skip it: the new code
+> 500s on the first query touching a column/table the migration would have added
+> (`UndefinedColumnError`/`UndefinedTableError`), which looks like a bug but is just a missed
+> step — check the `fred` repo's `alembic/versions/` diff between the old and new tag before
+> declaring a bump done.
 
 > **Small-cluster rollout note:** the fred-apps Deployments pin `maxSurge: 0` /
 > `maxUnavailable: 1` so a rollout replaces each pod **in place** rather than needing a spare
@@ -99,7 +113,7 @@ git commit && git push
 bin/fredlab-deploy.sh <app> disable -fast     # 3. remove the workload from the imperative release (brief blip)
 # 4. SYNC fred-apps in ArgoCD (UI, or: kubectl -n argocd patch app fred-apps --type merge \
 #    -p '{"operation":{"sync":{"revision":"<sha>"}}}') -> ArgoCD becomes sole owner
-bin/fredlab-status.sh                          # 5. verify: ownership instance=fred-apps, healthy
+NAMESPACE=fred-demo bin/fredlab-status.sh      # 5. verify: ownership instance=fred-apps, healthy
 ```
 
 Notes from the cutover:
