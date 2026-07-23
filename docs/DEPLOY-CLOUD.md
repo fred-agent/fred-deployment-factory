@@ -232,7 +232,9 @@ push and `code/v*` tag — publicly pullable, no `imagePullSecret` needed. A `co
 tag maps directly to `ghcr.io/thalesgroup/fred-agent/<image>:vX.Y.Z`. Point
 `gcp-c1/argocd/fred-apps/values-fredlab.yaml`'s `image.repository`/`tag` there for a release, or
 use the classic Cloud-Build path (`bin/fredlab-release.sh`, §6) if you'd rather build locally.
-`fred-evaluation` isn't built by that workflow and stays on Artifact Registry regardless.
+`fred-evaluation` (separate repo, `fred-agent-evaluator`) has its own analogous
+`Build-and-push-docker.yml` and is sourced from `ghcr.io/fred-agent/fred-evaluation-api` /
+`fred-evaluation-worker` the same way, at its own `code/vX.Y.Z` tag — not on Artifact Registry.
 
 ```bash
 git commit -am "release vX.Y.Z" && git push
@@ -244,6 +246,21 @@ git commit -am "release vX.Y.Z" && git push
 bin/fredlab-argocd-sync.sh
 NAMESPACE=<instance> bin/fredlab-status.sh
 ```
+
+> **Check for pending migrations before calling a `control-plane`/`knowledge-flow` bump done.**
+> The sync only rolls the new image — it never runs alembic. Diff `apps/<app>/alembic/versions/`
+> between the old and new tag in the `fred` repo; if the new tag added a revision, run §3.2's
+> `migrate` command again at the new tag. Skipping it doesn't fail the sync — it surfaces later
+> as a live `UndefinedColumnError`/`UndefinedTableError` on the first request touching the new
+> schema (hit live on fredlab, 2026-07-21).
+>
+> **A brand-new M2M/service-account client (e.g. a freshly wired `fred-evaluation-worker`) needs
+> one-time GCU acceptance too**, same mechanism as §4.1's human bootstrap — control-plane's
+> `get_current_user` 403s with `user_not_accept_gcu` for *any* caller, service identities
+> included, until it's accepted once. There is no UI flow for a service account, so do it
+> manually: get an M2M token via `client_credentials` for that Keycloak client, then
+> `POST /control-plane/v1/gcu` with it (empty body, once, idempotent). Easy to misdiagnose as a
+> permissions/role bug — check the response body for `user_not_accept_gcu` before chasing ReBAC.
 
 ---
 
@@ -403,7 +420,7 @@ bin/fredlab-release.sh all                     # 1. Cloud Build the 4 app images
                                                #    then rewrite the image tags in values-fredlab.yaml
 git commit -am "release <tag>" && git push     # 2. record the new tags in git (NOT a deploy yet)
 bin/fredlab-argocd-sync.sh                      # 3. THE DEPLOY: apply git to the cluster
-bin/fredlab-status.sh                           # 4. verify: new tag, healthy
+NAMESPACE=<instance> bin/fredlab-status.sh      # 4. verify: new tag, healthy
 ```
 
 What each step really does:
@@ -428,6 +445,13 @@ What each step really does:
 
 > **ghcr.io alternative (`C5`, proposed):** skip the Cloud Build round entirely and point
 > `values-fredlab.yaml` at `ghcr.io/thalesgroup/fred-agent/<image>:vX.Y.Z` instead — see §3.3.
+> This has in practice been the only path used on fredlab since `v2.1.1`.
+
+> **Don't forget the migration step.** Neither loop above runs alembic. If the new
+> `control-plane`/`knowledge-flow` tag added a schema revision, run §3.2's `migrate` command
+> again at the new tag right after the sync, or the new code will 500 on the first request
+> touching the new column/table — a `UndefinedColumnError`/`UndefinedTableError` that looks like
+> a bug but is just a missed step (hit live on fredlab, 2026-07-21).
 
 ## Rollback
 

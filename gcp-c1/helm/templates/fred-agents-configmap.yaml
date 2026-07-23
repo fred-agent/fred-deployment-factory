@@ -8,6 +8,14 @@ metadata:
     app.kubernetes.io/component: fred-agents
 data:
   empty.env: ""
+  # Verbatim copy of the image's own config/mcp_catalog.yaml (gcp-c1/helm/files/
+  # fred-agents/mcp_catalog.yaml — re-sync from the fred repo whenever it changes
+  # upstream), with every knowledge-flow MCP server's URL corrected from the image's
+  # docker-compose-shaped default (http://localhost:8111/... — fred-agents and
+  # knowledge-flow-backend are separate pods here, not the same host) to the real
+  # in-cluster Service DNS name. Loaded via FRED_MCP_CATALOG_FILE below.
+  mcp_catalog.yaml: |
+{{ .Files.Get "files/fred-agents/mcp_catalog.yaml" | replace "http://localhost:8111" "http://knowledge-flow-backend:8080" | indent 4 }}
   configuration.yaml: |
     app:
       name: "Fred default agents"

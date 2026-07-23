@@ -75,7 +75,7 @@ OpenSearch index) — full mapping and what's still manual: RFC-0001 §2.1, trac
 
 | Namespace | Role | Foundation | Hostnames | Static IP | Image source | Since |
 |-----------|------|------------|-----------|-----------|---------------|-------|
-| `fred-demo` | primary/demo instance | own (this namespace) | `studio.playground.fredlab.dev`, `keycloak.playground.fredlab.dev`, `temporal.playground.fredlab.dev` | `fredlab-playground-ip` (8.233.26.38, reserved GCP global address) | ghcr.io v2.1.1 (C5) for the 4 core apps; fred-evaluation deferred, still on Artifact Registry at its last-shipped tag | 2026-07-15 |
+| `fred-demo` | primary/demo instance | own (this namespace) | `studio.playground.fredlab.dev`, `keycloak.playground.fredlab.dev`, `temporal.playground.fredlab.dev` | `fredlab-playground-ip` (8.233.26.38, reserved GCP global address) | ghcr.io v2.1.9 (C5) for the 4 core apps; fred-evaluation LIVE via ghcr.io at v1.0.0 (no longer Artifact-Registry-deferred) | 2026-07-15 |
 
 `fred-demo` is today both the Foundation and the only Apps instance — no second,
 Apps-only namespace exists yet. The first one to actually share `fred-demo`'s
@@ -117,8 +117,21 @@ by pusher — this is the one unavoidable difference). `values-fredlab.yaml`'s `
 **Status: proposed, not adopted.** Per this doc's own rule ("if it changes shared
 behaviour, get a 👍 from the other two first"), this needs Sébastien's and Arthur's
 sign-off before C1/C2 above stop being the default. Used live since 2026-07-15
-(GKE C1 redeploy at `v2.1.1`, now `v2.1.3`) as the worked example this proposal is based on;
+(GKE C1 redeploy at `v2.1.1`) as the worked example this proposal is based on;
 extended to `fredEvaluation` on 2026-07-16 under the same pending-ratification status.
+Every fredlab redeploy since has gone through this path (`v2.1.3` → `v2.1.6` → `v2.1.7` →
+`v2.1.9`, 2026-07-21) with no `bin/fredlab-release.sh`/Cloud Build round — it is de facto
+the only path exercised on this instance, still pending formal ratification.
+
+> **Gotcha confirmed live (2026-07-21):** a `C5` tag bump is a pure image-tag edit — it
+> never runs alembic migrations for `control-plane`/`knowledge-flow`, even though those
+> apps' schemas are versioned in lockstep with the app code in the same `fred` release.
+> Before declaring a bump done, diff `apps/<app>/alembic/versions/` between the old and
+> new tag in the `fred` repo; if anything new exists, run
+> `NAMESPACE=<instance> REGISTRY_BASE=ghcr.io/thalesgroup/fred-agent bin/fredlab-deploy.sh
+> <app> migrate <tag>` (C2) right after the ArgoCD sync. Skipping it doesn't fail the
+> sync or the readiness probe — it surfaces later as a live `UndefinedColumnError`/
+> `UndefinedTableError` on the first request that touches the new column/table.
 
 ## C2 — Deploy at the round's tag
 
@@ -267,3 +280,4 @@ overrides (`KEEP_COUNT`, `LOG_RETENTION_DAYS`, …) rather than editing the scri
 | 2026-06-25 | — | Folded per-app deploy scripts into generic `fredlab-deploy.sh` | Dimitri | Adopted  |
 | 2026-07-15 | C5 | ghcr.io as the image source, replacing local Cloud Build for routine redeploys | Dimitri | Proposed — pending 👍 from Sébastien & Arthur |
 | 2026-07-15 | C6 | Named instances: namespace-per-instance, `CreateNamespace=true`/`--create-namespace` idempotent | Dimitri | Adopted |
+| 2026-07-21 | C2.3 | A tag bump (either path) never runs migrations — check `alembic/versions/` and migrate explicitly | Dimitri | Adopted |

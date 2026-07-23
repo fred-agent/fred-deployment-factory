@@ -118,6 +118,7 @@ data:
         feature_flags:
           enableK8Features: {{ .Values.controlPlane.config.frontend.featureFlags.enableK8Features }}
           enableElecWarfare: {{ .Values.controlPlane.config.frontend.featureFlags.enableElecWarfare }}
+          enableEvaluation: {{ .Values.controlPlane.config.frontend.featureFlags.enableEvaluation }}
         ui_settings:
           siteDisplayName: {{ .Values.controlPlane.config.frontend.uiSettings.siteDisplayName | quote }}
           agentsNicknameSingular: {{ .Values.controlPlane.config.frontend.uiSettings.agentsNicknameSingular | quote }}

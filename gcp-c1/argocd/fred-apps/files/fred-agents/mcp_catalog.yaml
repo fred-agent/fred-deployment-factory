@@ -1,0 +1,194 @@
+version: v1
+
+servers:
+  - id: "mcp-knowledge-flow-mcp-text"
+    name: "mcp.servers.search_documents.name"
+    description: "mcp.servers.search_documents.description"
+    # MIGR-03.03: inprocess provider (not a remote MCP endpoint) so the search tool
+    # returns typed VectorSearchHit sources and the chat Sources panel renders —
+    # restoring kea's behaviour. A remote MCP tool returns plain text with no
+    # typed artifact, which is why the panel was lost after the port.
+    transport: "inprocess"
+    provider: "kf_vector_search"
+    enabled: true
+    auth_mode: "user_token"
+    agent_instructions: |
+      ## Grounding contract (enforced by the search tool — non-negotiable)
+
+      Base every factual statement on the documents retrieved by the search tool
+      in THIS turn. The interface displays the retrieved sources separately (a
+      dedicated Sources panel), so do NOT add inline citations, bracketed
+      references, or a "Sources" list to your answer — just write a clean,
+      well-structured response grounded in the retrieved content.
+
+      NEVER present a claim as factual if retrieval returned no supporting result.
+      NEVER rely on a document you have not retrieved in this turn.
+
+      NEVER generate, fabricate, or include any URL, hyperlink, or web address in
+      your response — not even if a URL appears in the search result metadata.
+      Ignore URL or link fields entirely.
+
+      If the search tool returns no relevant results, say so explicitly before
+      falling back to general knowledge. Label any such claim as
+      "[from general knowledge — not verified in the corpus]".
+    config_fields:
+      - key: "chat_options.libraries_selection"
+        type: "boolean"
+        title: "Document library picker"
+        description: "Show a document library selector in the chat interface."
+        default: true
+      - key: "chat_options.libraries_binding"
+        type: "boolean"
+        title: "Bind to specific libraries"
+        description: "Restrict this agent to a fixed set of document libraries chosen at configuration time."
+        default: false
+      - key: "chat_options.bound_library_ids"
+        type: "array"
+        item_type: "string"
+        title: "Bound document libraries"
+        description: "Restrict the chat library picker to this preselected set of document libraries."
+        default: []
+      - key: "chat_options.documents_selection"
+        type: "boolean"
+        title: "Document picker"
+        description: "Show a document selector in the chat interface."
+        default: true
+      - key: "chat_options.attach_files"
+        type: "boolean"
+        title: "File attachments"
+        description: "Allow users to attach files (PDF, images, text) to their messages in the chat interface."
+        default: true
+      - key: "chat_options.search_policy_enabled"
+        type: "boolean"
+        title: "Search policy picker in chat"
+        description: "Allow users to switch the search policy from the chat interface."
+        default: false
+      - key: "chat_options.search_policy"
+        type: "string"
+        title: "Default search policy"
+        description: "Search strategy used when the user has not overridden it."
+        enum: ["strict", "hybrid", "semantic"]
+        default: "hybrid"
+      - key: "chat_options.search_rag_scope_enabled"
+        type: "boolean"
+        title: "RAG scope picker in chat"
+        description: "Allow users to switch the RAG scope from the chat interface."
+        default: false
+      - key: "chat_options.search_rag_scope"
+        type: "string"
+        title: "Default RAG scope"
+        description: "Scope used when the user has not overridden it."
+        enum: ["corpus_only", "hybrid", "general_only"]
+        default: "hybrid"
+
+  - id: "mcp-knowledge-flow-mcp-tabular"
+    name: "mcp.servers.tabular.name"
+    description: "mcp.servers.tabular.description"
+    transport: "streamable_http"
+    url: "http://localhost:8111/knowledge-flow/v1/mcp-tabular"
+    sse_read_timeout: 2000
+    enabled: true
+    auth_mode: "user_token"
+
+  - id: "mcp-knowledge-flow-opensearch-ops"
+    name: "mcp.servers.search_opensearch.name"
+    description: "mcp.servers.search_opensearch.description"
+    transport: "streamable_http"
+    url: "http://localhost:8111/knowledge-flow/v1/mcp-opensearch-ops"
+    sse_read_timeout: 2000
+    enabled: true
+    auth_mode: "user_token"
+
+
+  - id: "mcp-knowledge-flow-fs"
+    name: "mcp.servers.filesystem.name"
+    description: "mcp.servers.filesystem.description"
+    transport: "streamable_http"
+    url: "http://localhost:8111/knowledge-flow/v1/mcp-fs"
+    sse_read_timeout: 2000
+    enabled: true
+    auth_mode: "user_token"
+
+  - id: "mcp-atlassian-jira-server"
+    name: "mcp.servers.jira.name"
+    description: "mcp.servers.jira.description"
+    enabled: false
+    transport: "streamable_http"
+    url: "http://localhost:8885/mcp"
+    sse_read_timeout: 2000
+    auth_mode: "no_token"
+
+  - id: "mcp-knowledge-flow-corpus"
+    name: "mcp.servers.corpus.name"
+    description: "mcp.servers.corpus.description"
+    enabled: true
+    transport: "streamable_http"
+    url: "http://localhost:8111/knowledge-flow/v1/mcp-corpus"
+    sse_read_timeout: 2000
+    auth_mode: "user_token"
+    config_fields:
+      - key: "chat_options.libraries_selection"
+        type: "boolean"
+        title: "Document library picker"
+        description: "Show a document library selector in the chat interface."
+        default: false
+      - key: "chat_options.libraries_binding"
+        type: "boolean"
+        title: "Bind to specific libraries"
+        description: "Restrict this agent to a fixed set of document libraries chosen at configuration time."
+        default: false
+      - key: "chat_options.bound_library_ids"
+        type: "array"
+        item_type: "string"
+        title: "Bound document libraries"
+        description: "Restrict the chat library picker to this preselected set of document libraries."
+        default: []
+      - key: "chat_options.documents_selection"
+        type: "boolean"
+        title: "Document picker"
+        description: "Show a document selector in the chat interface."
+        default: false
+      - key: "chat_options.attach_files"
+        type: "boolean"
+        title: "File attachments"
+        description: "Allow users to attach files (PDF, images, text) to their messages in the chat interface."
+        default: false
+      - key: "chat_options.search_policy_enabled"
+        type: "boolean"
+        title: "Search policy picker in chat"
+        description: "Allow users to switch the search policy from the chat interface."
+        default: false
+      - key: "chat_options.search_policy"
+        type: "string"
+        title: "Default search policy"
+        description: "Search strategy used when the user has not overridden it."
+        enum: ["strict", "hybrid", "semantic"]
+        default: "hybrid"
+      - key: "chat_options.search_rag_scope_enabled"
+        type: "boolean"
+        title: "RAG scope picker in chat"
+        description: "Allow users to switch the RAG scope from the chat interface."
+        default: false
+      - key: "chat_options.search_rag_scope"
+        type: "string"
+        title: "Default RAG scope"
+        description: "Scope used when the user has not overridden it."
+        enum: ["corpus_only", "hybrid", "general_only"]
+        default: "hybrid"
+
+  - id: "mcp-web-github-readonly"
+    name: "mcp.servers.web_github_readonly.name"
+    description: "mcp.servers.web_github_readonly.description"
+    enabled: true
+    transport: "inprocess"
+    provider: "web_github_readonly"
+    auth_mode: "no_token"
+
+  - id: "mcp-knowledge-flow-prometheus-ops"
+    name: "mcp.servers.prometheus.name"
+    description: "mcp.servers.prometheus.description"
+    transport: "streamable_http"
+    url: "http://localhost:8111/knowledge-flow/v1/mcp-prometheus-ops"
+    sse_read_timeout: 2000
+    enabled: true
+    auth_mode: "user_token"

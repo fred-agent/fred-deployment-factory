@@ -592,6 +592,7 @@ controlPlane:
       featureFlags:
         enableK8Features: false
         enableElecWarfare: false
+        enableEvaluation: true
       uiSettings:
         siteDisplayName: Fredlab
         agentsNicknameSingular: agent
@@ -700,6 +701,12 @@ knowledgeFlow:
       # the embedding model, use a new index name. Tracked in STORAGE-INVENTORY.md.
       vectorIndex: knowledge-flow-vectors
       vectorBulkSize: 1000
+    tabularStore:
+      # Emit one synthetic "dataset pointer" chunk per tabular dataset into the
+      # shared vector index, so semantic search can discover a dataset exists and
+      # route agents to the SQL/tabular tool (fred's RAG-DATASET-DISCOVERY-RFC.md).
+      # Fred's own default is false ("measured, gradual activation") — on here.
+      pointerChunksEnabled: true
     # In-cluster Google Cloud Managed Service for Prometheus (GMP) query frontend
     # (the gmpFrontend Foundation component below). baseUrl must match its
     # Service name — flip enabled once that Deployment is actually live.
