@@ -138,6 +138,16 @@ supports an env-var override for this exact file (`FRED_MCP_CATALOG_FILE`,
 same shape as `CONFIG_FILE`/`ENV_FILE`) — embed a corrected copy rather than
 assuming the bundled default is deployment-ready.
 
+**The knowledge-flow worker's Docling thread count must be sized against the pod's CPU
+*limit*, not the node's core count.** `processing.profiles.<medium|rich>.pdf.docling_num_threads`
+multiplied by `scheduler.temporal.ingestion_max_concurrent_activities` is the worker's peak OMP
+thread count — size it against `resources.limits.cpu` on the worker pod. Get this wrong and PDF
+ingestion doesn't error, it silently CPU-thrashes and looks like a hung pipeline. Full sizing
+formula, a threads×concurrency safe/caution/danger table with measured numbers, and a diagnostic
+checklist are in [Sizing the PDF Ingestion Worker (Docling)](https://fredk8.dev/docs/docling-ingestion-sizing.html)
+on fred-website — don't duplicate that content here, just size the pod's CPU limit accordingly
+when you set `resources.limits.cpu` for the worker.
+
 **When you rewrite a `localhost:PORT` reference to the in-cluster DNS name,
 match it to the Service's port, not the pod's raw `containerPort`.** Made
 this exact mistake fixing the `mcp_catalog.yaml` above: rewrote
