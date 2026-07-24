@@ -96,7 +96,7 @@ fredEvaluation:
     # above, just under the fred-agent org namespace (separate GitHub repo/org from
     # thalesgroup/fred-agent, so the ghcr.io path differs; the tag scheme does not).
     repository: ghcr.io/fred-agent/fred-evaluation-api
-    tag: "v1.0.0" # release-tag: fred-evaluation-api
+    tag: "v1.1.2" # release-tag: fred-evaluation-api
 
 fredEvaluationWorker:
   enabled: true
@@ -107,4 +107,4 @@ fredEvaluationWorker:
     # built from dockerfiles/Dockerfile-worker, not the API image with an overridden
     # entrypoint (unlike controlPlaneWorker/knowledgeFlowWorker, which reuse their API image).
     repository: ghcr.io/fred-agent/fred-evaluation-worker
-    tag: "v1.0.0" # release-tag: fred-evaluation-worker
+    tag: "v1.1.2" # release-tag: fred-evaluation-worker
