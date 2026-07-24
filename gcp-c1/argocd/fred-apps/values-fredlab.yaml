@@ -79,6 +79,18 @@ fredFrontend:
   image:
     repository: ghcr.io/thalesgroup/fred-agent/frontend
     tag: "v2.1.13" # release-tag: fred-frontend
+  # Frontend's nginx resolves this upstream at REQUEST TIME via its `resolver` directive
+  # (docker-entrypoint.sh: a deliberate choice so nginx doesn't crash-loop when evaluation
+  # isn't deployed on a given platform) — unlike the other three upstreams (control-plane,
+  # fred-agents, knowledge-flow), which are static `proxy_pass` targets resolved once at
+  # nginx startup via the container's normal resolver (respects /etc/resolv.conf's search
+  # domains). nginx's own runtime resolver does NOT do that search-domain expansion, so the
+  # bare short name here 404s/502s with "could not be resolved" even though the service
+  # exists and the same short name resolves fine via curl/wget in the same pod. Needs the
+  # fully-qualified in-cluster DNS name instead — namespace-specific, hence overridden here
+  # rather than in the base chart's values.yaml. Hit live on fredlab, 2026-07-24.
+  upstreams:
+    evaluation: http://fred-evaluation-backend.fred-demo.svc.cluster.local:8080
 
 # fred-agent-evaluator (API + worker) — LIVE. Internal-only (no ingress). Two distinct
 # images. LLM-as-judge on Vertex Gemini via Workload Identity. DB migrated (alembic head).
