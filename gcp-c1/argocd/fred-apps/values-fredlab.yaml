@@ -16,7 +16,7 @@ controlPlane:
     # gcp-c1/helm chart, bin/fredlab-deploy.sh) still needs an Artifact Registry
     # copy — mirrored once from this same digest, see OPERATING-CONVENTIONS.md C5.
     repository: ghcr.io/thalesgroup/fred-agent/control-plane-backend
-    tag: "v2.1.13" # release-tag: control-plane-backend
+    tag: "v2.1.16" # release-tag: control-plane-backend
 
 controlPlaneWorker:
   enabled: true
@@ -24,7 +24,7 @@ controlPlaneWorker:
     # Same image as the backend (worker runs the control_plane_backend.main_worker
     # entrypoint off it). Shares the control-plane-backend release-tag marker.
     repository: ghcr.io/thalesgroup/fred-agent/control-plane-backend
-    tag: "v2.1.13" # release-tag: control-plane-backend
+    tag: "v2.1.16" # release-tag: control-plane-backend
 
 fredAgents:
   enabled: true
@@ -33,7 +33,7 @@ fredAgents:
     gcpServiceAccount: fredlab-knowledge-flow-gcs@fredlab-playground.iam.gserviceaccount.com
   image:
     repository: ghcr.io/thalesgroup/fred-agent/fred-agents
-    tag: "v2.1.13" # release-tag: fred-agents
+    tag: "v2.1.16" # release-tag: fred-agents
 
 knowledgeFlow:
   enabled: true
@@ -42,7 +42,7 @@ knowledgeFlow:
     gcpServiceAccount: fredlab-knowledge-flow-gcs@fredlab-playground.iam.gserviceaccount.com
   image:
     repository: ghcr.io/thalesgroup/fred-agent/knowledge-flow-backend
-    tag: "v2.1.13" # release-tag: knowledge-flow-backend
+    tag: "v2.1.16" # release-tag: knowledge-flow-backend
   config:
     models:
       # Vertex AI project (matches the imperative deploy's VERTEX_PROJECT=PROJECT_ID).
@@ -58,7 +58,7 @@ knowledgeFlowWorker:
   image:
     # Same image as the backend (worker runs the main_worker entrypoint off it).
     repository: ghcr.io/thalesgroup/fred-agent/knowledge-flow-backend
-    tag: "v2.1.13" # release-tag: knowledge-flow-backend
+    tag: "v2.1.16" # release-tag: knowledge-flow-backend
   # Chart default (500m/1Gi request, 3Gi limit, no CPU limit) was sized for the
   # "fast" profile. Under "medium" (Docling + OCR), observed live 2026-07-16:
   # CPU bursts past 1.5 cores (onnxruntime spawns threads for the node's full
@@ -78,7 +78,7 @@ fredFrontend:
   enabled: true
   image:
     repository: ghcr.io/thalesgroup/fred-agent/frontend
-    tag: "v2.1.13" # release-tag: fred-frontend
+    tag: "v2.1.16" # release-tag: fred-frontend
   # Frontend's nginx resolves this upstream at REQUEST TIME via its `resolver` directive
   # (docker-entrypoint.sh: a deliberate choice so nginx doesn't crash-loop when evaluation
   # isn't deployed on a given platform) — unlike the other three upstreams (control-plane,
