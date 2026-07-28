@@ -569,6 +569,110 @@
           ]
         }
       ]
+    },
+    {
+      "id": 300,
+      "type": "row",
+      "title": "Task audit trail — retention & archival (\"is task_run/task_event_log growing unbounded?\")",
+      "gridPos": { "x": 0, "y": 25, "w": 24, "h": 1 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 30,
+      "type": "table",
+      "title": "task_run / task_event_log — size & approx. row count",
+      "description": "n_live_tup is an autovacuum-maintained estimate, not an exact COUNT(*) — the read-only role has no table SELECT, only pg_read_all_stats. Today both tables still live in the shared `fred` database (control-plane + knowledge-flow write the same rows) — once split per TASK-EVENT-STREAM-RFC, add one of these per service database.",
+      "datasource": { "type": "postgres", "uid": "postgres-grafana-fred" },
+      "gridPos": { "x": 0, "y": 26, "w": 12, "h": 4 },
+      "fieldConfig": {
+        "defaults": { "custom": { "align": "auto" } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "size_bytes" }, "properties": [{ "id": "unit", "value": "bytes" }] }
+        ]
+      },
+      "options": { "showHeader": true },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "datasource": { "type": "postgres", "uid": "postgres-grafana-fred" },
+          "rawSql": "SELECT relname AS \"table\", n_live_tup AS approx_rows, pg_total_relation_size(relid) AS size_bytes FROM pg_stat_user_tables WHERE relname IN ('task_run', 'task_event_log') ORDER BY relname;"
+        }
+      ]
+    },
+    {
+      "id": 31,
+      "type": "stat",
+      "title": "Task tables — total size",
+      "datasource": { "type": "postgres", "uid": "postgres-grafana-fred" },
+      "gridPos": { "x": 12, "y": 26, "w": 4, "h": 4 },
+      "fieldConfig": { "defaults": { "unit": "bytes" }, "overrides": [] },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "text": { "valueSize": 24, "titleSize": 13 }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "datasource": { "type": "postgres", "uid": "postgres-grafana-fred" },
+          "rawSql": "SELECT pg_total_relation_size('task_run') + pg_total_relation_size('task_event_log') AS total_bytes;"
+        }
+      ]
+    },
+    {
+      "id": 32,
+      "type": "stat",
+      "title": "task_event_log — approx. rows",
+      "description": "The fast-growing one: ~1 row per progress event emitted (ctx.emit()), no cleanup job by design (audit trail). Watch this for the archival trigger threshold.",
+      "datasource": { "type": "postgres", "uid": "postgres-grafana-fred" },
+      "gridPos": { "x": 16, "y": 26, "w": 4, "h": 4 },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "text": { "valueSize": 24, "titleSize": 13 }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "datasource": { "type": "postgres", "uid": "postgres-grafana-fred" },
+          "rawSql": "SELECT n_live_tup AS value FROM pg_stat_user_tables WHERE relname = 'task_event_log';"
+        }
+      ]
+    },
+    {
+      "id": 33,
+      "type": "stat",
+      "title": "task_run — approx. rows",
+      "datasource": { "type": "postgres", "uid": "postgres-grafana-fred" },
+      "gridPos": { "x": 20, "y": 26, "w": 4, "h": 4 },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "text": { "valueSize": 24, "titleSize": 13 }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "datasource": { "type": "postgres", "uid": "postgres-grafana-fred" },
+          "rawSql": "SELECT n_live_tup AS value FROM pg_stat_user_tables WHERE relname = 'task_run';"
+        }
+      ]
     }
   ],
   "refresh": "1m",

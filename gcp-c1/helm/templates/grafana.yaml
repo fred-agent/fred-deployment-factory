@@ -48,6 +48,25 @@ data:
         # expansion (not a shell/template variable) — set as a container env below.
         secureJsonData:
           password: ${POSTGRES_GRAFANA_PASSWORD}
+      - name: PostgreSQL (fred)
+        uid: postgres-grafana-fred
+        type: postgres
+        access: proxy
+        url: {{ printf "%s:%d" (include "fredlab-infra.postgresName" .) (int .Values.postgresql.service.port) | quote }}
+        database: {{ .Values.postgresql.fred.database | quote }}
+        user: {{ .Values.postgresql.grafana.user | quote }}
+        editable: true
+        # Same read-only role as "PostgreSQL" above, but connected INTO the fred
+        # database itself rather than the maintenance "postgres" db.
+        # pg_database_size() resolves cross-database (shared catalog), but
+        # per-table stats (pg_stat_user_tables, pg_total_relation_size('task_run'))
+        # don't — they need a connection scoped to the database that owns the
+        # table. Still stats-only: no table SELECT access.
+        jsonData:
+          sslmode: disable
+          postgresVersion: 1500
+        secureJsonData:
+          password: ${POSTGRES_GRAFANA_PASSWORD}
       {{- end }}
       {{- if .Values.grafana.datasources.cloudMonitoring.enabled }}
       - name: Google Cloud Monitoring
