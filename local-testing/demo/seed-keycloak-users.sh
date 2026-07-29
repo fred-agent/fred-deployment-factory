@@ -16,17 +16,18 @@
 # only the 3000-user bench scenario needs the bulk partialImport path.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
+source ../scripts/keycloak-lib.sh
 
+# Assumes `fred` and `fred-deployment-factory` are sibling checkouts under the
+# same parent directory (three levels up from here: demo/ -> local-testing/ ->
+# fred-deployment-factory/ -> parent). Same SWIFT_SRC convention as the
+# Makefile's own check-swift-src/sync-openfga-model (Makefile:522) — override
+# with SWIFT_SRC=/path/to/fred if your checkout isn't laid out that way.
 SWIFT_SRC="${SWIFT_SRC:-../../../fred}"
-USERS_JSON="$SWIFT_SRC/apps/control-plane-backend/tests/fixtures/import_export/demo_provisioning/users.json"
-
-if [ ! -f "$USERS_JSON" ]; then
-  echo "✗ Demo fixture not found: $USERS_JSON" >&2
-  echo "  SWIFT_SRC is currently: $SWIFT_SRC" >&2
-  echo "  Fix: pass the path to your 'fred' checkout, e.g.:" >&2
-  echo "    SWIFT_SRC=/path/to/fred ./seed-keycloak-users.sh" >&2
-  exit 1
-fi
+USERS_JSON_REL="apps/control-plane-backend/tests/fixtures/import_export/demo_provisioning/users.json"
+echo "Looking for the demo fixture at: $SWIFT_SRC/$USERS_JSON_REL"
+require_swift_path "$SWIFT_SRC" "$USERS_JSON_REL" "$0"
+USERS_JSON="$SWIFT_SRC/$USERS_JSON_REL"
 
 usernames=$(jq -r '.[].username' "$USERS_JSON")
 total=$(echo "$usernames" | wc -l)

@@ -31,16 +31,22 @@ in step 2 only needs the usernames to already resolve in Keycloak, however they 
 
 ## 2. Import the demo bundle
 
-Fast path: once you're `platform_admin` (`make bootstrap-local BOOTSTRAP_USER=<you>`
-from `fred`'s `apps/control-plane-backend`), log into the frontend and use
-**Admin > Migration** to import the bundle, **Admin > Capabilities** to turn every
-tool/agent template on.
+Fast path: once you're `platform_admin`
+(`make bootstrap-local BOOTSTRAP_USER=<you> BOOTSTRAP_PASSWORD=<pw>` from `fred`'s
+`apps/control-plane-backend`), log into the frontend and use **Admin > Migration** to
+import the bundle, **Admin > Capabilities** to turn every tool/agent template on — or
+skip the UI entirely with `make activate-all-capabilities BOOTSTRAP_USER=<you>
+BOOTSTRAP_PASSWORD=<pw>` for the second part.
 
 Manual/curl version — from the `fred` monorepo (`apps/control-plane-backend`), with the local
 stack up and a `platform_admin` bootstrapped (see
 [`../../docs/LOCAL-DEVELOPMENT.md`](../../docs/LOCAL-DEVELOPMENT.md) steps 1-3):
 
 ```bash
+TOKEN=$(curl -s http://localhost:8080/realms/app/protocol/openid-connect/token \
+  -d grant_type=password -d client_id=app -d username=<you> -d password=<pw> \
+  | python3 -c 'import sys,json;print(json.load(sys.stdin)["access_token"])')
+
 make build-demo-bundle    # zips the fixture -> target/demo-provisioning-bundle.zip
 
 curl -s -X POST http://localhost:8222/control-plane/v1/import-export/import \

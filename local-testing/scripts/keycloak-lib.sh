@@ -27,6 +27,25 @@ kc_user_id_by_username() {
     | jq -r --arg u "$username" '.[] | select(.username == $u) | .id' | head -n1
 }
 
+# Verify SWIFT_SRC points at a real `fred` checkout containing a given
+# relative path, mirroring the Makefile's own `require_swift_lib` macro
+# (`Makefile:529`) — same env var name, same message shape — for scripts here
+# that read a file out of a sibling `fred` checkout instead of checking
+# fred-core is a valid Python project. Assumes the `fred` and
+# `fred-deployment-factory` checkouts are siblings under the same parent
+# directory by default (override with SWIFT_SRC=/path/to/fred).
+# Usage: require_swift_path "$SWIFT_SRC" "apps/.../users.json" "$0"
+require_swift_path() {
+  local swift_src="$1" rel_path="$2" script_name="$3"
+  if [ ! -f "$swift_src/$rel_path" ]; then
+    echo "✗ Not found in the fred checkout: $swift_src/$rel_path" >&2
+    echo "  SWIFT_SRC is currently: $swift_src" >&2
+    echo "  Fix: pass the path to your 'fred' checkout, e.g.:" >&2
+    echo "    SWIFT_SRC=/path/to/fred $script_name" >&2
+    exit 1
+  fi
+}
+
 fga_curl() {
   curl -s -H "Authorization: Bearer $OPENFGA_API_TOKEN" -H "Content-Type: application/json" "$@"
 }

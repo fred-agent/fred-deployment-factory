@@ -49,12 +49,13 @@ fails in review."** All `make` commands below run inside the sibling `fred` mono
 checkout, not this repo.
 
 > **Fast path.** `make setup-env` (once) → `make run` → `cd apps/control-plane-backend
-> && make bootstrap-local BOOTSTRAP_USER=<you>` gets you steps 1-3 in one line, pausing
-> only for the one step that has to stay manual (registering yourself in Keycloak, see
-> step 3 below). Before importing the demo bundle (step 4), populate its 15 named
-> users in Keycloak — one command from **this** repo, `local-testing/demo/
-> seed-keycloak-users.sh` (see step 4). Import and capability activation (step 5b)
-> then have a perfectly good UI once the frontend is up — **Admin > Migration**,
+> && make bootstrap-local BOOTSTRAP_USER=<you> BOOTSTRAP_PASSWORD=<pw>` gets you steps
+> 1-3 in one line, pausing only for the one step that has to stay manual (registering
+> yourself in Keycloak, see step 3 below). Before importing the demo bundle (step 4),
+> populate its 15 named users in Keycloak — one command from **this** repo,
+> `local-testing/demo/seed-keycloak-users.sh` (see step 4). Then `make
+> activate-all-capabilities BOOTSTRAP_USER=<you> BOOTSTRAP_PASSWORD=<pw>` (step 5b) — or
+> the same two actions from the UI once the frontend is up, **Admin > Migration** and
 > **Admin > Capabilities**. Read on if you want to understand each step, if something
 > fails and you need to debug by hand, or if you don't want the demo bundle.
 
@@ -100,10 +101,6 @@ app at a time? `make run-control-plane`, `make run-fred-agents`,
 
 **3. Become `platform_admin` — the AUTHZ-07 root bootstrap** (second terminal, `fred/apps/control-plane-backend`)
 
-```bash
-make bootstrap-token    # writes target/bootstrap-token; never overwrites, never printed by the app
-```
-
 Fred never creates accounts in Keycloak, on purpose: **Keycloak authenticates, Fred/
 OpenFGA authorizes** (`docs/swift/platform/REBAC.md` in the `fred` repo) — the same
 boundary a real SSO deployment has, so a compromised or buggy Fred can never mint
@@ -112,34 +109,43 @@ register a user through **Keycloak's own** registration screen — no Fred front
 needed yet: open `http://localhost:8080/realms/app/account` → "Register". Then:
 
 ```bash
-TOKEN=$(curl -s http://localhost:8080/realms/app/protocol/openid-connect/token \
-  -d grant_type=password -d client_id=app \
-  -d username=<your-username> -d password=<your-password> \
-  | python3 -c 'import sys,json;print(json.load(sys.stdin)["access_token"])')
-
-curl -s -X POST http://localhost:8222/control-plane/v1/bootstrap/platform-admin \
-  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
-  -d "{\"token\": \"$(cat target/bootstrap-token)\"}"
+make bootstrap-local BOOTSTRAP_USER=<your-username> BOOTSTRAP_PASSWORD=<your-password>
 ```
 
-One-shot and permanent — a second call, ever, returns `409`. You are now the platform's
-root `platform_admin`.
+Runs `bootstrap-token` (writes `target/bootstrap-token`; never overwrites, never
+printed by the app), pauses once for you to confirm you've registered above, then
+logs in and bootstraps in one shot. One-shot and permanent — a second run reports
+"already platform_admin" instead of erroring. You are now the platform's root
+`platform_admin`.
 
 **4. Import the demo dataset**
 
-The import assigns teams/roles to the 15 named demo users (`alice`, `bob`, `marc`, …) — it
-does **not** create their Keycloak identities (same "Fred never creates accounts in
-Keycloak" rule as step 3); an unresolved username is skipped and reported, not silently
-dropped. Populate them first, one command, from **this** repo:
+The import assigns teams/roles to the 15 named demo users (`alice`, `bob`, `marc`, …). Unlike
+step 3's identity boundary, the import path *can* create a missing Keycloak identity for
+you (when the bundle entry carries a `password`, which the demo fixture's entries all
+do) — but relying on that is slower per-user than a bulk seed, and it still fails closed
+(aborts the whole import, doesn't silently skip) on any username it can't resolve either
+way. Populate them first, one command, from **this** repo:
 
 ```bash
 cd ../fred-deployment-factory/local-testing/demo
 ./seed-keycloak-users.sh    # reads the 15 usernames from fred's users.json, idempotent
 ```
 
+This script (and this repo's other `local-testing/` scripts) assume `fred` and
+`fred-deployment-factory` are checked out as **sibling directories** under the same
+parent — override with `SWIFT_SRC=/path/to/fred ./seed-keycloak-users.sh` if yours
+isn't laid out that way. The script prints exactly which path it's checking before it
+can fail, so a wrong layout is never a silent mystery.
+
 Then, back in `fred/apps/control-plane-backend`:
 
 ```bash
+TOKEN=$(curl -s http://localhost:8080/realms/app/protocol/openid-connect/token \
+  -d grant_type=password -d client_id=app \
+  -d username=<your-username> -d password=<your-password> \
+  | python3 -c 'import sys,json;print(json.load(sys.stdin)["access_token"])')
+
 make build-demo-bundle    # zips tests/fixtures/import_export/demo_provisioning/ → target/demo-provisioning-bundle.zip
 
 curl -s -X POST http://localhost:8222/control-plane/v1/import-export/import \
@@ -170,31 +176,20 @@ not a manifest default, so it doesn't violate the "nothing ships
 admin-gated-by-default" policy it's gating.
 
 `fred-agents` is already up since step 2, so this works right away — no ordering
-gotcha to worry about. `$TOKEN` from step 3 is still valid here (an AUTHZ-07 root
-`platform_admin` grant never expires or gets revoked by later steps). If `CAP_IDS`
-below still comes back empty, check `fred-agents`' terminal from step 2 for a
-startup error before assuming this step itself is broken.
+gotcha to worry about. From `fred/apps/control-plane-backend`:
 
 ```bash
-CAP_IDS=$(curl -s http://localhost:8222/control-plane/v1/admin/capabilities \
-  -H "Authorization: Bearer $TOKEN" \
-  | python3 -c 'import sys,json; print("\n".join(i["id"] for i in json.load(sys.stdin)["items"]))')
-
-for id in $CAP_IDS; do
-  echo "default-on: $id"
-  curl -s -X PUT "http://localhost:8222/control-plane/v1/admin/capabilities/$id/default-on" \
-    -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
-    -d '{"default_on": true}'
-  echo
-done
+make activate-all-capabilities BOOTSTRAP_USER=<your-username> BOOTSTRAP_PASSWORD=<your-password>
 ```
 
-If `CAP_IDS` comes back empty, `fred-agents` isn't reachable yet — check its
-terminal from step 5 before assuming this step itself is broken.
+Wraps the same GET `/admin/capabilities` → PUT `.../default-on` loop this used to be —
+one command, no `jq` dependency, an actionable error if `fred-agents` isn't reachable
+yet (check its terminal from step 2) instead of a silent empty list.
 
-A capability with *required* team settings refuses default-on (`409`) — it needs a
-value only a team can supply, so it can't have a platform-wide default. For those,
-grant it to one demo team explicitly instead, with whatever settings it needs:
+A capability with *required* team settings refuses default-on (`409`, reported, not
+fatal) — it needs a value only a team can supply, so it can't have a platform-wide
+default. For those, grant it to one demo team explicitly instead, with whatever
+settings it needs (needs a token — reuse the snippet from step 4):
 
 ```bash
 curl -s -X PUT "http://localhost:8222/control-plane/v1/admin/capabilities/<id>/teams/<team_id>" \
@@ -202,8 +197,8 @@ curl -s -X PUT "http://localhost:8222/control-plane/v1/admin/capabilities/<id>/t
   -d '{"settings": {}}'
 ```
 
-None of the current demo/stock capabilities require this — the loop above is normally
-enough. Same effect as **Admin → Capabilities** in the UI once the frontend is up —
+None of the current demo/stock capabilities require this — `activate-all-capabilities`
+above is normally enough. Same effect as **Admin → Capabilities** in the UI once the frontend is up —
 a "Tools" / "Agents" toggle at the top filters the same catalog by `kind`, and both
 are just admin actions on top of what this step already did.
 
