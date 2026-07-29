@@ -34,6 +34,7 @@ Start with the guide that matches what you're trying to do:
 | I want to… | Guide |
 | --- | --- |
 | 🖥️ Run Fred's services locally, **and bootstrap a working platform** (Docker Compose / k3d) | [`docs/LOCAL-DEVELOPMENT.md`](docs/LOCAL-DEVELOPMENT.md) — see "Full bootstrap walkthrough" |
+| 🧪 Load local test data — demo persona-per-role, or 3000-user/100-team OpenFGA bench | [`local-testing/README.md`](local-testing/README.md) |
 | ☁️ Ship the latest Fred to the live cloud instance | [`docs/DEPLOY-CLOUD.md`](docs/DEPLOY-CLOUD.md) |
 | 🔁 Operate ArgoCD (bootstrap, boundary, cutover, rollback) | [`gcp-c1/argocd/README.md`](gcp-c1/argocd/README.md) |
 | 🧱 Deploy / understand the GKE Foundation (infra) | [`gcp-c1/helm/README.md`](gcp-c1/helm/README.md) · [`DEPLOYMENT-STEPS.md`](gcp-c1/helm/DEPLOYMENT-STEPS.md) |

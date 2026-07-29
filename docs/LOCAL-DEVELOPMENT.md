@@ -114,8 +114,12 @@ curl -s -X POST http://localhost:8222/control-plane/v1/import-export/import \
 
 Same effect as uploading from **Admin → Migration** in the UI once the frontend is up.
 Creates every demo identity/team/role (`alice`, `bob`, `marc`, …) — see the `fred`
-monorepo's `validation/README.md` for who's who and why. Import runs async (returns a
-`task_id`); give it a few seconds before moving on.
+monorepo's `validation/README.md` for who's who and why, or this repo's
+[`local-testing/demo/README.md`](../local-testing/demo/README.md) for a local quick-reference.
+Import runs async (returns a `task_id`); give it a few seconds before moving on.
+
+Want a much larger, statistically-varied dataset instead (3000 users / 100 teams, for
+OpenFGA-at-scale testing)? See [`local-testing/bench/README.md`](../local-testing/bench/README.md).
 
 **5. Start the rest of the apps — still prod-like**
 
