@@ -10,9 +10,13 @@ source of truth. If a persona's role changes, update it in `fred`, not here.
 
 ## Load it
 
-From the `fred` monorepo (`apps/control-plane-backend`), with the local stack up and a
-`platform_admin` bootstrapped (see [`../../docs/LOCAL-DEVELOPMENT.md`](../../docs/LOCAL-DEVELOPMENT.md)
-steps 1-3):
+Fast path: `make bootstrap-local BOOTSTRAP_USER=<you> DEMO=1` from `fred`'s
+`apps/control-plane-backend` does everything below (plus becoming
+`platform_admin` and turning tools/agents on) in one command.
+
+Manual version — from the `fred` monorepo (`apps/control-plane-backend`), with the local
+stack up and a `platform_admin` bootstrapped (see
+[`../../docs/LOCAL-DEVELOPMENT.md`](../../docs/LOCAL-DEVELOPMENT.md) steps 1-3):
 
 ```bash
 make build-demo-bundle    # zips the fixture -> target/demo-provisioning-bundle.zip

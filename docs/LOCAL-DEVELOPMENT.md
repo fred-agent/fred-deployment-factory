@@ -48,6 +48,13 @@ step matters — skipping step 1 is the single most common cause of "works on my
 fails in review."** All `make` commands below run inside the sibling `fred` monorepo
 checkout, not this repo.
 
+> **Fast path.** Steps 2-4 (and 5b) are exactly what
+> `cd apps/control-plane-backend && make bootstrap-local BOOTSTRAP_USER=<you> DEMO=1`
+> automates — it still pauses for the one step that has to stay manual (registering
+> yourself in Keycloak, see step 3 below). Read on if you want to understand each step,
+> if the script fails and you need to debug by hand, or if you don't want the demo
+> bundle.
+
 > **Since CAPAB-01 / CTRLP-14 (2026-07-17): don't skip step 5b.** Every tool (MCP
 > server) and every agent template is now admin-gated by default, platform-wide —
 > matching production policy. Importing the demo bundle (step 4) creates the demo
@@ -86,7 +93,11 @@ make run-prod          # binds :8222 — leave this terminal running
 make bootstrap-token    # writes target/bootstrap-token; never overwrites, never printed by the app
 ```
 
-Self-register a user through **Keycloak's own** registration screen — no Fred frontend
+Fred never creates accounts in Keycloak, on purpose: **Keycloak authenticates, Fred/
+OpenFGA authorizes** (`docs/swift/platform/REBAC.md` in the `fred` repo) — the same
+boundary a real SSO deployment has, so a compromised or buggy Fred can never mint
+identities in your corporate IdP. That means the one unavoidable manual step: self-
+register a user through **Keycloak's own** registration screen — no Fred frontend
 needed yet: open `http://localhost:8080/realms/app/account` → "Register". Then:
 
 ```bash

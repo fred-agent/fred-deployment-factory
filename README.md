@@ -20,10 +20,16 @@ instance, per classification, and per platform.
 > from (`targetRevision: swift`), so "the default branch" and "what's running in the cluster"
 > stay the same thing by construction. (`kea` was the previous release line.)
 
-> **Bootstrapping locally? Don't stop after the demo import.** Every tool and agent
-> template is admin-gated by default now (CAPAB-01/CTRLP-14) — right after import,
-> every demo team has an empty toolbox. One more step turns it on: `docs/LOCAL-DEVELOPMENT.md`
-> → "Full bootstrap walkthrough" → **step 5b**.
+> **New here? Which local setup do you want?**
+>
+> | You want to… | Go to |
+> | --- | --- |
+> | Just chat with Fred solo, no auth, no teams | the `fred` monorepo's own `README.md` → "Getting started" (`make run`) — **not this repo** |
+> | Real Keycloak/OpenFGA auth, and/or the 3-team demo (`fredlab`/`swiftpost`/`northbridge`) | **you're in the right repo.** `make docker-up` below, then jump straight to `make bootstrap-local` in `fred/apps/control-plane-backend` — it becomes your `platform_admin` account and (with `DEMO=1`) loads the demo bundle in one command. Manual step-by-step: `docs/LOCAL-DEVELOPMENT.md` → "Full bootstrap walkthrough". |
+>
+> `make bootstrap-local`'s `DEMO=1` path also turns every tool/agent template on for
+> the demo teams (CAPAB-01/CTRLP-14 — they ship admin-gated by default). Doing the
+> walkthrough by hand instead? Don't stop after the import — that's step 5b.
 
 ---
 
@@ -33,7 +39,7 @@ Start with the guide that matches what you're trying to do:
 
 | I want to… | Guide |
 | --- | --- |
-| 🖥️ Run Fred's services locally, **and bootstrap a working platform** (Docker Compose / k3d) | [`docs/LOCAL-DEVELOPMENT.md`](docs/LOCAL-DEVELOPMENT.md) — see "Full bootstrap walkthrough" |
+| 🖥️ Run Fred's services locally, **and bootstrap a working platform** (Docker Compose / k3d) | [`docs/LOCAL-DEVELOPMENT.md`](docs/LOCAL-DEVELOPMENT.md) — fast path: `make bootstrap-local` (see the callout above); manual steps: "Full bootstrap walkthrough" |
 | 🧪 Load local test data — demo persona-per-role, or 3000-user/100-team OpenFGA bench | [`local-testing/README.md`](local-testing/README.md) |
 | ☁️ Ship the latest Fred to the live cloud instance | [`docs/DEPLOY-CLOUD.md`](docs/DEPLOY-CLOUD.md) |
 | 🔁 Operate ArgoCD (bootstrap, boundary, cutover, rollback) | [`gcp-c1/argocd/README.md`](gcp-c1/argocd/README.md) |
