@@ -48,23 +48,25 @@ step matters — skipping step 1 is the single most common cause of "works on my
 fails in review."** All `make` commands below run inside the sibling `fred` monorepo
 checkout, not this repo.
 
-> **Fast path.** Steps 2-4 (and 5b) are exactly what
-> `cd apps/control-plane-backend && make bootstrap-local BOOTSTRAP_USER=<you> DEMO=1`
-> automates — it still pauses for the one step that has to stay manual (registering
-> yourself in Keycloak, see step 3 below). Read on if you want to understand each step,
-> if the script fails and you need to debug by hand, or if you don't want the demo
-> bundle.
+> **Fast path.** `make setup-env` (once) → `make run` → `cd apps/control-plane-backend
+> && make bootstrap-local BOOTSTRAP_USER=<you>` gets you steps 1-3 in one line, pausing
+> only for the one step that has to stay manual (registering yourself in Keycloak, see
+> step 3 below). Before importing the demo bundle (step 4), populate its 15 named
+> users in Keycloak — one command from **this** repo, `local-testing/demo/
+> seed-keycloak-users.sh` (see step 4). Import and capability activation (step 5b)
+> then have a perfectly good UI once the frontend is up — **Admin > Migration**,
+> **Admin > Capabilities**. Read on if you want to understand each step, if something
+> fails and you need to debug by hand, or if you don't want the demo bundle.
 
 > **Since CAPAB-01 / CTRLP-14 (2026-07-17): don't skip step 5b.** Every tool (MCP
 > server) and every agent template is now admin-gated by default, platform-wide —
 > matching production policy. Importing the demo bundle (step 4) creates the demo
 > teams with **zero usable tools and zero visible agent templates** — that's expected,
-> not broken. If you stop after step 5 and jump straight to the frontend or
+> not broken. If you stop after step 2 and jump straight to the frontend or
 > `make validation-report`, every demo user looks like they have no agents at all.
-> Step 5b is the one-time admin action that turns that on — it must come after step 5
-> (`fred-agents` running), not right after import; it's still a manual step today
-> (we're converging on a better default — see the note at the end of 5b) but it only
-> takes two commands.
+> Step 5b is the one-time admin action that turns that on — it's still a manual step
+> today (we're converging on a better default — see the note at the end of 5b) but it
+> only takes two commands, or one click of "select all" in **Admin > Capabilities**.
 
 **0. Infra up** (this repo)
 
@@ -72,22 +74,31 @@ checkout, not this repo.
 make docker-up   # Keycloak, Postgres, OpenFGA, OpenSearch, Temporal — infra only, zero business data
 ```
 
-**1. Every Fred app points at `configuration_prod.yaml` — always, everywhere**
-
-Use `make run-prod` for every app below, never plain `make run`. `run-prod` sets
-`CONFIG_FILE=./config/configuration_prod.yaml` for you — the one config each app ships
-that actually matches deployed behaviour (real ports, `bootstrap_token_file`, real
-backends). Plain `make run` uses dev shortcuts (`configuration.yaml`) that silently
-diverge from it.
-
-**2. Start control-plane only** (`fred/apps/control-plane-backend`)
+**1. Prepare the three backends' `.env` files** (`fred` repo root)
 
 ```bash
-cd apps/control-plane-backend
-make run-prod          # binds :8222 — leave this terminal running
+make setup-env
 ```
 
-**3. Become `platform_admin` — the AUTHZ-07 root bootstrap** (second terminal, same directory)
+Creates each backend's `.env` from its `.env.template` if missing, fills in every
+blank secret placeholder (Keycloak client secrets, `OPENFGA_API_TOKEN`, Postgres/
+OpenSearch/MinIO passwords) with the same fixed local value this repo seeds
+everywhere (`Azerty123_`), points `CONFIG_FILE` at `configuration_prod.yaml` in all
+three — the one config each app ships that actually matches deployed behaviour (real
+ports, `bootstrap_token_file`, real backends) — and prompts once for a model provider
+API key. Never overwrites a value you already set; safe to re-run any time.
+
+**2. Start every Fred app** (`fred` repo root)
+
+```bash
+make run          # control-plane :8222, fred-agents :8000, knowledge-flow :8111, frontend :5173
+```
+
+One terminal, `Ctrl+C` stops all four. (Prefer separate terminals for debugging one
+app at a time? `make run-control-plane`, `make run-fred-agents`,
+`make run-knowledge-flow`, `make run-frontend` — each also exist standalone.)
+
+**3. Become `platform_admin` — the AUTHZ-07 root bootstrap** (second terminal, `fred/apps/control-plane-backend`)
 
 ```bash
 make bootstrap-token    # writes target/bootstrap-token; never overwrites, never printed by the app
@@ -116,6 +127,18 @@ root `platform_admin`.
 
 **4. Import the demo dataset**
 
+The import assigns teams/roles to the 15 named demo users (`alice`, `bob`, `marc`, …) — it
+does **not** create their Keycloak identities (same "Fred never creates accounts in
+Keycloak" rule as step 3); an unresolved username is skipped and reported, not silently
+dropped. Populate them first, one command, from **this** repo:
+
+```bash
+cd ../fred-deployment-factory/local-testing/demo
+./seed-keycloak-users.sh    # reads the 15 usernames from fred's users.json, idempotent
+```
+
+Then, back in `fred/apps/control-plane-backend`:
+
 ```bash
 make build-demo-bundle    # zips tests/fixtures/import_export/demo_provisioning/ → target/demo-provisioning-bundle.zip
 
@@ -124,21 +147,16 @@ curl -s -X POST http://localhost:8222/control-plane/v1/import-export/import \
 ```
 
 Same effect as uploading from **Admin → Migration** in the UI once the frontend is up.
-Creates every demo identity/team/role (`alice`, `bob`, `marc`, …) — see the `fred`
-monorepo's `validation/README.md` for who's who and why, or this repo's
+See the `fred` monorepo's `validation/README.md` for who's who and why, or this repo's
 [`local-testing/demo/README.md`](../local-testing/demo/README.md) for a local quick-reference.
 Import runs async (returns a `task_id`); give it a few seconds before moving on.
 
 Want a much larger, statistically-varied dataset instead (3000 users / 100 teams, for
 OpenFGA-at-scale testing)? See [`local-testing/bench/README.md`](../local-testing/bench/README.md).
 
-**5. Start the rest of the apps — still prod-like**
-
-```bash
-cd apps/fred-agents && make run-prod &             # :8000
-cd apps/knowledge-flow-backend && make run-prod &   # :8111
-cd apps/frontend && make run &                      # :5173 — needed for step 7
-```
+**5. (merged into step 2)** Every app — `fred-agents`, `knowledge-flow-backend`,
+`frontend` — is already running: `make run` in step 2 started all four together.
+Nothing further to do here.
 
 **5b. Authorize Tools and Agents for the demo teams (CAPAB-01 / CTRLP-14)**
 
@@ -151,15 +169,11 @@ capability to platform-wide `default_on` — a deliberate admin action via this 
 not a manifest default, so it doesn't violate the "nothing ships
 admin-gated-by-default" policy it's gating.
 
-**Must come after step 5, not before.** `default-on` itself has zero team
-dependency — it can be called right after step 3, before import even runs — but
-the catalog it operates on (`GET /admin/capabilities`) is fetched live from
-`fred-agents` (and any other configured runtime pod). Before step 5 starts
-`fred-agents`, that fetch is unreachable and best-effort-empty: the loop below
-would run, hit zero ids, and silently do nothing — no error, just an empty
-toolbox that looks authorized but isn't. `$TOKEN` from step 3 is still valid
-here (an AUTHZ-07 root `platform_admin` grant never expires or gets revoked by
-later steps).
+`fred-agents` is already up since step 2, so this works right away — no ordering
+gotcha to worry about. `$TOKEN` from step 3 is still valid here (an AUTHZ-07 root
+`platform_admin` grant never expires or gets revoked by later steps). If `CAP_IDS`
+below still comes back empty, check `fred-agents`' terminal from step 2 for a
+startup error before assuming this step itself is broken.
 
 ```bash
 CAP_IDS=$(curl -s http://localhost:8222/control-plane/v1/admin/capabilities \

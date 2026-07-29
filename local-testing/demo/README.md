@@ -8,13 +8,35 @@ specific role so you can log in as exactly the persona you need to demo or manua
 `users.json`) and its full rationale live there — this page is a local quick-reference, not the
 source of truth. If a persona's role changes, update it in `fred`, not here.
 
-## Load it
+Two steps, same shape as [`../bench/README.md`](../bench/README.md): populate Keycloak
+identities here (this repo), then import the matching role/team bundle from the `fred`
+monorepo.
 
-Fast path: `make bootstrap-local BOOTSTRAP_USER=<you> DEMO=1` from `fred`'s
-`apps/control-plane-backend` does everything below (plus becoming
-`platform_admin` and turning tools/agents on) in one command.
+## 1. Populate Keycloak
 
-Manual version — from the `fred` monorepo (`apps/control-plane-backend`), with the local
+From this repo, with the local stack up (`make docker-up`):
+
+```bash
+./seed-keycloak-users.sh
+```
+
+Reads the 15 usernames straight from `fred`'s `users.json` (assumes a sibling `../../../fred`
+checkout — override with `SWIFT_SRC=/path/to/fred`) and creates each one in Keycloak via
+[`../scripts/keycloak-add-user.sh`](../scripts/keycloak-add-user.sh), password `Azerty123_`
+(matching what the bundle expects), no OpenFGA tuples yet. Idempotent — re-running reports
+already-existing usernames instead of failing.
+
+Skip this if you've already self-registered/created these identities another way — the import
+in step 2 only needs the usernames to already resolve in Keycloak, however they got there.
+
+## 2. Import the demo bundle
+
+Fast path: once you're `platform_admin` (`make bootstrap-local BOOTSTRAP_USER=<you>`
+from `fred`'s `apps/control-plane-backend`), log into the frontend and use
+**Admin > Migration** to import the bundle, **Admin > Capabilities** to turn every
+tool/agent template on.
+
+Manual/curl version — from the `fred` monorepo (`apps/control-plane-backend`), with the local
 stack up and a `platform_admin` bootstrapped (see
 [`../../docs/LOCAL-DEVELOPMENT.md`](../../docs/LOCAL-DEVELOPMENT.md) steps 1-3):
 
