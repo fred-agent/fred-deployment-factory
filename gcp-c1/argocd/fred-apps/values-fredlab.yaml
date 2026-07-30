@@ -92,10 +92,15 @@ fredFrontend:
   upstreams:
     evaluation: http://fred-evaluation-backend.fred-demo.svc.cluster.local:8080
 
-# fred-agent-evaluator (API + worker) — LIVE. Internal-only (no ingress). Two distinct
-# images. LLM-as-judge on Vertex Gemini via Workload Identity. DB migrated (alembic head).
+# fred-agent-evaluator (API + worker) — temporarily disabled 2026-07-30 to free node
+# CPU/memory headroom (europe-west9 SSD_TOTAL_GB quota at 95%, blocking new-node
+# provisioning for knowledge-flow-worker's rich-profile-sized request) and to get back to
+# a base fred platform for v2.1.22 + multi-fred-agents testing. Re-enable once the quota is
+# raised or the immediate testing need has passed — image tags below are left in place.
+# Internal-only (no ingress). Two distinct images. LLM-as-judge on Vertex Gemini via
+# Workload Identity. DB migrated (alembic head).
 fredEvaluation:
-  enabled: true
+  enabled: false
   serviceAccount:
     # Same GSA as KF/agents (roles/aiplatform.user) — Workload Identity for the Vertex judge.
     gcpServiceAccount: fredlab-knowledge-flow-gcs@fredlab-playground.iam.gserviceaccount.com
@@ -111,7 +116,7 @@ fredEvaluation:
     tag: "v1.1.3" # release-tag: fred-evaluation-api
 
 fredEvaluationWorker:
-  enabled: true
+  enabled: false
   serviceAccount:
     gcpServiceAccount: fredlab-knowledge-flow-gcs@fredlab-playground.iam.gserviceaccount.com
   image:
