@@ -64,15 +64,24 @@ knowledgeFlowWorker:
   # CPU bursts past 1.5 cores (onnxruntime spawns threads for the node's full
   # core count, not the pod's cgroup share — see the affinity-pinning errors in
   # its logs) and memory exceeded the 1Gi request under real multi-file load,
-  # OOMKilled 3 times in 6 minutes at the 3Gi limit. Bumped to give real
-  # headroom instead of fighting the node for scraps.
+  # OOMKilled 3 times in 6 minutes at the 3Gi limit. Bumped to 2 CPU/3Gi request
+  # to give real headroom instead of fighting the node for scraps.
+  #
+  # TEMPORARILY REVERTED to chart default 2026-07-30: europe-west9's SSD_TOTAL_GB
+  # quota is at 95% (475/500GB), so no new GKE node can be provisioned right now —
+  # the 2 CPU/3Gi request couldn't fit on any existing node's remaining headroom,
+  # leaving knowledge-flow-worker permanently Pending. Reverting to the smaller
+  # default lets it fit on existing capacity for this afternoon's scalability
+  # testing (fred-agents statelessness focus, not ingestion). Re-bump back to
+  # 2 CPU/3Gi once the SSD quota is raised — the OOMKill risk under real
+  # medium/rich-profile OCR load documented above is still real at this size.
   resources:
     requests:
-      cpu: "2"
-      memory: "3Gi"
+      cpu: "500m"
+      memory: "1Gi"
     limits:
       cpu: "4"
-      memory: "6Gi"
+      memory: "3Gi"
 
 fredFrontend:
   enabled: true
