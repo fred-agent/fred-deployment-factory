@@ -72,16 +72,22 @@ knowledgeFlowWorker:
   # the 2 CPU/3Gi request couldn't fit on any existing node's remaining headroom,
   # leaving knowledge-flow-worker permanently Pending. Reverting to the smaller
   # default lets it fit on existing capacity for this afternoon's scalability
-  # testing (fred-agents statelessness focus, not ingestion). Re-bump back to
-  # 2 CPU/3Gi once the SSD quota is raised — the OOMKill risk under real
-  # medium/rich-profile OCR load documented above is still real at this size.
+  # testing (fred-agents statelessness focus, not ingestion).
+  #
+  # 2026-07-31: memory-leak fix landed (see commit history). Raising the LIMIT
+  # only, to 5Gi, as headroom for real ingestion load — request is left at the
+  # chart default on purpose so this still schedules on existing node capacity
+  # (confirmed live: gke-pool-1-6110b405-qrlb is at ~5% memory allocation right
+  # now) without tripping the same SSD-quota new-node-provisioning wall as the
+  # 2026-07-30 revert. If ingestion still OOMs at 5Gi, or the pod can't schedule,
+  # re-check SSD_TOTAL_GB quota before assuming it's the leak fix that failed.
   resources:
     requests:
       cpu: "500m"
       memory: "1Gi"
     limits:
       cpu: "4"
-      memory: "3Gi"
+      memory: "5Gi"
 
 fredFrontend:
   enabled: true
