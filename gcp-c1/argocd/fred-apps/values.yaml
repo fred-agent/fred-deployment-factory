@@ -376,6 +376,12 @@ knowledgeFlowWorker:
       memory: 1Gi
     limits:
       memory: 3Gi
+  # Periodic gc.collect()+malloc_trim() mitigation (ISSUE-009, fred repo) for a
+  # reference-cycle memory growth confirmed live on fredlab 2026-07-31. Seconds;
+  # "0" (default) disables — set per-deployment to opt in, see values-fredlab.yaml
+  # for the live example. A manual `kubectl exec ... -- kill -USR1 1` trigger is
+  # always available on the worker regardless of this setting.
+  gcIntervalSec: "0"
 
 
 # fred-frontend (nginx SPA + reverse proxy). Workload only — the studio Ingress,

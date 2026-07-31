@@ -86,6 +86,13 @@ spec:
                 secretKeyRef:
                   name: {{ include "fredlab-infra.secretName" . }}
                   key: OPENAI_API_KEY
+            # Periodic gc.collect()+malloc_trim() mitigation (ISSUE-009) for the
+            # reference-cycle memory growth confirmed live 2026-07-31. Seconds;
+            # unset/"0" disables (chart default) — set knowledgeFlowWorker.gcIntervalSec
+            # to opt in per deployment. A manual `kubectl exec ... kill -USR1 1` trigger
+            # is always available regardless of this setting.
+            - name: KF_WORKER_GC_INTERVAL_SEC
+              value: {{ .Values.knowledgeFlowWorker.gcIntervalSec | default "0" | quote }}
           ports:
             # The worker serves no HTTP API — only Prometheus metrics on the port the
             # shared ConfigMap configures (knowledgeFlow.metricsPort).

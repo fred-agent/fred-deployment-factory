@@ -90,6 +90,11 @@ knowledgeFlowWorker:
     limits:
       cpu: "4"
       memory: "5Gi"
+  # 2026-07-31 (ISSUE-009): SIGUSR1-triggered gc.collect()+malloc_trim() confirmed
+  # live it frees real memory (0 uncollectable in gc.garbage — genuine reference
+  # cycles) — freed ~260MB after ~1 doc, ~1.65GB after ~30 docs across two batches.
+  # 300s mitigation while the exact cycle source is still being tracked down.
+  gcIntervalSec: "300"
 
 fredFrontend:
   enabled: true
