@@ -1,0 +1,214 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Memory working set per pod (vs. limit)",
+      "description": "container_memory_working_set_bytes per knowledge-flow-worker pod, from cAdvisor via GMP system metrics. A steady climb that never drops back after a workflow run is the leak signature; a sawtooth that resets is normal GC/activity churn.",
+      "datasource": { "type": "prometheus", "uid": "gmp" },
+      "gridPos": { "x": 0, "y": 0, "w": 24, "h": 9 },
+      "fieldConfig": {
+        "defaults": { "unit": "bytes" },
+        "overrides": [
+          {
+            "matcher": { "id": "byRegexp", "options": "limit" },
+            "properties": [
+              { "id": "custom.lineStyle", "value": { "dash": [10, 10], "fill": "dash" } },
+              { "id": "custom.fillOpacity", "value": 0 }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi" }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "legendFormat": "{{pod}}",
+          "datasource": { "type": "prometheus", "uid": "gmp" },
+          "expr": "sum(container_memory_working_set_bytes{container=\"knowledge-flow-worker\"}) by (pod)"
+        },
+        {
+          "refId": "B",
+          "legendFormat": "limit",
+          "datasource": { "type": "prometheus", "uid": "gmp" },
+          "expr": "max(kube_pod_container_resource_limits{container=\"knowledge-flow-worker\", resource=\"memory\"})"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "CPU usage per pod (vs. requested)",
+      "datasource": { "type": "prometheus", "uid": "gmp" },
+      "gridPos": { "x": 0, "y": 9, "w": 12, "h": 8 },
+      "fieldConfig": {
+        "defaults": { "unit": "short" },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi" }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "legendFormat": "{{pod}}",
+          "datasource": { "type": "prometheus", "uid": "gmp" },
+          "expr": "sum(rate(container_cpu_usage_seconds_total{container=\"knowledge-flow-worker\"}[5m])) by (pod)"
+        },
+        {
+          "refId": "B",
+          "legendFormat": "requested (cores)",
+          "datasource": { "type": "prometheus", "uid": "gmp" },
+          "expr": "max(kube_pod_container_resource_requests{container=\"knowledge-flow-worker\", resource=\"cpu\"})"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Container restarts per pod (1h)",
+      "description": "Correlate spikes here with the memory panel above: a restart right after a memory peak points at an OOMKill.",
+      "datasource": { "type": "prometheus", "uid": "gmp" },
+      "gridPos": { "x": 12, "y": 9, "w": 12, "h": 8 },
+      "fieldConfig": {
+        "defaults": { "unit": "short" },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi" }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "legendFormat": "{{pod}}",
+          "datasource": { "type": "prometheus", "uid": "gmp" },
+          "expr": "sum(increase(kube_pod_container_status_restarts_total{container=\"knowledge-flow-worker\"}[1h])) by (pod)"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "table",
+      "title": "Last terminated reason (OOMKilled watch)",
+      "datasource": { "type": "prometheus", "uid": "gmp" },
+      "gridPos": { "x": 0, "y": 17, "w": 24, "h": 6 },
+      "fieldConfig": {
+        "defaults": { "unit": "short" },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "instant": true,
+          "datasource": { "type": "prometheus", "uid": "gmp" },
+          "expr": "kube_pod_container_status_last_terminated_reason{container=\"knowledge-flow-worker\"}"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Python GC: objects collected (rate, by generation)",
+      "description": "python_gc_objects_collected_total from the app's own /metrics. A generation-2 collection rate that keeps climbing while barely reclaiming anything (see the uncollectable panel) points at long-lived objects being promoted instead of freed.",
+      "datasource": { "type": "prometheus", "uid": "gmp" },
+      "gridPos": { "x": 0, "y": 23, "w": 12, "h": 8 },
+      "fieldConfig": {
+        "defaults": { "unit": "short" },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi" }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "legendFormat": "{{pod}} gen{{generation}}",
+          "datasource": { "type": "prometheus", "uid": "gmp" },
+          "expr": "sum(rate(python_gc_objects_collected_total{pod=~\"knowledge-flow-worker-.+\"}[5m])) by (pod, generation)"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Python GC: uncollectable objects (cumulative)",
+      "description": "python_gc_objects_uncollectable_total. This should stay flat at 0. A rising count is the clearest leak signature Python can give you directly: reference cycles (often involving __del__ or C extensions) that gc physically cannot free.",
+      "datasource": { "type": "prometheus", "uid": "gmp" },
+      "gridPos": { "x": 12, "y": 23, "w": 12, "h": 8 },
+      "fieldConfig": {
+        "defaults": { "unit": "short" },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi" }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "legendFormat": "{{pod}} gen{{generation}}",
+          "datasource": { "type": "prometheus", "uid": "gmp" },
+          "expr": "sum(python_gc_objects_uncollectable_total{pod=~\"knowledge-flow-worker-.+\"}) by (pod, generation)"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "App RSS (self-reported) vs. cgroup working set",
+      "description": "process_resident_memory_bytes (from prometheus_client inside the process) vs. container_memory_working_set_bytes (from cAdvisor/cgroup, via GMP system metrics). If both climb together, growth is real Python-level allocation. If RSS climbs but the cgroup line stays flat, look at the cgroup/container accounting instead of the app.",
+      "datasource": { "type": "prometheus", "uid": "gmp" },
+      "gridPos": { "x": 0, "y": 31, "w": 24, "h": 8 },
+      "fieldConfig": {
+        "defaults": { "unit": "bytes" },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi" }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "legendFormat": "{{pod}} RSS (self-reported)",
+          "datasource": { "type": "prometheus", "uid": "gmp" },
+          "expr": "process_resident_memory_bytes{pod=~\"knowledge-flow-worker-.+\"}"
+        },
+        {
+          "refId": "B",
+          "legendFormat": "{{pod}} cgroup working set",
+          "datasource": { "type": "prometheus", "uid": "gmp" },
+          "expr": "sum(container_memory_working_set_bytes{container=\"knowledge-flow-worker\"}) by (pod)"
+        }
+      ]
+    }
+  ],
+  "refresh": "1m",
+  "schemaVersion": 39,
+  "tags": ["fredlab", "knowledge-flow", "memory"],
+  "templating": { "list": [] },
+  "time": { "from": "now-6h", "to": "now" },
+  "timepicker": {},
+  "timezone": "",
+  "title": "Fredlab — Knowledge Flow Worker (CPU & Memory)",
+  "uid": "fredlab-kf-worker-resources",
+  "version": 1,
+  "weekStart": ""
+}
