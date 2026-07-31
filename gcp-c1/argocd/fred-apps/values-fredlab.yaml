@@ -41,14 +41,8 @@ knowledgeFlow:
     # GSA with roles/storage.objectAdmin + roles/aiplatform.user, bound via Workload Identity.
     gcpServiceAccount: fredlab-knowledge-flow-gcs@fredlab-playground.iam.gserviceaccount.com
   image:
-    # TEMPORARY hotfix source 2026-07-31: built locally from fix/memory-leak-1
-    # (unmerged) via bin/fredlab-release.sh, since fred's own Build-and-push-docker.yml
-    # only triggers on push to swift / code/v* tags and won't build a feature branch.
-    # Lands on Artifact Registry, not ghcr.io, as a result. Revert to
-    # ghcr.io/thalesgroup/fred-agent/knowledge-flow-backend once this fix ships in a
-    # real vX.Y.Z release off swift.
-    repository: europe-west1-docker.pkg.dev/fredlab-playground/fredlab-repo/knowledge-flow-backend
-    tag: "20260731-swift-fce260d6" # release-tag: knowledge-flow-backend
+    repository: ghcr.io/thalesgroup/fred-agent/knowledge-flow-backend
+    tag: "v2.1.24" # release-tag: knowledge-flow-backend
   config:
     models:
       # Vertex AI project (matches the imperative deploy's VERTEX_PROJECT=PROJECT_ID).
@@ -63,9 +57,8 @@ knowledgeFlowWorker:
     gcpServiceAccount: fredlab-knowledge-flow-gcs@fredlab-playground.iam.gserviceaccount.com
   image:
     # Same image as the backend (worker runs the main_worker entrypoint off it).
-    # TEMPORARY hotfix source 2026-07-31 — see knowledgeFlow.image comment above.
-    repository: europe-west1-docker.pkg.dev/fredlab-playground/fredlab-repo/knowledge-flow-backend
-    tag: "20260731-swift-fce260d6" # release-tag: knowledge-flow-backend
+    repository: ghcr.io/thalesgroup/fred-agent/knowledge-flow-backend
+    tag: "v2.1.24" # release-tag: knowledge-flow-backend
   # Chart default (500m/1Gi request, 3Gi limit, no CPU limit) was sized for the
   # "fast" profile. Under "medium" (Docling + OCR), observed live 2026-07-16:
   # CPU bursts past 1.5 cores (onnxruntime spawns threads for the node's full
