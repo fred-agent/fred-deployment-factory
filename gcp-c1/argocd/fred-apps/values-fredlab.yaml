@@ -41,9 +41,9 @@ knowledgeFlow:
     # GSA with roles/storage.objectAdmin + roles/aiplatform.user, bound via Workload Identity.
     gcpServiceAccount: fredlab-knowledge-flow-gcs@fredlab-playground.iam.gserviceaccount.com
   image:
-    # HOTFIX 2026-07-31: built from fix/gcs-content-store-cache@6096c5e9 via bin/fredlab-hotfix.sh, not a real release. Revert to ghcr.io/thalesgroup/fred-agent/knowledge-flow-backend + the last real vX.Y.Z tag once this ships on swift.
+    # HOTFIX 2026-07-31: built from fix/gcs-content-store-cache@62f8a90b via bin/fredlab-hotfix.sh, not a real release. Revert to ghcr.io/thalesgroup/fred-agent/knowledge-flow-backend + the last real vX.Y.Z tag once this ships on swift.
     repository: europe-west1-docker.pkg.dev/fredlab-playground/fredlab-repo/knowledge-flow-backend
-    tag: "20260731-fix-gcs-content-store-cache-6096c5e9" # release-tag: knowledge-flow-backend
+    tag: "20260731-fix-gcs-content-store-cache-62f8a90b" # release-tag: knowledge-flow-backend
   config:
     models:
       # Vertex AI project (matches the imperative deploy's VERTEX_PROJECT=PROJECT_ID).
@@ -58,9 +58,9 @@ knowledgeFlowWorker:
     gcpServiceAccount: fredlab-knowledge-flow-gcs@fredlab-playground.iam.gserviceaccount.com
   image:
     # Same image as the backend (worker runs the main_worker entrypoint off it).
-    # HOTFIX 2026-07-31: built from fix/gcs-content-store-cache@6096c5e9 via bin/fredlab-hotfix.sh, not a real release. Revert to ghcr.io/thalesgroup/fred-agent/knowledge-flow-backend + the last real vX.Y.Z tag once this ships on swift.
+    # HOTFIX 2026-07-31: built from fix/gcs-content-store-cache@62f8a90b via bin/fredlab-hotfix.sh, not a real release. Revert to ghcr.io/thalesgroup/fred-agent/knowledge-flow-backend + the last real vX.Y.Z tag once this ships on swift.
     repository: europe-west1-docker.pkg.dev/fredlab-playground/fredlab-repo/knowledge-flow-backend
-    tag: "20260731-fix-gcs-content-store-cache-6096c5e9" # release-tag: knowledge-flow-backend
+    tag: "20260731-fix-gcs-content-store-cache-62f8a90b" # release-tag: knowledge-flow-backend
   # Chart default (500m/1Gi request, 3Gi limit, no CPU limit) was sized for the
   # "fast" profile. Under "medium" (Docling + OCR), observed live 2026-07-16:
   # CPU bursts past 1.5 cores (onnxruntime spawns threads for the node's full
