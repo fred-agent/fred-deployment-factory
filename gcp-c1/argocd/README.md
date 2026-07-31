@@ -98,6 +98,36 @@ the Application via `kubectl` (no `argocd` CLI needed) and warns if HEAD isn't p
 > serving. Trade-off: a few seconds of per-app unavailability during a deploy. The same block is
 > mirrored in `gcp-c1/helm` so a fresh-cluster bootstrap behaves identically.
 
+## Testing an unmerged branch on fredlab (`bin/fredlab-hotfix.sh`)
+
+For validating a fix before it merges to `swift` — no dedicated branch to maintain, no merge
+convention to invent. Works on any branch name.
+
+```bash
+bin/fredlab-hotfix.sh knowledge-flow fix/my-branch   # 1. build that branch + point values-fredlab.yaml at it
+git commit -am "hotfix(knowledge-flow): test fix/my-branch on fredlab"
+git push
+bin/fredlab-argocd-sync.sh                            # 2. deploy it
+```
+
+Builds via local Cloud Build (same mechanism as `fredlab-release.sh`) because fred's own
+`Build-and-push-docker.yml` only triggers on `swift` / `code/v*` tags — it will never build a
+feature branch. Lands on GCP Artifact Registry, not `ghcr.io`, as a result; the script writes a
+`# HOTFIX <date>: built from <branch>@<sha>...` comment above the `repository:` line so that's
+never a mystery later. Same non-mutating contract as every other script here: it edits
+`values-fredlab.yaml` and stops — review the diff, then commit/push/sync yourself.
+
+**How to see what's actually deployed right now:** `NAMESPACE=fred-demo bin/fredlab-status.sh`'s
+`IMAGE TAG` column tells you at a glance — a real release is always `vX.Y.Z`; a hotfix is always
+`YYYYMMDD-<branch>-<shortsha>`. For the exact provenance (which branch, which commit), read the
+`# HOTFIX` comment above that component's `repository:` line in `values-fredlab.yaml`, or
+`kubectl -n fred-demo get deploy <name> -o jsonpath='{.spec.template.spec.containers[0].image}'`
+for the live pod's full image reference.
+
+**Once the branch merges and a real release exists:** revert by hand — `repository:` back to
+`ghcr.io/thalesgroup/fred-agent/<image>`, `tag:` to the new `vX.Y.Z`. No state to track: `git
+revert` the hotfix commit works too, but only if nothing else changed that block since.
+
 ## First-time cutover per app (one-time, hands it off the imperative release)
 
 **All four fred apps are cut over** (control-plane, fred-agents, knowledge-flow, fred-frontend).
