@@ -64,13 +64,27 @@ if [[ ! -f "${VALUES}" ]]; then
   exit 1
 fi
 
-# --- one worktree per branch: create once, fetch + reset to origin on every call ---
+# --- one worktree per branch: create once, fetch + reset to origin on every call.
+#     If the branch is ALREADY checked out somewhere else (e.g. you're actively
+#     coding the fix in your own worktree), reuse that path instead of trying to
+#     create a second one — git refuses to check out the same branch twice, and
+#     without this, this script fails with "already used by worktree at ...". ---
 SAFE_BRANCH="$(echo "${BRANCH}" | tr '/' '-')"
 WORKTREE="${WORKTREE_ROOT}/${SAFE_BRANCH}"
 mkdir -p "${WORKTREE_ROOT}"
 
 git -C "${MONOREPO_DIR}" fetch origin "${BRANCH}"
-if [[ -d "${WORKTREE}" ]]; then
+
+EXISTING_WORKTREE="$(git -C "${MONOREPO_DIR}" worktree list --porcelain | awk -v b="refs/heads/${BRANCH}" '
+  /^worktree / { wt=$2 }
+  $0 == "branch " b { print wt }
+')"
+
+if [[ -n "${EXISTING_WORKTREE}" ]]; then
+  WORKTREE="${EXISTING_WORKTREE}"
+  echo "Branch already checked out at ${WORKTREE} — reusing it."
+  git -C "${WORKTREE}" reset --hard "origin/${BRANCH}"
+elif [[ -d "${WORKTREE}" ]]; then
   git -C "${WORKTREE}" checkout "${BRANCH}"
   git -C "${WORKTREE}" reset --hard "origin/${BRANCH}"
 else
@@ -82,7 +96,13 @@ TAG="$(date -u +%Y%m%d)-${SAFE_BRANCH}-${SHORT_SHA}"
 STAMP="$(date -u +%Y-%m-%d)"
 
 echo "=== Building ${COMPONENT} from ${BRANCH}@${SHORT_SHA} (worktree: ${WORKTREE}) ==="
-FRED_REPO_DIR="${WORKTREE}" "${SCRIPT_DIR}/fredlab-release.sh" "${COMPONENT}" "${TAG}"
+# NOTE: call fredlab-build directly, NOT fredlab-release.sh with an explicit tag —
+# fredlab-release.sh treats a supplied tag as "already built, just bump the values
+# file" and skips the actual `gcloud builds submit` round entirely. MARKER doubles as
+# the image/build-name here: every row in fredlab-release.sh's own COMPONENTS table
+# uses the same string for both.
+FRED_REPO_DIR="${WORKTREE}" "${SCRIPT_DIR}/fredlab-build" "${MARKER}" "${TAG}"
+sed -i -E "s|^( *tag: ).*(# release-tag: ${MARKER} *)\$|\1\"${TAG}\" \2|" "${VALUES}"
 
 NEW_REPO="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/${MARKER}"
 
@@ -100,7 +120,16 @@ END {
     if (lines[i] ~ /^ *tag: / && lines[i] ~ ("# release-tag: " marker "$")) {
       j = i - 1
       while (j > 0 && lines[j] !~ /^ *repository: /) j--
-      if (j > 0) lines[j] = comment "\n" newrepo
+      if (j > 0) {
+        # Re-running this script against an already-hotfixed block: overwrite the
+        # previous HOTFIX comment in place instead of stacking a new one above it.
+        if (j > 1 && lines[j - 1] ~ /^ *# HOTFIX /) {
+          lines[j - 1] = comment
+          lines[j] = newrepo
+        } else {
+          lines[j] = comment "\n" newrepo
+        }
+      }
     }
   }
   for (i = 1; i <= NR; i++) print lines[i]
