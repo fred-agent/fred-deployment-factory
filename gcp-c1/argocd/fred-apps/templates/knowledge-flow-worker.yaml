@@ -93,6 +93,13 @@ spec:
             # is always available regardless of this setting.
             - name: KF_WORKER_GC_INTERVAL_SEC
               value: {{ .Values.knowledgeFlowWorker.gcIntervalSec | default "0" | quote }}
+            {{- if .Values.knowledgeFlowWorker.mallocArenaMax }}
+            # Force every thread's malloc calls through a bounded set of glibc
+            # arenas so malloc_trim(0) above can actually reclaim what the
+            # worker's 3 reused activity threads free — see values.yaml.
+            - name: MALLOC_ARENA_MAX
+              value: {{ .Values.knowledgeFlowWorker.mallocArenaMax | quote }}
+            {{- end }}
           ports:
             # The worker serves no HTTP API — only Prometheus metrics on the port the
             # shared ConfigMap configures (knowledgeFlow.metricsPort).

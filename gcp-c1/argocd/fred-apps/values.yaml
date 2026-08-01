@@ -382,6 +382,19 @@ knowledgeFlowWorker:
   # for the live example. A manual `kubectl exec ... -- kill -USR1 1` trigger is
   # always available on the worker regardless of this setting.
   gcIntervalSec: "0"
+  # glibc's malloc arena count. Unset (default) leaves glibc's own heuristic
+  # (multiple arenas, one per thread under contention, up to MALLOC_ARENA_MAX)
+  # in place. malloc_trim(0) only ever returns memory from the MAIN arena to
+  # the OS — RSS growth confirmed live on fredlab 2026-08-01 to sit in
+  # per-thread arenas instead (the worker's activity ThreadPoolExecutor reuses
+  # the same 3 OS threads for every activity, each getting its own arena),
+  # invisible to gc.get_objects() (a live_object_census() showed the tracked
+  # Python object graph completely flat across a 10-doc batch, including
+  # PyTorch's UntypedStorage — ruling out a real Python-level leak). Set to
+  # "1" per-deployment to force every allocation through the main arena so
+  # malloc_trim() can actually reach it, at the cost of some malloc lock
+  # contention across the 3 activity threads — see values-fredlab.yaml.
+  mallocArenaMax: ""
 
 
 # fred-frontend (nginx SPA + reverse proxy). Workload only — the studio Ingress,

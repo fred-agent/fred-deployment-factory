@@ -105,6 +105,15 @@ knowledgeFlowWorker:
   # cycles) — freed ~260MB after ~1 doc, ~1.65GB after ~30 docs across two batches.
   # 300s mitigation while the exact cycle source is still being tracked down.
   gcIntervalSec: "300"
+  # 2026-08-01: live_object_census() (fix/gc-live-object-census) confirmed the
+  # tracked Python object graph (incl. PyTorch's UntypedStorage) stays flat
+  # across a 10-doc batch — no real Python-level leak. The idle baseline still
+  # moved from ~2470Mi to ~3080Mi and held there, matching a known glibc
+  # behavior: malloc_trim(0) above only reclaims the MAIN arena, not the
+  # per-thread arenas the worker's 3-thread ThreadPoolExecutor accumulates
+  # across activities. Testing whether bounding arenas to 1 lets malloc_trim
+  # actually reach that memory.
+  mallocArenaMax: "1"
 
 fredFrontend:
   enabled: true
