@@ -74,17 +74,27 @@ knowledgeFlowWorker:
   # default lets it fit on existing capacity for this afternoon's scalability
   # testing (fred-agents statelessness focus, not ingestion).
   #
-  # 2026-07-31: memory-leak fix landed (see commit history). Raising the LIMIT
-  # only, to 5Gi, as headroom for real ingestion load — request is left at the
-  # chart default on purpose so this still schedules on existing node capacity
-  # (confirmed live: gke-pool-1-6110b405-qrlb is at ~5% memory allocation right
-  # now) without tripping the same SSD-quota new-node-provisioning wall as the
-  # 2026-07-30 revert. If ingestion still OOMs at 5Gi, or the pod can't schedule,
-  # re-check SSD_TOTAL_GB quota before assuming it's the leak fix that failed.
+  # 2026-07-31: memory-leak fix landed (see commit history). Raised the LIMIT to
+  # 5Gi; request was left at the chart default (1Gi) on purpose at the time,
+  # since SSD_TOTAL_GB quota was tight (95%) and a higher request wouldn't
+  # schedule.
+  #
+  # 2026-08-01: root-cause fix (KPIEvent.labels, PR #2188) live on v2.1.25.
+  # Real memory usage under active ingestion is now known and stable (~2.7-2.8Gi
+  # peak, confirmed live over two separate batches) — but the pod got node-pressure
+  # EVICTED twice in a row (kubectl events: "Container ... was using 2774116Ki,
+  # request is 1Gi, has larger consumption of memory"), because actual usage
+  # kept exceeding the still-1Gi request even though it stayed well under the 5Gi
+  # limit. Not an OOMKilled/leak regression — a scheduling artifact of an honest
+  # request that never got raised. SSD_TOTAL_GB quota is back down to 75%
+  # (375/500GB) now, so raising the request is safe to schedule. Bumped memory
+  # request to 3Gi (comfortable margin over the observed ~2.8Gi peak, still well
+  # under the 5Gi limit) so the kubelet stops treating normal ingestion load as
+  # an over-request violation under node memory pressure.
   resources:
     requests:
       cpu: "500m"
-      memory: "1Gi"
+      memory: "3Gi"
     limits:
       cpu: "4"
       memory: "5Gi"
