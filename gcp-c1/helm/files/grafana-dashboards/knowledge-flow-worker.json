@@ -49,6 +49,7 @@
       "id": 2,
       "type": "timeseries",
       "title": "CPU usage per pod (vs. requested)",
+      "description": "rate() over a 2m window — the PodMonitoring scrape interval is 30s, so 2m (4x) is the shortest window that stays smooth without going noisy/gappy. A 5m window (the old default) keeps showing elevated CPU for up to 5 minutes after an ingestion job actually finished, which reads as a false lag when correlating against the memory panel above.",
       "datasource": { "type": "prometheus", "uid": "gmp" },
       "gridPos": { "x": 0, "y": 6, "w": 24, "h": 6 },
       "fieldConfig": {
@@ -64,7 +65,7 @@
           "refId": "A",
           "legendFormat": "{{pod}}",
           "datasource": { "type": "prometheus", "uid": "gmp" },
-          "expr": "sum(rate(container_cpu_usage_seconds_total{container=\"knowledge-flow-worker\"}[5m])) by (pod)"
+          "expr": "sum(rate(container_cpu_usage_seconds_total{container=\"knowledge-flow-worker\"}[2m])) by (pod)"
         },
         {
           "refId": "B",
@@ -200,7 +201,7 @@
       ]
     }
   ],
-  "refresh": "1m",
+  "refresh": "30s",
   "schemaVersion": 39,
   "tags": ["fredlab", "knowledge-flow", "memory"],
   "templating": { "list": [] },
