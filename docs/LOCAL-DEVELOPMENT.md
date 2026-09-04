@@ -27,9 +27,24 @@ Optional — browser SSO callbacks to Keycloak on localhost:
 grep -q '127.0.0.1.*app-keycloak' /etc/hosts || echo "127.0.0.1 app-keycloak" | sudo tee -a /etc/hosts
 ```
 
+Pausing and resuming (a reboot, or closing the laptop for the day):
+
+```bash
+make docker-stop     # stop the containers, keep them
+make docker-start    # resume them, in dependency order
+```
+
+`docker-start` is not `docker-up`: it recreates no container and re-runs no
+post-install job, so the Keycloak realm, the OpenFGA store and every volume come
+back untouched. Use it whenever the stack exists but is down; use `docker-up`
+only to build the stack from nothing. Services carry `restart: unless-stopped`,
+so after a host reboot they come back on their own — unless you stopped them
+with `docker-stop`, which is remembered.
+
 Cleanup:
 
 ```bash
+make docker-down       # stop AND remove the containers (next start re-provisions)
 make docker-wipe       # containers & volumes
 make docker-destroy    # containers, volumes, network, and images
 ```

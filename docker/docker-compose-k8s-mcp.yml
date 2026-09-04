@@ -2,6 +2,7 @@ services:
   k8s-mcp:
     image: node:22-bookworm-slim
     container_name: k8s-mcpserver
+    restart: unless-stopped
     volumes:
       - vol-kubeconfig:/kube
     environment:

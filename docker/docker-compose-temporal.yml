@@ -49,6 +49,7 @@ services:
 
   temporal:
     container_name: app-temporal
+    restart: unless-stopped
     image: mirror.gcr.io/temporalio/server:1.28.0
     environment:
       NO_PROXY: "*"
@@ -102,6 +103,7 @@ services:
 
   temporal-ui:
     container_name: app-temporal-web
+    restart: unless-stopped
     image: mirror.gcr.io/temporalio/ui:2.39.0
     environment:
       NO_PROXY: "*"

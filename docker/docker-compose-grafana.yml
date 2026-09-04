@@ -2,6 +2,7 @@ services:
 
   grafana:
     container_name: app-grafana
+    restart: unless-stopped
     image: grafana/grafana:11.1.4
     environment:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}

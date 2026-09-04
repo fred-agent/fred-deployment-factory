@@ -2,6 +2,7 @@ services:
 
   seaweedfs:
     container_name: app-seaweedfs
+    restart: unless-stopped
     image: chrislusf/seaweedfs:4.29
     environment:
       NO_PROXY: "*"

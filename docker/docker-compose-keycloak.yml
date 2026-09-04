@@ -2,6 +2,7 @@ services:
       
   keycloak:
     container_name: app-keycloak
+    restart: unless-stopped
     image: mirror.gcr.io/keycloak/keycloak:26.3.0
     environment:
       KC_HTTP_ENABLED: true

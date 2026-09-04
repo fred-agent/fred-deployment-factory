@@ -30,6 +30,7 @@ services:
 
   opensearch:
     container_name: app-opensearch
+    restart: unless-stopped
     image: mirror.gcr.io/opensearchproject/opensearch:2.19.3
     command:
       - -Ediscovery.type=single-node
@@ -84,6 +85,7 @@ services:
 
   opensearch-dashboards:
     container_name: app-opensearch-dashboards
+    restart: unless-stopped
     image: mirror.gcr.io/opensearchproject/opensearch-dashboards:2.19.3
     environment:
       no_proxy: "*"

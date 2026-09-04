@@ -33,6 +33,22 @@ else
 DOCKER_UP_SERVICES := $(DOCKER_BASE_SERVICES)
 endif
 
+# Compose projects for `docker-start` / `docker-stop`, in dependency order.
+# postgres and keycloak are started first and awaited individually, so they are
+# not repeated here.
+DOCKER_REST_PROJECTS_BASE := seaweedfs opensearch openfga temporal
+DOCKER_REST_PROJECTS_EXTENDED := clickhouse langfuse prometheus grafana
+ifeq ($(STACK),extended)
+DOCKER_REST_PROJECTS := $(DOCKER_REST_PROJECTS_BASE) $(DOCKER_REST_PROJECTS_EXTENDED)
+else
+DOCKER_REST_PROJECTS := $(DOCKER_REST_PROJECTS_BASE)
+endif
+
+# `docker-stop` ignores STACK and stops every project, mirroring `all-down`:
+# stopping something that is already stopped is free, and a half-stopped stack
+# is worse than an over-stopped one.
+DOCKER_ALL_PROJECTS := postgres keycloak $(DOCKER_REST_PROJECTS_BASE) $(DOCKER_REST_PROJECTS_EXTENDED)
+
 K3D_CLUSTER ?= fred
 K3D_NAMESPACE ?= fred
 HELM_RELEASE ?= fred-stack
@@ -188,6 +204,55 @@ docker-up: $(DOCKER_UP_SERVICES) ## Launch the Docker stack (empty realm + empty
 	@echo "POST /bootstrap/platform-admin (AUTHZ-07) — see README."
 	$(MAKE) preflight-check
 	@echo "All Docker stack services are running."
+
+# Resume an existing stack — after a reboot, a Docker daemon restart, or
+# `make docker-stop`. Unlike `docker-up` this recreates nothing and re-runs no
+# post-install job, so realm/store/volume state is left exactly as it was.
+# Keycloak must answer OIDC discovery before opensearch-dashboards boots, or
+# the dashboards security plugin exits with "Failed when trying to obtain the
+# endpoints from your IdP".
+docker-start: ## Resume the existing Docker stack in dependency order (no recreate, no re-provision)
+	@set -uo pipefail; \
+		compose_start() { $(DOCKER_COMPOSE_BASE)$$1.yml -p $$1 start >/dev/null 2>&1 || true; }; \
+		await() { \
+			name="$$1"; tries=90; state=""; \
+			for _ in $$(seq 1 $$tries); do \
+				state="$$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$$name" 2>/dev/null)" || { \
+					echo "  $$name: absent — run 'make docker-up' to create it"; return 0; }; \
+				case "$$state" in \
+					healthy|running) echo "  $$name: $$state"; return 0;; \
+					exited|dead) echo "  $$name: $$state — 'docker logs $$name' for why"; return 1;; \
+				esac; \
+				sleep 2; \
+			done; \
+			echo "  $$name: still '$$state' after $$((tries * 2))s"; return 1; \
+		}; \
+		await_project() { \
+			rc=0; \
+			for name in $$(docker ps -a --filter "label=com.docker.compose.project=$$1" --format '{{.Names}}'); do \
+				case "$$name" in *-install-job|*-migrate|*-admin-tools) continue;; esac; \
+				await "$$name" || rc=1; \
+			done; \
+			return $$rc; \
+		}; \
+		echo "Resuming PostgreSQL..."; compose_start postgres; await app-postgres || exit 1; \
+		echo "Resuming Keycloak..."; compose_start keycloak; await app-keycloak || exit 1; \
+		echo "Resuming $(DOCKER_REST_PROJECTS)..."; \
+		for project in $(DOCKER_REST_PROJECTS); do compose_start "$$project"; done; \
+		overall=0; \
+		for project in $(DOCKER_REST_PROJECTS); do await_project "$$project" || overall=1; done; \
+		if [ "$$overall" = 0 ]; then echo "Docker stack is up."; else \
+			echo "Docker stack is up, but some services did not come back — see above."; fi; \
+		exit $$overall
+
+# Stop without deleting: the counterpart to `docker-start`. `docker-down`
+# removes the containers, which would force a full re-provision on the next
+# start; this keeps them so `docker-start` can resume them.
+docker-stop: ## Stop the Docker stack but keep the containers (resume with `docker-start`)
+	@echo "Stopping Docker stack services (containers kept)..."
+	@for project in $(DOCKER_ALL_PROJECTS); do \
+		$(DOCKER_COMPOSE_BASE)$$project.yml -p $$project stop 2>/dev/null || true; \
+	done
 
 docker-down: all-down ## Stop the Docker stack
 
@@ -592,4 +657,4 @@ check-pure-infrastructure: ## Offline guard: fail if a tracked artifact carries 
 	@echo "✓ no local validation/ harness wiring left in the Makefile"
 	@echo "✓ check-pure-infrastructure passed"
 
-.PHONY: help network-create env-setup keycloak-post-install postgres-up keycloak-up seaweedfs-up opensearch-up clickhouse-up langfuse-up prometheus-up grafana-up openfga-post-install openfga-up temporal-up preflight-check docker-up docker-down all-down docker-wipe docker-destroy k3d-create k3d-up k3d-deploy k3d-restart k3d-redeploy k3d-logs k3d-down k3d-uninstall k3d-delete k3d-wipe k3d-status k3d-airgap-on k3d-airgap-off k3d-airgap-status checkpoint-save checkpoint-restore docker-restart-from-checkpoint checkpoint-list checkpoint-delete check-swift-src sync-openfga-model check-openfga-model-sync check-pure-infrastructure
+.PHONY: help network-create env-setup keycloak-post-install postgres-up keycloak-up seaweedfs-up opensearch-up clickhouse-up langfuse-up prometheus-up grafana-up openfga-post-install openfga-up temporal-up preflight-check docker-up docker-start docker-stop docker-down all-down docker-wipe docker-destroy k3d-create k3d-up k3d-deploy k3d-restart k3d-redeploy k3d-logs k3d-down k3d-uninstall k3d-delete k3d-wipe k3d-status k3d-airgap-on k3d-airgap-off k3d-airgap-status checkpoint-save checkpoint-restore docker-restart-from-checkpoint checkpoint-list checkpoint-delete check-swift-src sync-openfga-model check-openfga-model-sync check-pure-infrastructure
