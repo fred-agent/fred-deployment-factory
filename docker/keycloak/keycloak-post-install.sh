@@ -243,9 +243,12 @@ ensure_service_client_confidential() {
 
   current_secret="$(kc get "clients/${uuid}/client-secret" -r "$KEYCLOAK_REALM" -c | jq -r '.value // empty')"
   if [[ "$current_secret" != "$desired_secret" ]]; then
-    if ! kc create "clients/${uuid}/client-secret" -r "$KEYCLOAK_REALM" -s "value=${desired_secret}" >/dev/null 2>&1; then
-      kc update "clients/${uuid}" -r "$KEYCLOAK_REALM" -s "secret=${desired_secret}" >/dev/null
-    fi
+    # Only the admin REST API sets a chosen secret: kcadm's
+    # `create clients/<id>/client-secret` regenerates a random one and ignores
+    # the value, and `update -s secret=` is dropped. Unexercised until the first
+    # client created here rather than imported with its secret already set.
+    kc_http_request PUT "/clients/${uuid}" \
+      "$(jq -nc --arg secret "$desired_secret" '{secret: $secret}')" >/dev/null
     mark_changed
   fi
 
