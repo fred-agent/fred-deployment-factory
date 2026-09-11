@@ -145,8 +145,8 @@ KEYCLOAK_CONTROL_PLANE_CLIENT_SECRET="${KEYCLOAK_CONTROL_PLANE_CLIENT_SECRET:-Az
 KEYCLOAK_EVAL_WORKER_CLIENT_SECRET="${KEYCLOAK_EVAL_WORKER_CLIENT_SECRET:-$(read_env_file_var KEYCLOAK_EVAL_WORKER_CLIENT_SECRET)}"
 KEYCLOAK_EVAL_WORKER_CLIENT_SECRET="${KEYCLOAK_EVAL_WORKER_CLIENT_SECRET:-Azerty123_}"
 
-KEYCLOAK_KB_LOCAL_FOLDER_CLIENT_SECRET="${KEYCLOAK_KB_LOCAL_FOLDER_CLIENT_SECRET:-$(read_env_file_var KEYCLOAK_KB_LOCAL_FOLDER_CLIENT_SECRET)}"
-KEYCLOAK_KB_LOCAL_FOLDER_CLIENT_SECRET="${KEYCLOAK_KB_LOCAL_FOLDER_CLIENT_SECRET:-Azerty123_}"
+KEYCLOAK_KB_FRED_SAMPLES_CLIENT_SECRET="${KEYCLOAK_KB_FRED_SAMPLES_CLIENT_SECRET:-$(read_env_file_var KEYCLOAK_KB_FRED_SAMPLES_CLIENT_SECRET)}"
+KEYCLOAK_KB_FRED_SAMPLES_CLIENT_SECRET="${KEYCLOAK_KB_FRED_SAMPLES_CLIENT_SECRET:-Azerty123_}"
 
 KEYCLOAK_KF_ENABLE_MANAGE_USERS="${KEYCLOAK_KF_ENABLE_MANAGE_USERS:-$(read_env_file_var KEYCLOAK_KF_ENABLE_MANAGE_USERS)}"
 KEYCLOAK_KF_ENABLE_MANAGE_USERS="${KEYCLOAK_KF_ENABLE_MANAGE_USERS:-true}"
@@ -480,9 +480,10 @@ knowledge_flow_client_uuid="$(ensure_service_client_confidential knowledge-flow 
 control_plane_client_uuid="$(ensure_service_client_confidential control-plane "$KEYCLOAK_CONTROL_PLANE_CLIENT_SECRET")"
 # Evaluation worker (Fworker) — dedicated least-privilege service identity (RFC EVAL-AUTH).
 eval_worker_client_uuid="$(ensure_service_client_confidential fred-evaluation-worker "$KEYCLOAK_EVAL_WORKER_CLIENT_SECRET")"
-# Knowledge Base pod. Fred binds a definition to the client that first publishes
-# it, so each Knowledge Base needs its own client rather than a shared one.
-kb_local_folder_client_uuid="$(ensure_service_client_confidential knowledge-base-local-folder "$KEYCLOAK_KB_LOCAL_FOLDER_CLIENT_SECRET")"
+# Knowledge Base pod. A Knowledge Base is named kb__<provider>__<definition>,
+# and Fred binds the provider to the client that first publishes under it — so
+# the client belongs to the provider namespace, not to one definition.
+kb_fred_samples_client_uuid="$(ensure_service_client_confidential knowledge-base-fred-samples "$KEYCLOAK_KB_FRED_SAMPLES_CLIENT_SECRET")"
 
 ensure_client_role app service_agent "application service agent role"
 
@@ -490,7 +491,7 @@ agentic_service_user="$(wait_for_service_account_username agentic)"
 knowledge_flow_service_user="$(wait_for_service_account_username knowledge-flow)"
 control_plane_service_user="$(wait_for_service_account_username control-plane)"
 eval_worker_service_user="$(wait_for_service_account_username fred-evaluation-worker)"
-kb_local_folder_service_user="$(wait_for_service_account_username knowledge-base-local-folder)"
+kb_fred_samples_service_user="$(wait_for_service_account_username knowledge-base-fred-samples)"
 
 # Neither agentic (fred-agents), knowledge-flow, nor control-plane call any
 # Keycloak group-admin API (a_get_groups/a_get_group_members) - confirmed
@@ -519,7 +520,7 @@ ensure_user_client_role "$control_plane_service_user" app service_agent
 ensure_user_client_role "$eval_worker_service_user" app service_agent
 # Publishing a declaration and reporting a run is all a Knowledge Base pod does:
 # service_agent only, no realm-management role, same posture as the worker above.
-ensure_user_client_role "$kb_local_folder_service_user" app service_agent
+ensure_user_client_role "$kb_fred_samples_service_user" app service_agent
 
 # AUTHZ-05/06: Swift never represents a team as a Keycloak group - a team is a
 # team_metadata row + OpenFGA relations, created later via the control-plane
