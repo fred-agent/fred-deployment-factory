@@ -144,7 +144,7 @@ multiplied by `scheduler.temporal.ingestion_max_concurrent_activities` is the wo
 thread count — size it against `resources.limits.cpu` on the worker pod. Get this wrong and PDF
 ingestion doesn't error, it silently CPU-thrashes and looks like a hung pipeline. Full sizing
 formula, a threads×concurrency safe/caution/danger table with measured numbers, and a diagnostic
-checklist are in [Sizing the PDF Ingestion Worker (Docling)](https://fredk8.dev/docs/docling-ingestion-sizing.html)
+checklist are in [Sizing the PDF Ingestion Worker (Docling)](https://fredlab.dev/docs/docling-ingestion-sizing.html)
 on fred-website — don't duplicate that content here, just size the pod's CPU limit accordingly
 when you set `resources.limits.cpu` for the worker.
 
