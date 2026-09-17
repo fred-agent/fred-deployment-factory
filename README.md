@@ -66,5 +66,5 @@ The *why* and the *open work* — not the day-to-day how-to:
 | [`docs/BACKLOG.md`](docs/BACKLOG.md) | open work — a new instance (e.g. C2 on TDP/AKS) is tracked here |
 | [`CLAUDE.md`](CLAUDE.md) | what the repo is + the order work must happen in (for contributors / AI assistants) |
 
-**Related links:** Fred website <https://fredlab.dev> · Fred repository
+**Related links:** Fred website <https://site.fredlab.dev> · Fred repository
 <https://github.com/ThalesGroup/fred>
