@@ -480,10 +480,10 @@ knowledge_flow_client_uuid="$(ensure_service_client_confidential knowledge-flow 
 control_plane_client_uuid="$(ensure_service_client_confidential control-plane "$KEYCLOAK_CONTROL_PLANE_CLIENT_SECRET")"
 # Evaluation worker (Fworker) — dedicated least-privilege service identity (RFC EVAL-AUTH).
 eval_worker_client_uuid="$(ensure_service_client_confidential fred-evaluation-worker "$KEYCLOAK_EVAL_WORKER_CLIENT_SECRET")"
-# Knowledge Base pod. A Knowledge Base is named kb__<provider>__<definition>,
-# and Fred binds the provider to the client that first publishes under it — so
-# the client belongs to the provider namespace, not to one definition.
-kb_fred_samples_client_uuid="$(ensure_service_client_confidential knowledge-base-fred-samples "$KEYCLOAK_KB_FRED_SAMPLES_CLIENT_SECRET")"
+# Knowledge Base pod. Names are dotted under a prefix their contributor owns,
+# and Fred claims that prefix for the client that first publishes under it — so
+# the client is named after the prefix, never after one Knowledge Base.
+kb_fred_samples_client_uuid="$(ensure_service_client_confidential kb-fred.samples "$KEYCLOAK_KB_FRED_SAMPLES_CLIENT_SECRET")"
 
 ensure_client_role app service_agent "application service agent role"
 
@@ -491,7 +491,7 @@ agentic_service_user="$(wait_for_service_account_username agentic)"
 knowledge_flow_service_user="$(wait_for_service_account_username knowledge-flow)"
 control_plane_service_user="$(wait_for_service_account_username control-plane)"
 eval_worker_service_user="$(wait_for_service_account_username fred-evaluation-worker)"
-kb_fred_samples_service_user="$(wait_for_service_account_username knowledge-base-fred-samples)"
+kb_fred_samples_service_user="$(wait_for_service_account_username kb-fred.samples)"
 
 # Neither agentic (fred-agents), knowledge-flow, nor control-plane call any
 # Keycloak group-admin API (a_get_groups/a_get_group_members) - confirmed
