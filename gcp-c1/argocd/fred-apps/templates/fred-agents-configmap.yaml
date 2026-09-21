@@ -18,6 +18,10 @@ data:
 {{ .Files.Get "files/fred-agents/mcp_catalog.yaml" | replace "http://localhost:8111" "http://knowledge-flow-backend:8080" | indent 4 }}
   configuration.yaml: |
     app:
+      # Must match this pod's controlPlane.config.runtimeCatalogSources entry:
+      # that equality is what joins a log line to its own KPI. Required since
+      # fred-runtime 4.0.0 — a pod without it fails to boot.
+      runtime_id: "fred-agents"
       name: "Fred default agents"
       base_url: {{ .Values.fredAgents.config.appBaseUrl | quote }}
       host: 0.0.0.0
