@@ -3,6 +3,7 @@ services:
   kube:
     image: mirror.gcr.io/rancher/k3s:v1.30.3-k3s1
     container_name: app-kube
+    restart: unless-stopped
     privileged: true
     environment:
       NO_PROXY: "app-kube"

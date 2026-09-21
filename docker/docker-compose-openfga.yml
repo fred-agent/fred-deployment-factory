@@ -16,6 +16,7 @@ services:
         condition: service_completed_successfully
     image: openfga/openfga:v1.15.1
     container_name: openfga
+    restart: unless-stopped
     environment:
       OPENFGA_DATASTORE_ENGINE: postgres
       OPENFGA_DATASTORE_URI: postgres://${POSTGRES_OPENFGA_USER:-openfga}:${POSTGRES_OPENFGA_PASSWORD:-Azerty123_}@app-postgres:5432/${POSTGRES_OPENFGA_DBNAME:-openfga}?sslmode=disable

@@ -2,6 +2,7 @@ services:
 
   postgres:
     container_name: app-postgres
+    restart: unless-stopped
     image: pgvector/pgvector:pg15
     command:
       - postgres

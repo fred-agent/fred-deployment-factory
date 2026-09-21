@@ -2,6 +2,7 @@ services:
 
   clickhouse:
     container_name: app-clickhouse
+    restart: unless-stopped
     image: clickhouse/clickhouse-server:24.12.5.81-alpine
     environment:
       no_proxy: "*"

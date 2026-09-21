@@ -2,6 +2,7 @@ services:
 
   neo4j:
     container_name: app-neo4j
+    restart: unless-stopped
     image: mirror.gcr.io/neo4j:5.25
     environment:
       NO_PROXY: "*"

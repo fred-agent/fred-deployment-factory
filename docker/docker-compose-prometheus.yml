@@ -2,6 +2,7 @@ services:
 
   prometheus:
     container_name: app-prometheus
+    restart: unless-stopped
     image: prom/prometheus:v2.54.1
     command:
       - --config.file=/etc/prometheus/prometheus.yml
