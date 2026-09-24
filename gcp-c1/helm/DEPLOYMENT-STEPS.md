@@ -655,6 +655,59 @@ embeddings end to end.
 bin/fredlab-deploy.sh frontend start 0.2
 ```
 
+## 16. Delegated Agent Runs
+
+Both charts switch delegation on, one direction per service: fred-agents sets
+`actForPeople` and calls the control plane and Knowledge Flow with its own `agentic`
+token plus a grant naming the person; the control plane and Knowledge Flow set
+`acceptDelegatedCalls` and trust that call because the token carries the
+`delegation_caller` role of the `fred-delegation` client. Use matching application
+images that support response-owned execution and these two switches. The rollout
+order is:
+
+1. Create the edge policy in preview. The frontend BackendConfig names it, and fails
+   to sync while it is missing:
+   ```bash
+   bin/fredlab-gcp-delegation-edge-prereqs.sh
+   ```
+2. Upgrade the infrastructure:
+   ```bash
+   bin/fredlab-infra-deploy.sh
+   ```
+3. Run the control-plane migrations with the matching image. Deployed
+   without `-fast`, this also runs the provision job, which creates the
+   `fred-delegation` client and its `delegation_caller` role and grants the role to
+   the `agentic` service account:
+   ```bash
+   bin/fredlab-deploy.sh control-plane migrate <tag>
+   ```
+4. Pin matching image tags in `values-fredlab.yaml`, push, then sync. Start the
+   control plane and establish account-standing readiness before the receivers and
+   agent runtimes become ready:
+   ```bash
+   bin/fredlab-argocd-sync.sh
+   ```
+5. Enforce the edge rule once its preview logs show no hits on real traffic.
+
+With `serviceAccountsOnly` on a receiver's `delegation` block, only a token Keycloak
+issued to a client's own service account is trusted as a delegation caller.
+
+Ordinary service identities without the delegation caller role retain their own
+bearer, including evaluation workers. Do not assign the delegation caller role to
+those identities. Authenticated tool endpoints use `delegated` mode; the runtime
+selects a workload bearer and grant for person runs, or the caller's own bearer for
+service-identity runs.
+
+Attended ReAct and DeepAgent execution belongs to one HTTP response. Completion,
+human pause, detected disconnect or cancellation ends its local authority. A new
+request receives fresh admission; there is no reconnect affinity requirement.
+Account-standing refusals stop the run, including a standing-unavailable response.
+With outgoing delegation disabled, parent and child calls use the current person
+token when the runtime receives an update.
+
+Workload tokens renew during active delegated runs. After rotating the workload
+secret, restart participating runtimes so they use the updated credential.
+
 ## Troubleshooting
 
 ### Helm Command Run From The Wrong Directory

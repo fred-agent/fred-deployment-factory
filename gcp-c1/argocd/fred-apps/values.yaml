@@ -91,6 +91,19 @@ controlPlane:
         - https://control-plane.playground.fredlab.dev
       rebac:
         enabled: true
+        # Unset, each pod publishes the model its image carries and reads the latest.
+        # Pin an id with publication off to hold every pod on one model.
+        syncSchemaOnInit: null
+        authorizationModelId: null
+      # acceptDelegatedCalls (incoming): a workload whose token carries the delegation
+      # caller role may act for a person, and person decisions require account
+      # standing, which this service writes at startup. serviceAccountsOnly trusts only
+      # a service account's token as a delegation caller (Keycloak-specific).
+      # actForPeople stays off: this service calls no other one for a person.
+      delegation:
+        actForPeople: false
+        acceptDelegatedCalls: true
+        serviceAccountsOnly: false
     opensearch:
       host: http://opensearch:9200
       secure: false
@@ -203,6 +216,18 @@ fredAgents:
     authorizedOrigins:
       - https://studio.playground.fredlab.dev
     openfgaUrl: http://openfga:8080
+    security:
+      rebac:
+        # Unset, each pod publishes the model its image carries and reads the latest.
+        # Pin an id with publication off to hold every pod on one model.
+        syncSchemaOnInit: null
+        authorizationModelId: null
+      # Person runs use a workload bearer and grant; ordinary service callers
+      # retain their own bearer. Incoming delegation requires both directions.
+      delegation:
+        actForPeople: true
+        acceptDelegatedCalls: false
+        serviceAccountsOnly: false
     openfgaStoreName: fred
     knowledgeFlowUrl: http://knowledge-flow-backend:8080/knowledge-flow/v1
     controlPlaneUrl: http://control-plane-backend:8080/control-plane/v1
@@ -288,6 +313,21 @@ knowledgeFlow:
     authorizedOrigins:
       - https://studio.playground.fredlab.dev
     openfgaUrl: http://openfga:8080
+    security:
+      rebac:
+        # Unset, each pod publishes the model its image carries and reads the latest.
+        # Pin an id with publication off to hold every pod on one model.
+        syncSchemaOnInit: null
+        authorizationModelId: null
+      # acceptDelegatedCalls (incoming): a workload whose token carries the delegation
+      # caller role may act for a person, and person decisions require account
+      # standing; starts once the control plane wrote it. serviceAccountsOnly trusts
+      # only a service account's token as a delegation caller (Keycloak-specific).
+      # actForPeople stays off: this service calls no other one for a person.
+      delegation:
+        actForPeople: false
+        acceptDelegatedCalls: true
+        serviceAccountsOnly: false
     openfgaStoreName: fred
     temporalAddress: temporal:7233
     temporalNamespace: default

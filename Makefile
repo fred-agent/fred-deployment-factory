@@ -658,3 +658,13 @@ check-pure-infrastructure: ## Offline guard: fail if a tracked artifact carries 
 	@echo "✓ check-pure-infrastructure passed"
 
 .PHONY: help network-create env-setup keycloak-post-install postgres-up keycloak-up seaweedfs-up opensearch-up clickhouse-up langfuse-up prometheus-up grafana-up openfga-post-install openfga-up temporal-up preflight-check docker-up docker-start docker-stop docker-down all-down docker-wipe docker-destroy k3d-create k3d-up k3d-deploy k3d-restart k3d-redeploy k3d-logs k3d-down k3d-uninstall k3d-delete k3d-wipe k3d-status k3d-airgap-on k3d-airgap-off k3d-airgap-status checkpoint-save checkpoint-restore docker-restart-from-checkpoint checkpoint-list checkpoint-delete check-swift-src sync-openfga-model check-openfga-model-sync check-pure-infrastructure
+
+.PHONY: keycloak-token-short keycloak-token-normal keycloak-token-status
+keycloak-token-short: ## Local Docker: use browser 60s and agentic M2M 120s access tokens
+	bash local-testing/scripts/keycloak-token-lifetime.sh short
+
+keycloak-token-normal: ## Local Docker: set browser and agentic M2M access tokens to 300s
+	bash local-testing/scripts/keycloak-token-lifetime.sh normal
+
+keycloak-token-status: ## Local Docker: show browser and agentic M2M access token lifetimes
+	bash local-testing/scripts/keycloak-token-lifetime.sh status

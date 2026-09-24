@@ -18,6 +18,8 @@ data:
 {{ .Files.Get "files/fred-agents/mcp_catalog.yaml" | replace "http://localhost:8111" "http://knowledge-flow-backend:8080" | indent 4 }}
   configuration.yaml: |
     app:
+      # Must equal this pod's runtimeId in the control plane's runtimeCatalogSources.
+      runtime_id: "fred-agents"
       name: "Fred default agents"
       base_url: {{ .Values.fredAgents.config.appBaseUrl | quote }}
       host: 0.0.0.0
@@ -46,6 +48,25 @@ data:
         api_url: {{ .Values.fredAgents.config.openfgaUrl | quote }}
         store_name: {{ .Values.fredAgents.config.openfgaStoreName | quote }}
         token_env_var: OPENFGA_API_TOKEN
+        {{- if not (kindIs "invalid" .Values.fredAgents.config.security.rebac.syncSchemaOnInit) }}
+        sync_schema_on_init: {{ .Values.fredAgents.config.security.rebac.syncSchemaOnInit }}
+        {{- end }}
+        {{- with .Values.fredAgents.config.security.rebac.authorizationModelId }}
+        authorization_model_id: {{ . | quote }}
+        {{- end }}
+      delegation:
+        {{- $delegation := .Values.fredAgents.config.security.delegation }}
+        {{- if $delegation.callerPolicies }}
+        {{- fail "fredAgents.config.security.delegation.callerPolicies is retired: receivers trust the delegation caller role" }}
+        {{- end }}
+        {{- if hasKey $delegation "enabled" }}
+        {{- fail "fredAgents.config.security.delegation.enabled is split: set actForPeople to call other services for a person, acceptDelegatedCalls to believe such calls" }}
+        {{- end }}
+        act_for_people: {{ $delegation.actForPeople | default false }}
+        accept_delegated_calls: {{ $delegation.acceptDelegatedCalls | default false }}
+        {{- if $delegation.serviceAccountsOnly }}
+        service_accounts_only: true
+        {{- end }}
 
     ai:
       knowledge_flow_url: {{ .Values.fredAgents.config.knowledgeFlowUrl | quote }}

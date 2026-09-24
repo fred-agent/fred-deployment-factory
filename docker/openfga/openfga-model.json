@@ -7,15 +7,38 @@
         {
             "metadata": {
                 "relations": {
+                    "active": {
+                        "directly_related_user_types": [
+                            {
+                                "type": "user",
+                                "wildcard": {}
+                            }
+                        ]
+                    },
                     "can_administer_users": {},
                     "can_create_team": {},
                     "can_delete_team": {},
                     "can_edit_agent_class_path": {},
+                    "can_edit_platform_prompt": {},
                     "can_list_all_teams": {},
+                    "can_manage_capabilities": {},
                     "can_manage_platform": {},
                     "can_observe_platform": {},
                     "can_rescue_team_admin": {},
-                    "can_run_benchmark": {},
+                    "feature_manager": {
+                        "directly_related_user_types": [
+                            {
+                                "type": "user"
+                            }
+                        ]
+                    },
+                    "personal_team": {
+                        "directly_related_user_types": [
+                            {
+                                "type": "team"
+                            }
+                        ]
+                    },
                     "platform_admin": {
                         "directly_related_user_types": [
                             {
@@ -29,18 +52,76 @@
                                 "type": "user"
                             }
                         ]
+                    },
+                    "prompt_editor": {
+                        "directly_related_user_types": [
+                            {
+                                "type": "user"
+                            }
+                        ]
+                    },
+                    "standing_ready": {
+                        "directly_related_user_types": [
+                            {
+                                "type": "organization"
+                            }
+                        ]
+                    },
+                    "suspended": {
+                        "directly_related_user_types": [
+                            {
+                                "type": "user"
+                            }
+                        ]
+                    },
+                    "team": {
+                        "directly_related_user_types": [
+                            {
+                                "type": "team"
+                            }
+                        ]
+                    },
+                    "team_manager": {
+                        "directly_related_user_types": [
+                            {
+                                "type": "user"
+                            }
+                        ]
                     }
                 }
             },
             "relations": {
+                "active": {
+                    "difference": {
+                        "base": {
+                            "this": {}
+                        },
+                        "subtract": {
+                            "computedUserset": {
+                                "relation": "suspended"
+                            }
+                        }
+                    }
+                },
                 "can_administer_users": {
                     "computedUserset": {
                         "relation": "platform_admin"
                     }
                 },
                 "can_create_team": {
-                    "computedUserset": {
-                        "relation": "platform_admin"
+                    "union": {
+                        "child": [
+                            {
+                                "computedUserset": {
+                                    "relation": "platform_admin"
+                                }
+                            },
+                            {
+                                "computedUserset": {
+                                    "relation": "team_manager"
+                                }
+                            }
+                        ]
                     }
                 },
                 "can_delete_team": {
@@ -53,9 +134,57 @@
                         "relation": "platform_admin"
                     }
                 },
+                "can_edit_platform_prompt": {
+                    "union": {
+                        "child": [
+                            {
+                                "computedUserset": {
+                                    "relation": "platform_admin"
+                                }
+                            },
+                            {
+                                "computedUserset": {
+                                    "relation": "prompt_editor"
+                                }
+                            }
+                        ]
+                    }
+                },
                 "can_list_all_teams": {
-                    "computedUserset": {
-                        "relation": "platform_admin"
+                    "union": {
+                        "child": [
+                            {
+                                "computedUserset": {
+                                    "relation": "platform_admin"
+                                }
+                            },
+                            {
+                                "computedUserset": {
+                                    "relation": "team_manager"
+                                }
+                            },
+                            {
+                                "computedUserset": {
+                                    "relation": "feature_manager"
+                                }
+                            }
+                        ]
+                    }
+                },
+                "can_manage_capabilities": {
+                    "union": {
+                        "child": [
+                            {
+                                "computedUserset": {
+                                    "relation": "platform_admin"
+                                }
+                            },
+                            {
+                                "computedUserset": {
+                                    "relation": "feature_manager"
+                                }
+                            }
+                        ]
                     }
                 },
                 "can_manage_platform": {
@@ -73,15 +202,64 @@
                         "relation": "platform_admin"
                     }
                 },
-                "can_run_benchmark": {
-                    "computedUserset": {
-                        "relation": "platform_admin"
+                "feature_manager": {
+                    "union": {
+                        "child": [
+                            {
+                                "this": {}
+                            },
+                            {
+                                "computedUserset": {
+                                    "relation": "platform_admin"
+                                }
+                            }
+                        ]
                     }
+                },
+                "personal_team": {
+                    "this": {}
                 },
                 "platform_admin": {
                     "this": {}
                 },
                 "platform_observer": {
+                    "union": {
+                        "child": [
+                            {
+                                "this": {}
+                            },
+                            {
+                                "computedUserset": {
+                                    "relation": "platform_admin"
+                                }
+                            }
+                        ]
+                    }
+                },
+                "prompt_editor": {
+                    "union": {
+                        "child": [
+                            {
+                                "this": {}
+                            },
+                            {
+                                "computedUserset": {
+                                    "relation": "platform_admin"
+                                }
+                            }
+                        ]
+                    }
+                },
+                "standing_ready": {
+                    "this": {}
+                },
+                "suspended": {
+                    "this": {}
+                },
+                "team": {
+                    "this": {}
+                },
+                "team_manager": {
                     "union": {
                         "child": [
                             {
@@ -101,6 +279,7 @@
         {
             "metadata": {
                 "relations": {
+                    "can_access_files": {},
                     "can_administer_admins": {},
                     "can_administer_analysts": {},
                     "can_administer_editors": {},
@@ -115,10 +294,19 @@
                     "can_update_info": {},
                     "can_update_resources": {},
                     "can_use_team_agents": {},
+                    "can_use_team_applications": {},
+                    "can_use_team_knowledge_bases": {},
                     "organization": {
                         "directly_related_user_types": [
                             {
                                 "type": "organization"
+                            }
+                        ]
+                    },
+                    "pending_team_admin": {
+                        "directly_related_user_types": [
+                            {
+                                "type": "user"
                             }
                         ]
                     },
@@ -161,6 +349,11 @@
                 }
             },
             "relations": {
+                "can_access_files": {
+                    "computedUserset": {
+                        "relation": "team_member"
+                    }
+                },
                 "can_administer_admins": {
                     "computedUserset": {
                         "relation": "team_admin"
@@ -264,7 +457,20 @@
                         "relation": "team_member"
                     }
                 },
+                "can_use_team_applications": {
+                    "computedUserset": {
+                        "relation": "team_member"
+                    }
+                },
+                "can_use_team_knowledge_bases": {
+                    "computedUserset": {
+                        "relation": "team_member"
+                    }
+                },
                 "organization": {
+                    "this": {}
+                },
+                "pending_team_admin": {
                     "this": {}
                 },
                 "public": {
@@ -288,6 +494,11 @@
                             {
                                 "computedUserset": {
                                     "relation": "team_admin"
+                                }
+                            },
+                            {
+                                "computedUserset": {
+                                    "relation": "pending_team_admin"
                                 }
                             },
                             {
@@ -710,6 +921,359 @@
                 }
             },
             "type": "resource"
+        },
+        {
+            "metadata": {
+                "relations": {
+                    "can_manage": {},
+                    "can_use": {},
+                    "default_on": {
+                        "directly_related_user_types": [
+                            {
+                                "type": "organization"
+                            }
+                        ]
+                    },
+                    "disabled": {
+                        "directly_related_user_types": [
+                            {
+                                "type": "team"
+                            }
+                        ]
+                    },
+                    "enabled": {
+                        "directly_related_user_types": [
+                            {
+                                "type": "team"
+                            }
+                        ]
+                    },
+                    "inherited": {},
+                    "organization": {
+                        "directly_related_user_types": [
+                            {
+                                "type": "organization"
+                            }
+                        ]
+                    },
+                    "personal_block": {},
+                    "personal_disabled": {
+                        "directly_related_user_types": [
+                            {
+                                "type": "organization"
+                            }
+                        ]
+                    },
+                    "personal_grant": {},
+                    "personal_on": {
+                        "directly_related_user_types": [
+                            {
+                                "type": "organization"
+                            }
+                        ]
+                    }
+                }
+            },
+            "relations": {
+                "can_manage": {
+                    "tupleToUserset": {
+                        "computedUserset": {
+                            "relation": "can_manage_capabilities"
+                        },
+                        "tupleset": {
+                            "relation": "organization"
+                        }
+                    }
+                },
+                "can_use": {
+                    "difference": {
+                        "base": {
+                            "union": {
+                                "child": [
+                                    {
+                                        "computedUserset": {
+                                            "relation": "enabled"
+                                        }
+                                    },
+                                    {
+                                        "computedUserset": {
+                                            "relation": "inherited"
+                                        }
+                                    }
+                                ]
+                            }
+                        },
+                        "subtract": {
+                            "computedUserset": {
+                                "relation": "disabled"
+                            }
+                        }
+                    }
+                },
+                "default_on": {
+                    "this": {}
+                },
+                "disabled": {
+                    "this": {}
+                },
+                "enabled": {
+                    "this": {}
+                },
+                "inherited": {
+                    "difference": {
+                        "base": {
+                            "union": {
+                                "child": [
+                                    {
+                                        "tupleToUserset": {
+                                            "computedUserset": {
+                                                "relation": "team"
+                                            },
+                                            "tupleset": {
+                                                "relation": "default_on"
+                                            }
+                                        }
+                                    },
+                                    {
+                                        "computedUserset": {
+                                            "relation": "personal_grant"
+                                        }
+                                    }
+                                ]
+                            }
+                        },
+                        "subtract": {
+                            "computedUserset": {
+                                "relation": "personal_block"
+                            }
+                        }
+                    }
+                },
+                "organization": {
+                    "this": {}
+                },
+                "personal_block": {
+                    "tupleToUserset": {
+                        "computedUserset": {
+                            "relation": "personal_team"
+                        },
+                        "tupleset": {
+                            "relation": "personal_disabled"
+                        }
+                    }
+                },
+                "personal_disabled": {
+                    "this": {}
+                },
+                "personal_grant": {
+                    "tupleToUserset": {
+                        "computedUserset": {
+                            "relation": "personal_team"
+                        },
+                        "tupleset": {
+                            "relation": "personal_on"
+                        }
+                    }
+                },
+                "personal_on": {
+                    "this": {}
+                }
+            },
+            "type": "capability"
+        },
+        {
+            "metadata": {
+                "relations": {
+                    "can_manage": {},
+                    "can_use": {},
+                    "default_on": {
+                        "directly_related_user_types": [
+                            {
+                                "type": "organization"
+                            }
+                        ]
+                    },
+                    "disabled": {
+                        "directly_related_user_types": [
+                            {
+                                "type": "team"
+                            }
+                        ]
+                    },
+                    "enabled": {
+                        "directly_related_user_types": [
+                            {
+                                "type": "team"
+                            }
+                        ]
+                    },
+                    "inherited": {},
+                    "organization": {
+                        "directly_related_user_types": [
+                            {
+                                "type": "organization"
+                            }
+                        ]
+                    }
+                }
+            },
+            "relations": {
+                "can_manage": {
+                    "tupleToUserset": {
+                        "computedUserset": {
+                            "relation": "can_manage_capabilities"
+                        },
+                        "tupleset": {
+                            "relation": "organization"
+                        }
+                    }
+                },
+                "can_use": {
+                    "difference": {
+                        "base": {
+                            "union": {
+                                "child": [
+                                    {
+                                        "computedUserset": {
+                                            "relation": "enabled"
+                                        }
+                                    },
+                                    {
+                                        "computedUserset": {
+                                            "relation": "inherited"
+                                        }
+                                    }
+                                ]
+                            }
+                        },
+                        "subtract": {
+                            "computedUserset": {
+                                "relation": "disabled"
+                            }
+                        }
+                    }
+                },
+                "default_on": {
+                    "this": {}
+                },
+                "disabled": {
+                    "this": {}
+                },
+                "enabled": {
+                    "this": {}
+                },
+                "inherited": {
+                    "tupleToUserset": {
+                        "computedUserset": {
+                            "relation": "team"
+                        },
+                        "tupleset": {
+                            "relation": "default_on"
+                        }
+                    }
+                },
+                "organization": {
+                    "this": {}
+                }
+            },
+            "type": "app"
+        },
+        {
+            "metadata": {
+                "relations": {
+                    "can_manage": {},
+                    "can_use": {},
+                    "default_on": {
+                        "directly_related_user_types": [
+                            {
+                                "type": "organization"
+                            }
+                        ]
+                    },
+                    "disabled": {
+                        "directly_related_user_types": [
+                            {
+                                "type": "team"
+                            }
+                        ]
+                    },
+                    "enabled": {
+                        "directly_related_user_types": [
+                            {
+                                "type": "team"
+                            }
+                        ]
+                    },
+                    "inherited": {},
+                    "organization": {
+                        "directly_related_user_types": [
+                            {
+                                "type": "organization"
+                            }
+                        ]
+                    }
+                }
+            },
+            "relations": {
+                "can_manage": {
+                    "tupleToUserset": {
+                        "computedUserset": {
+                            "relation": "platform_admin"
+                        },
+                        "tupleset": {
+                            "relation": "organization"
+                        }
+                    }
+                },
+                "can_use": {
+                    "difference": {
+                        "base": {
+                            "union": {
+                                "child": [
+                                    {
+                                        "computedUserset": {
+                                            "relation": "enabled"
+                                        }
+                                    },
+                                    {
+                                        "computedUserset": {
+                                            "relation": "inherited"
+                                        }
+                                    }
+                                ]
+                            }
+                        },
+                        "subtract": {
+                            "computedUserset": {
+                                "relation": "disabled"
+                            }
+                        }
+                    }
+                },
+                "default_on": {
+                    "this": {}
+                },
+                "disabled": {
+                    "this": {}
+                },
+                "enabled": {
+                    "this": {}
+                },
+                "inherited": {
+                    "tupleToUserset": {
+                        "computedUserset": {
+                            "relation": "team"
+                        },
+                        "tupleset": {
+                            "relation": "default_on"
+                        }
+                    }
+                },
+                "organization": {
+                    "this": {}
+                }
+            },
+            "type": "knowledge_base_definition"
         }
     ]
 }

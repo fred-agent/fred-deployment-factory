@@ -235,6 +235,7 @@ spec:
                   -s serviceAccountsEnabled=true \
                   -s standardFlowEnabled=false \
                   -s directAccessGrantsEnabled=false \
+                  -s 'attributes."standard.token.exchange.enabled"=false' \
                   -s "secret=$KEYCLOAK_CONTROL_PLANE_CLIENT_SECRET"
               else
                 echo "Creating confidential client '$CONTROL_PLANE_CLIENT_ID'."
@@ -245,6 +246,7 @@ spec:
                   -s serviceAccountsEnabled=true \
                   -s standardFlowEnabled=false \
                   -s directAccessGrantsEnabled=false \
+                  -s 'attributes."standard.token.exchange.enabled"=false' \
                   -s "secret=$KEYCLOAK_CONTROL_PLANE_CLIENT_SECRET"
               fi
 
@@ -283,6 +285,7 @@ spec:
                   -s serviceAccountsEnabled=true \
                   -s standardFlowEnabled=false \
                   -s directAccessGrantsEnabled=false \
+                  -s 'attributes."standard.token.exchange.enabled"=false' \
                   -s "secret=$KEYCLOAK_KNOWLEDGE_FLOW_CLIENT_SECRET"
               else
                 echo "Creating confidential client '$KNOWLEDGE_FLOW_CLIENT_ID'."
@@ -293,6 +296,7 @@ spec:
                   -s serviceAccountsEnabled=true \
                   -s standardFlowEnabled=false \
                   -s directAccessGrantsEnabled=false \
+                  -s 'attributes."standard.token.exchange.enabled"=false' \
                   -s "secret=$KEYCLOAK_KNOWLEDGE_FLOW_CLIENT_SECRET"
               fi
 
@@ -331,6 +335,7 @@ spec:
                   -s serviceAccountsEnabled=true \
                   -s standardFlowEnabled=false \
                   -s directAccessGrantsEnabled=false \
+                  -s 'attributes."standard.token.exchange.enabled"=false' \
                   -s "secret=$KEYCLOAK_AGENTIC_CLIENT_SECRET"
               else
                 echo "Creating confidential client '$AGENTIC_CLIENT_ID'."
@@ -341,6 +346,7 @@ spec:
                   -s serviceAccountsEnabled=true \
                   -s standardFlowEnabled=false \
                   -s directAccessGrantsEnabled=false \
+                  -s 'attributes."standard.token.exchange.enabled"=false' \
                   -s "secret=$KEYCLOAK_AGENTIC_CLIENT_SECRET"
               fi
 
@@ -369,6 +375,32 @@ spec:
                   --rolename "$role" || true
               done
 
+              # Receivers trust a workload that holds this client's caller role;
+              # Keycloak also adds the client to the holder's token audience. The
+              # names are Fred's defaults, which the receivers' configuration keeps.
+              DELEGATION_CLIENT_ID=fred-delegation
+              DELEGATION_CALLER_ROLE=delegation_caller
+              if [ -n "$(client_id "$DELEGATION_CLIENT_ID")" ]; then
+                echo "Client '$DELEGATION_CLIENT_ID' already exists."
+              else
+                echo "Creating client '$DELEGATION_CLIENT_ID', which issues no tokens."
+                "$KCADM" create clients -r "$REALM" \
+                  -s "clientId=$DELEGATION_CLIENT_ID" \
+                  -s enabled=true \
+                  -s publicClient=false \
+                  -s serviceAccountsEnabled=false \
+                  -s standardFlowEnabled=false \
+                  -s implicitFlowEnabled=false \
+                  -s directAccessGrantsEnabled=false \
+                  -s 'attributes."standard.token.exchange.enabled"=false'
+              fi
+              ensure_client_role "$DELEGATION_CLIENT_ID" "$DELEGATION_CALLER_ROLE" "Workload that may speak for a person"
+              echo "Granting $DELEGATION_CLIENT_ID/$DELEGATION_CALLER_ROLE to service-account-$AGENTIC_CLIENT_ID."
+              "$KCADM" add-roles -r "$REALM" \
+                --uusername "service-account-$AGENTIC_CLIENT_ID" \
+                --cclientid "$DELEGATION_CLIENT_ID" \
+                --rolename "$DELEGATION_CALLER_ROLE"
+
               EVALUATION_ID="$(client_id "$EVALUATION_CLIENT_ID")"
               if [ -n "$EVALUATION_ID" ]; then
                 echo "Updating confidential client '$EVALUATION_CLIENT_ID'."
@@ -379,6 +411,7 @@ spec:
                   -s serviceAccountsEnabled=true \
                   -s standardFlowEnabled=false \
                   -s directAccessGrantsEnabled=false \
+                  -s 'attributes."standard.token.exchange.enabled"=false' \
                   -s "secret=$KEYCLOAK_EVALUATION_CLIENT_SECRET"
               else
                 echo "Creating confidential client '$EVALUATION_CLIENT_ID'."
@@ -389,6 +422,7 @@ spec:
                   -s serviceAccountsEnabled=true \
                   -s standardFlowEnabled=false \
                   -s directAccessGrantsEnabled=false \
+                  -s 'attributes."standard.token.exchange.enabled"=false' \
                   -s "secret=$KEYCLOAK_EVALUATION_CLIENT_SECRET"
               fi
 

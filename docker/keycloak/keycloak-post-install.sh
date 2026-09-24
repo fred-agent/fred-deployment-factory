@@ -303,6 +303,50 @@ ensure_user_client_role() {
   mark_changed
 }
 
+# User tokens need the audience the Fred APIs enforce.
+ensure_audience_mapper() {
+  local client_id="$1"
+  local audience="$2"
+  local name="audience-${audience}"
+  local uuid
+
+  uuid="$(client_uuid "$client_id")"
+  [[ -n "$uuid" ]] || die "cannot resolve client '${client_id}' to add audience '${audience}'"
+
+  if kc get "clients/${uuid}/protocol-mappers/models" -r "$KEYCLOAK_REALM" -c \
+    | jq -e --arg name "$name" '.[] | select(.name == $name)' >/dev/null; then
+    return
+  fi
+
+  kc create "clients/${uuid}/protocol-mappers/models" -r "$KEYCLOAK_REALM" \
+    -s "name=${name}" \
+    -s protocol=openid-connect \
+    -s protocolMapper=oidc-audience-mapper \
+    -s "config.\"included.client.audience\"=${audience}" \
+    -s 'config."access.token.claim"=true' \
+    -s 'config."id.token.claim"=false' \
+    -s 'config."introspection.token.claim"=true' >/dev/null
+  log "added audience '${audience}' to '${client_id}' tokens"
+}
+
+# Receivers trust a workload that holds this client's caller role. The client issues
+# no tokens; Keycloak adds it to the audience of every holder's tokens.
+ensure_delegation_client() {
+  if [[ -z "$(client_uuid fred-delegation)" ]]; then
+    kc create clients -r "$KEYCLOAK_REALM" \
+      -s clientId=fred-delegation \
+      -s protocol=openid-connect \
+      -s enabled=true \
+      -s publicClient=false \
+      -s serviceAccountsEnabled=false \
+      -s standardFlowEnabled=false \
+      -s implicitFlowEnabled=false \
+      -s directAccessGrantsEnabled=false >/dev/null
+    mark_changed
+  fi
+  ensure_client_role fred-delegation delegation_caller "workload that may speak for a person"
+}
+
 kc_http_admin_token() {
   local response
   local token
@@ -507,6 +551,14 @@ ensure_user_client_role "$agentic_service_user" app service_agent
 ensure_user_client_role "$knowledge_flow_service_user" app service_agent
 ensure_user_client_role "$control_plane_service_user" app service_agent
 ensure_user_client_role "$eval_worker_service_user" app service_agent
+
+# Local Fred APIs validate user tokens against security.user.client_id: app.
+# Set an explicit audience; the requesting client (azp) is not an audience.
+ensure_audience_mapper app app
+
+# fred-agents speaks for a person on every receiver.
+ensure_delegation_client
+ensure_user_client_role "$agentic_service_user" fred-delegation delegation_caller
 
 # AUTHZ-05/06: Swift never represents a team as a Keycloak group - a team is a
 # team_metadata row + OpenFGA relations, created later via the control-plane

@@ -162,6 +162,25 @@ data:
         api_url: {{ .Values.knowledgeFlow.config.openfgaUrl | quote }}
         store_name: {{ .Values.knowledgeFlow.config.openfgaStoreName | quote }}
         token_env_var: OPENFGA_API_TOKEN
+        {{- if not (kindIs "invalid" .Values.knowledgeFlow.config.security.rebac.syncSchemaOnInit) }}
+        sync_schema_on_init: {{ .Values.knowledgeFlow.config.security.rebac.syncSchemaOnInit }}
+        {{- end }}
+        {{- with .Values.knowledgeFlow.config.security.rebac.authorizationModelId }}
+        authorization_model_id: {{ . | quote }}
+        {{- end }}
+      delegation:
+        {{- $delegation := .Values.knowledgeFlow.config.security.delegation }}
+        {{- if $delegation.callerPolicies }}
+        {{- fail "knowledgeFlow.config.security.delegation.callerPolicies is retired: receivers trust the delegation caller role" }}
+        {{- end }}
+        {{- if hasKey $delegation "enabled" }}
+        {{- fail "knowledgeFlow.config.security.delegation.enabled is split: set actForPeople to call other services for a person, acceptDelegatedCalls to believe such calls" }}
+        {{- end }}
+        act_for_people: {{ $delegation.actForPeople | default false }}
+        accept_delegated_calls: {{ $delegation.acceptDelegatedCalls | default false }}
+        {{- if $delegation.serviceAccountsOnly }}
+        service_accounts_only: true
+        {{- end }}
 
     scheduler:
       enabled: true

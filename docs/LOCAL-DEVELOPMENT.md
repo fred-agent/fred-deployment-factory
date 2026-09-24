@@ -289,6 +289,14 @@ creates a Keycloak group.
 Databases created: `fred` (Fred), `keycloak`, `data` (tabular/vector), `openfga`, `temporal`,
 `temporal_visibility`.
 
+Keycloak also gets the `fred-delegation` client with its `delegation_caller` role, granted
+to the `agentic` service account: holding it is what lets fred-agents speak for a person
+once the Fred apps turn delegation on. For apps run on the host, the fred repository's
+`make delegation` checks the workload token and switches it on; for the k3d `fred-app`
+release, set `security.delegation.act_for_people: true` in the fred-agents configuration
+and `security.delegation.accept_delegated_calls: true` in the control-plane-backend and
+knowledge-flow-backend configurations.
+
 Every identity and role - platform (`platform_admin`/`platform_observer`) and team
 (`team_admin`/`team_editor`/`team_analyst`/`team_member`) - is provisioned afterwards by
 `fred`/control-plane-backend's declarative platform-import feature

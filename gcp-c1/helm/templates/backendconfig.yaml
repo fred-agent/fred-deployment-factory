@@ -49,6 +49,14 @@ metadata:
   labels:
     {{- include "fredlab-infra.labels" . | nindent 4 }}
 spec:
+  {{- if .Values.fredFrontend.backendConfig.securityPolicyName }}
+  # Refuses a request that carries the delegation grant parameters from outside.
+  # This backend serves every public path, so the policy expression must anchor on
+  # the parameter name; an unanchored match also catches agent_instance_id and
+  # runtime_id, which are ordinary parameters on the same backend.
+  securityPolicy:
+    name: {{ .Values.fredFrontend.backendConfig.securityPolicyName | quote }}
+  {{- end }}
   {{- if .Values.fredFrontend.backendConfig.timeoutSec }}
   # Backend request timeout for the L7 LB. The default is 30s, which severs long
   # SSE chat streams mid-response; raise it so agent answers can stream to completion.

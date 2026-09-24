@@ -90,6 +90,25 @@ data:
         api_url: {{ .Values.controlPlane.config.openfgaUrl | quote }}
         store_name: {{ .Values.controlPlane.config.openfgaStoreName | quote }}
         token_env_var: OPENFGA_API_TOKEN
+        {{- if not (kindIs "invalid" .Values.controlPlane.config.security.rebac.syncSchemaOnInit) }}
+        sync_schema_on_init: {{ .Values.controlPlane.config.security.rebac.syncSchemaOnInit }}
+        {{- end }}
+        {{- with .Values.controlPlane.config.security.rebac.authorizationModelId }}
+        authorization_model_id: {{ . | quote }}
+        {{- end }}
+      delegation:
+        {{- $delegation := .Values.controlPlane.config.security.delegation }}
+        {{- if $delegation.callerPolicies }}
+        {{- fail "controlPlane.config.security.delegation.callerPolicies is retired: receivers trust the delegation caller role" }}
+        {{- end }}
+        {{- if hasKey $delegation "enabled" }}
+        {{- fail "controlPlane.config.security.delegation.enabled is split: set actForPeople to call other services for a person, acceptDelegatedCalls to believe such calls" }}
+        {{- end }}
+        act_for_people: {{ $delegation.actForPeople | default false }}
+        accept_delegated_calls: {{ $delegation.acceptDelegatedCalls | default false }}
+        {{- if $delegation.serviceAccountsOnly }}
+        service_accounts_only: true
+        {{- end }}
 
     storage:
       postgres:
