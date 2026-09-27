@@ -256,6 +256,38 @@ Log into the frontend (`http://localhost:5173`) as the `platform_admin` from ste
 real agent execution → assert marker → delete through the actual browser UI — the one
 check the pytest suite in step 6 cannot do for you.
 
+## Identity provider portability
+
+The default `make docker-up` path remains the Keycloak baseline. The levels below
+use opt-in commands. Follow the full bootstrap walkthrough above for each level;
+run `make validation-report` from the sibling `fred` checkout after starting its
+applications. The UI self-test still needs a browser.
+
+1. **Keycloak baseline:** run the walkthrough above without an OIDC overlay.
+   Save it with `make checkpoint-save NAME=kc-baseline` before changing the realm.
+2. **Keycloak with generic OIDC claims:** run `make keycloak-generic-oidc STRICT=1`,
+   select `configuration_generic_oidc.example.yaml` for each Fred backend as
+   described in `fred/docs/swift/platform/IDENTITY-PROVIDERS.md`, and restart
+   the Fred applications. Run `local-testing/demo/seed-keycloak-users.sh`, then
+   `local-testing/scripts/warm-local-directory.sh` before importing the demo
+   bundle. The strict profile removes legacy role claims and Keycloak Admin API
+   rights from the service accounts. Use `make keycloak-generic-oidc-revert` to
+   restore the baseline realm settings.
+3. **Mock OIDC, without Keycloak:** run `make mock-oidc-up`, select the
+   `configuration_mock_oidc.example.yaml` overlays, restart Fred, and stop
+   Keycloak with `docker stop app-keycloak`. The mock issuer is
+   `http://localhost:8090/fred`. After testing, run `make mock-oidc-down` and
+   restore the Keycloak checkpoint.
+4. **Microsoft Entra ID:** follow the app registrations and settings in
+   `fred/docs/swift/platform/IDENTITY-PROVIDERS.md`, then run the same Fred
+   validation report and UI self-test against that tenant.
+
+Use `make checkpoint-restore NAME=kc-baseline` followed by `make docker-up` to
+return to the saved baseline without reprovisioning from scratch. Keep each
+level's configuration in a separate temporary `CONFIG_FILE`; the example
+fragments are security blocks and must be merged with the full application
+configuration before selection.
+
 ## Stack profiles: `base` vs `extended`
 
 `STACK` selects which services launch, for both `make docker-up` and `make k3d-up`:
