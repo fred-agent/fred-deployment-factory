@@ -134,6 +134,12 @@ postgres-up: network-create env-setup
 			exit 1; \
 		fi
 
+mock-oidc-up: ## Start the opt-in local generic OIDC test provider
+	docker compose -f docker/docker-compose-mock-oidc.yml -p mock-oidc up -d
+
+mock-oidc-down: ## Stop the local generic OIDC test provider
+	docker compose -f docker/docker-compose-mock-oidc.yml -p mock-oidc down
+
 keycloak-generic-oidc: ## Opt in to generic OIDC token claims on the local Keycloak realm
 	STRICT="$(STRICT)" bash docker/keycloak/generic-oidc-profile.sh apply
 

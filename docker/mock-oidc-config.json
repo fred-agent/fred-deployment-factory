@@ -1,0 +1,47 @@
+{
+  "interactiveLogin": true,
+  "tokenCallbacks": [
+    {
+      "issuerId": "fred",
+      "tokenExpiry": 5400,
+      "requestMappings": [
+        {
+          "requestParam": "client_id",
+          "match": "agentic",
+          "claims": {
+            "aud": ["fred-api"],
+            "azp": "${clientId}",
+            "roles": ["service_agent", "delegation_caller"]
+          }
+        },
+        {
+          "requestParam": "client_id",
+          "match": "knowledge-flow",
+          "claims": {
+            "aud": ["fred-api"],
+            "azp": "${clientId}",
+            "roles": ["service_agent"]
+          }
+        },
+        {
+          "requestParam": "client_id",
+          "match": "control-plane",
+          "claims": {
+            "aud": ["fred-api"],
+            "azp": "${clientId}",
+            "roles": ["service_agent"]
+          }
+        },
+        {
+          "requestParam": "client_id",
+          "match": ".*",
+          "claims": {
+            "aud": ["fred-api"],
+            "azp": "${clientId}",
+            "preferred_username": "${subject}"
+          }
+        }
+      ]
+    }
+  ]
+}

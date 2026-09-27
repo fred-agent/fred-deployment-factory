@@ -1,0 +1,14 @@
+services:
+  mock-oidc:
+    image: ghcr.io/navikt/mock-oauth2-server:3.1.4
+    ports:
+      - "8090:8080"
+    environment:
+      JSON_CONFIG_PATH: /config/mock-oidc-config.json
+    volumes:
+      - ./mock-oidc-config.json:/config/mock-oidc-config.json:ro
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/isalive"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
