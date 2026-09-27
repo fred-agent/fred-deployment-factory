@@ -134,6 +134,12 @@ postgres-up: network-create env-setup
 			exit 1; \
 		fi
 
+keycloak-generic-oidc: ## Opt in to generic OIDC token claims on the local Keycloak realm
+	STRICT="$(STRICT)" bash docker/keycloak/generic-oidc-profile.sh apply
+
+keycloak-generic-oidc-revert: ## Restore the local Keycloak baseline claims and admin roles
+	bash docker/keycloak/generic-oidc-profile.sh revert
+
 keycloak-up: postgres-up
 	@echo "Launching Keycloak..."
 	$(DOCKER_COMPOSE_BASE)keycloak.yml -p keycloak up -d
