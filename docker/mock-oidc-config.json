@@ -9,36 +9,61 @@
           "requestParam": "client_id",
           "match": "agentic",
           "claims": {
-            "aud": ["fred-api"],
+            "aud": [
+              "fred-api"
+            ],
             "azp": "${clientId}",
-            "roles": ["service_agent", "delegation_caller"]
+            "roles": [
+              "service_agent",
+              "delegation_caller"
+            ]
           }
         },
         {
           "requestParam": "client_id",
           "match": "knowledge-flow",
           "claims": {
-            "aud": ["fred-api"],
+            "aud": [
+              "fred-api"
+            ],
             "azp": "${clientId}",
-            "roles": ["service_agent"]
+            "roles": [
+              "service_agent"
+            ]
           }
         },
         {
           "requestParam": "client_id",
           "match": "control-plane",
           "claims": {
-            "aud": ["fred-api"],
+            "aud": [
+              "fred-api"
+            ],
             "azp": "${clientId}",
-            "roles": ["service_agent"]
+            "roles": [
+              "service_agent"
+            ]
+          }
+        },
+        {
+          "requestParam": "subject",
+          "match": ".*",
+          "claims": {
+            "aud": [
+              "fred-api"
+            ],
+            "azp": "${clientId}",
+            "preferred_username": "${subject}"
           }
         },
         {
           "requestParam": "client_id",
           "match": ".*",
           "claims": {
-            "aud": ["fred-api"],
-            "azp": "${clientId}",
-            "preferred_username": "${subject}"
+            "aud": [
+              "fred-api"
+            ],
+            "azp": "${clientId}"
           }
         }
       ]
