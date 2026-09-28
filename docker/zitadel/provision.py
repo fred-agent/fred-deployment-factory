@@ -255,6 +255,7 @@ def main():
     for app, service in APPS.items():
         config_dir = root / "apps" / app / "config"
         config = yaml.safe_load((config_dir / "configuration_prod.yaml").read_text())
+        config["app"]["gcu_version"] = "v1"
         security = config["security"]
         security["user_directory"] = "local"
         security["user"].update(

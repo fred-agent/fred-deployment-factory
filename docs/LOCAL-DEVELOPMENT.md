@@ -417,7 +417,12 @@ walkthrough, use an explicitly reset/checkpointed test platform or have an
 existing Fred admin assign the role after the new person has authenticated.
 ZITADEL administrator status does not grant Fred platform administrator status.
 
-Check CGU acceptance for a new user when enabled, personal-space identity,
+The generated ZITADEL configs enable CGU version `v1` in all three backends.
+Restart Fred after regeneration; a new user must accept before entering the app.
+Previously accepted `v1` is retained. Root bootstrap is deployment-wide and is
+not reopened when changing providers.
+
+Check CGU acceptance for a new user, personal-space identity,
 local user lookup, the JWT self-test, document/agent delegation, and isolation
 between two users. The live checks are independent from Keycloak. Keep optional
 samples/evaluator runtimes in mind when selecting an agent.
