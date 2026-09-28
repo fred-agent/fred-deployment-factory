@@ -114,6 +114,23 @@ def main():
     token = (HERE / "state/operator.pat").read_text().strip()
     if not token:
         raise RuntimeError("Missing bootstrap operator PAT")
+    # Fred rejects tokens whose issued lifetime exceeds its admission ceiling.
+    settings = request("/admin/v1/settings/oidc", method="GET", token=token)["settings"]
+    if any(
+        settings.get(field) != "3600s"
+        for field in ("accessTokenLifetime", "idTokenLifetime")
+    ):
+        request(
+            "/admin/v1/settings/oidc",
+            {
+                "accessTokenLifetime": "3600s",
+                "idTokenLifetime": "3600s",
+                "refreshTokenIdleExpiration": settings["refreshTokenIdleExpiration"],
+                "refreshTokenExpiration": settings["refreshTokenExpiration"],
+            },
+            method="PUT",
+            token=token,
+        )
     state_file = HERE / "state/provision.json"
     state = json.loads(state_file.read_text()) if state_file.exists() else {}
 
