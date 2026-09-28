@@ -358,3 +358,82 @@ the template for custom values. Keycloak backend client secrets:
 - **Compose:** `KEYCLOAK_AGENTIC_CLIENT_SECRET`, `KEYCLOAK_KNOWLEDGE_FLOW_CLIENT_SECRET`,
   `KEYCLOAK_CONTROL_PLANE_CLIENT_SECRET` in `docker/.env.template`.
 - **k3d:** `auth.keycloak*ClientSecret` in `k3d/values.yaml`.
+
+## Real non-Keycloak provider: ZITADEL
+
+This opt-in profile runs ZITADEL v4.19.2, its Login UI, a private PostgreSQL and
+an HTTP/2 proxy on **http://localhost:8091**. It has its own Compose project and
+volumes; it neither resets Fred nor changes Keycloak. Compose configuration
+follows [ZITADEL's local deployment](https://zitadel.com/docs/self-hosting/deploy/compose).
+
+From deployment-factory:
+
+```bash
+make zitadel-configure SWIFT_SRC=../fred
+make zitadel-status
+```
+
+The first start downloads images. Local credentials are generated once in
+`docker/zitadel/.env` (ignored, owner-only). The bootstrap operator PAT and
+resumable provisioning state are also ignored under `docker/zitadel/state/`.
+Do not publish these files. The provider is bound to loopback and is a local
+HTTP development deployment, not a production configuration.
+
+Provisioning creates the Fred project, a public SPA using code + PKCE and JWT
+access tokens, and three machine users with client secrets. Only `agentic`
+holds `delegation_caller`; all three workloads hold `service_agent`. A
+[complement-token action](https://zitadel.com/docs/apis/actions/complement-token)
+projects roles from this specific project into Fred's flat `roles` claim.
+The project ID is the API audience requested through ZITADEL's project scope.
+M2M requests also explicitly request the assigned role scopes; requesting only
+the audience does not include the workload roles.
+People keep their provider-issued non-UUID IDs; Fred normalizes them.
+
+Complete schema-validated configs, the conversation policy catalog and a private
+`service-credentials.env` are generated under `/tmp/fred-idp-tests/zitadel/`.
+For manual launches, source the credentials in each backend terminal, select
+that directory's CONFIG_FILE, set FRED_LOCAL_DELEGATION_FILE empty and
+FRED_JWT_MAX_LIFETIME_SECONDS=5400; use the Fred identity-provider launch guide.
+Existing backend `.env` files still supply database, storage and model settings.
+The new secrets use ZITADEL-specific environment names and do not replace the
+Keycloak secrets.
+
+With the matching Fred checkout, VS Code task **IDP zitadel — launch all** handles
+preparation and all six applications. Run **Fred — kill all** before switching.
+Visit http://localhost:8091/ui/console and log in as
+`fred-admin@zitadel.localhost` (the generated file records the exact login).
+The provisioner creates this console administrator separately because initial
+machine bootstrapping does not create a human administrator. Display its initial
+login details locally; the first login may require a password change:
+
+```bash
+cat docker/zitadel/state/admin-login.json
+```
+
+Create test users in the console, then sign in to Fred in a private window.
+If Fred was already bootstrapped with another provider, its root admin marker
+is retained: a new ZITADEL identity cannot reuse bootstrap. For a fresh admin
+walkthrough, use an explicitly reset/checkpointed test platform or have an
+existing Fred admin assign the role after the new person has authenticated.
+ZITADEL administrator status does not grant Fred platform administrator status.
+
+Check CGU acceptance for a new user when enabled, personal-space identity,
+local user lookup, the JWT self-test, document/agent delegation, and isolation
+between two users. The live checks are independent from Keycloak. Keep optional
+samples/evaluator runtimes in mind when selecting an agent.
+
+```bash
+make zitadel-down  # preserves users and volumes; does not stop Fred
+```
+
+`docker-wipe` targets the usual Foundation stack, not the opt-in ZITADEL project.
+If deliberately wiping ZITADEL, also remove its ignored provisioning state before
+running configure again; retained IDs otherwise refer to deleted resources.
+
+Verification (2026-09-28): all four ZITADEL containers reached readiness;
+discovery and the console responded; the SPA authorization request with PKCE
+reached the real login page; all three workload JWT signatures, issuer,
+audience, expiration and assigned roles were verified using Fred's installed JWT
+library. All three generated configs passed their JSON schemas and Fred provider
+validation. Offline tests cover required claims and exclusive delegation roles.
+Browser login, CGU and a full delegated document conversation remain manual checks.
