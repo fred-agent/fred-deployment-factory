@@ -27,6 +27,17 @@ Optional — browser SSO callbacks to Keycloak on localhost:
 grep -q '127.0.0.1.*app-keycloak' /etc/hosts || echo "127.0.0.1 app-keycloak" | sudo tee -a /etc/hosts
 ```
 
+The Keycloak post-install ensures that browser access tokens include the `app`
+audience required by Fred's local C3 API profiles. This does not enable delegated
+execution. To repair an existing realm after updating this checkout, run:
+
+```bash
+KEYCLOAK_FORCE_RELOGIN=false bash docker/keycloak/keycloak-post-install.sh
+```
+
+Then sign out and sign in again to obtain a new token. Re-running the script
+updates the same audience mapper without creating duplicates.
+
 Pausing and resuming (a reboot, or closing the laptop for the day):
 
 ```bash

@@ -225,6 +225,26 @@ ensure_app_client() {
   printf '%s' "$uuid"
 }
 
+# Local C3 APIs require aud=app; azp=app identifies the login client only.
+ensure_app_audience() {
+  local uuid="$1"
+  local desired current mapper_id
+  desired='{"name":"fred-app-audience","protocol":"openid-connect","protocolMapper":"oidc-audience-mapper","consentRequired":false,"config":{"included.client.audience":"app","access.token.claim":"true","id.token.claim":"false"}}'
+  current="$(kc get "clients/${uuid}/protocol-mappers/models" -r "$KEYCLOAK_REALM" -c \
+    | jq -c '[.[] | select(.name == "fred-app-audience")]')"
+  [[ "$(jq length <<<"$current")" -le 1 ]] || die "duplicate fred-app-audience mappers"
+  mapper_id="$(jq -r '.[0].id // empty' <<<"$current")"
+  if [[ -z "$mapper_id" ]]; then
+    kc_http_request POST "/clients/${uuid}/protocol-mappers/models" "$desired" >/dev/null
+    mark_changed
+  elif ! jq -e --argjson desired "$desired" \
+    '.[0] | contains($desired)' <<<"$current" >/dev/null; then
+    kc_http_request PUT "/clients/${uuid}/protocol-mappers/models/${mapper_id}" \
+      "$(jq -c --arg id "$mapper_id" '. + {id: $id}' <<<"$desired")" >/dev/null
+    mark_changed
+  fi
+}
+
 ensure_service_client_confidential() {
   local client_id="$1"
   local desired_secret="$2"
@@ -475,6 +495,7 @@ kc config credentials \
 KEYCLOAK_ADMIN_HTTP_TOKEN="$(kc_http_admin_token)"
 
 app_client_uuid="$(ensure_app_client)"
+ensure_app_audience "$app_client_uuid"
 agentic_client_uuid="$(ensure_service_client_confidential agentic "$KEYCLOAK_AGENTIC_CLIENT_SECRET")"
 knowledge_flow_client_uuid="$(ensure_service_client_confidential knowledge-flow "$KEYCLOAK_KNOWLEDGE_FLOW_CLIENT_SECRET")"
 control_plane_client_uuid="$(ensure_service_client_confidential control-plane "$KEYCLOAK_CONTROL_PLANE_CLIENT_SECRET")"
