@@ -126,7 +126,9 @@ keycloak-post-install:
 
 postgres-up: network-create env-setup
 	@echo "Launching PostgreSQL..."
-	$(DOCKER_COMPOSE_BASE)postgres.yml -p postgres up -d --force-recreate
+	# Keep existing DB connections alive while rerunning the one-shot provisioning job.
+	$(DOCKER_COMPOSE_BASE)postgres.yml -p postgres up -d postgres
+	$(DOCKER_COMPOSE_BASE)postgres.yml -p postgres up -d --force-recreate --no-deps postgres-post-install-job
 	@echo "Waiting for PostgreSQL post-install job..."
 	@set -euo pipefail; \
 		rc="$$(docker wait app-postgres-post-install-job)"; \
