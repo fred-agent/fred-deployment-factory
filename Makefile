@@ -5,13 +5,11 @@ DOCKER_COMPOSE_BASE := docker compose -f docker/docker-compose-
 
 # `make docker-up` has exactly one mode: a fresh, empty deployment (empty
 # Keycloak realm — clients + service accounts only, no demo users, no demo
-# groups; empty OpenFGA store carrying only the Swift authorization model, no
+# groups; empty OpenFGA store whose model each Fred service publishes, no
 # tuples) bootstrapped via AUTHZ-07's root-admin endpoint
 # (`POST /bootstrap/platform-admin`) + declarative provisioning. There is no
 # fork and no demo-seeding knob — identity and role provisioning are owned by
 # fred/control-plane-backend, not this repo.
-OPENFGA_MODEL_FILE ?= $(CURDIR)/docker/openfga/openfga-model.json
-export OPENFGA_MODEL_FILE
 
 # STACK selects which services are launched (Docker Compose and Helm):
 #   base (default) → minimal stack: drops ClickHouse, Langfuse (+ its Redis),
@@ -199,7 +197,6 @@ preflight-check:
 	bash bin/fred-preflight.sh
 
 docker-up: $(DOCKER_UP_SERVICES) ## Launch the Docker stack (empty realm + empty OpenFGA store; bootstrap the first platform_admin via POST /bootstrap/platform-admin)
-	@echo "OpenFGA model file: $(OPENFGA_MODEL_FILE)"
 	@echo "Empty realm + empty OpenFGA store. Bootstrap the first platform_admin via"
 	@echo "POST /bootstrap/platform-admin (AUTHZ-07) — see README."
 	$(MAKE) preflight-check
@@ -297,6 +294,15 @@ docker-destroy: all-down ## Stop Docker stack, delete containers/volumes/network
 	$(DOCKER_COMPOSE_BASE)postgres.yml -p postgres down -v --rmi all
 	docker network rm fred-shared-network || true
 	@echo -e "\n--- destroy COMPLETE ---"
+
+keycloak-token-short: ## Local Docker: use browser 60s and agentic M2M 120s access tokens
+	bash local-testing/scripts/keycloak-token-lifetime.sh short
+
+keycloak-token-normal: ## Local Docker: set browser and agentic M2M access tokens to 300s
+	bash local-testing/scripts/keycloak-token-lifetime.sh normal
+
+keycloak-token-status: ## Local Docker: show browser and agentic M2M access token lifetimes
+	bash local-testing/scripts/keycloak-token-lifetime.sh status
 
 ##@ k3d
 k3d-create: ## Create a local k3d cluster (set K3D_USE_CILIUM=true for air-gap/Cilium policies)
@@ -578,57 +584,11 @@ checkpoint-delete: ## Delete a named checkpoint (NAME=<name> required)
 	@echo "Checkpoint '$(NAME)' deleted."
 
 ##@ Validation
-# Shared Fred libraries live on the local `fred` checkout, expected as a sibling
-# directory of this repo (../fred). Override if yours lives elsewhere. Only
-# fred-core is needed here: sync-openfga-model / check-openfga-model-sync read
-# its canonical schema.fga.json. The auth/isolation validation harness itself
-# (fred-sdk/fred-runtime, pytest scenarios) has moved to `fred`'s own
-# `validation/` - see `make -C ../fred validation-report`.
-SWIFT_SRC       ?= ../fred
-FRED_CORE_SRC   ?= $(SWIFT_SRC)/libs/fred-core
-
-# Fails fast with a precise, actionable message instead of pip's generic
-# "not a valid editable requirement" (which doesn't say WHICH path is wrong or
-# how to fix it). Checks for pyproject.toml specifically, since a directory can
-# exist but not be a valid Python project (e.g. an empty/wrong checkout).
-define require_swift_lib
-	@test -f "$(1)/pyproject.toml" || { \
-	  echo "✗ Not a valid Python project: $(1)/pyproject.toml not found."; \
-	  echo "  SWIFT_SRC is currently: $(SWIFT_SRC)"; \
-	  echo "  Fix: pass the path to your 'fred' checkout, e.g.:"; \
-	  echo "    make $@ SWIFT_SRC=/path/to/fred"; \
-	  exit 1; \
-	}
-endef
-
-check-swift-src: ## Verify SWIFT_SRC points at a real fred checkout with fred-core (needed by sync-openfga-model / check-openfga-model-sync)
-	$(call require_swift_lib,$(FRED_CORE_SRC))
-	@echo "✓ SWIFT_SRC resolves to a valid fred checkout ($(SWIFT_SRC))"
-
-sync-openfga-model: check-swift-src ## Regenerate BOTH Swift OpenFGA model copies (docker-compose + k3d) from the swift fred-core schema (manual - run after any fred-core rebac/schema.fga change)
-	@python3 -m json.tool $(FRED_CORE_SRC)/fred_core/security/rebac/schema.fga.json docker/openfga/openfga-model.json
-	@python3 -m json.tool $(FRED_CORE_SRC)/fred_core/security/rebac/schema.fga.json k3d/files/openfga/openfga-model.json
-	@echo "✓ synced docker/openfga/openfga-model.json and k3d/files/openfga/openfga-model.json"
-	@echo "  from $(FRED_CORE_SRC)/fred_core/security/rebac/schema.fga.json"
-	@echo "  Re-run 'make openfga-post-install' (or 'make docker-up') to push the updated model to the running store."
-
-check-openfga-model-sync: check-swift-src ## Fail fast if either Swift OpenFGA model copy has drifted from the fred-core canonical schema (normalized JSON compare)
-	@canonical="$$(python3 -c "import json,sys; print(json.dumps(json.load(open('$(FRED_CORE_SRC)/fred_core/security/rebac/schema.fga.json')), sort_keys=True))")"; \
-	for copy in docker/openfga/openfga-model.json k3d/files/openfga/openfga-model.json; do \
-	  actual="$$(python3 -c "import json; print(json.dumps(json.load(open('$$copy')), sort_keys=True))")"; \
-	  if [ "$$canonical" != "$$actual" ]; then \
-	    echo "✗ $$copy has drifted from $(FRED_CORE_SRC)/fred_core/security/rebac/schema.fga.json"; \
-	    echo "  Fix: make sync-openfga-model SWIFT_SRC=$(SWIFT_SRC)"; \
-	    exit 1; \
-	  fi; \
-	done
-	@echo "✓ docker and k3d Swift OpenFGA models match the fred-core canonical schema"
-
 # The auth/isolation validation harness (pytest scenarios, black-box
 # release gate) lives in `fred`'s own `validation/` now - run it there:
 #   cd ../fred && make validation-report
-# This repo only ships infrastructure; it keeps just the OpenFGA schema-sync
-# guards above and the pure-infrastructure regression guard below.
+# This repo only ships infrastructure; it keeps just the pure-infrastructure
+# regression guard below.
 
 check-pure-infrastructure: ## Offline guard: fail if a tracked artifact carries business/demo data, a dead OpenFGA seed, or dangling local validation/ wiring
 	@echo "▶ Keycloak realm templates must ship zero users/groups and only the app:service_agent client role"
@@ -657,4 +617,4 @@ check-pure-infrastructure: ## Offline guard: fail if a tracked artifact carries 
 	@echo "✓ no local validation/ harness wiring left in the Makefile"
 	@echo "✓ check-pure-infrastructure passed"
 
-.PHONY: help network-create env-setup keycloak-post-install postgres-up keycloak-up seaweedfs-up opensearch-up clickhouse-up langfuse-up prometheus-up grafana-up openfga-post-install openfga-up temporal-up preflight-check docker-up docker-start docker-stop docker-down all-down docker-wipe docker-destroy k3d-create k3d-up k3d-deploy k3d-restart k3d-redeploy k3d-logs k3d-down k3d-uninstall k3d-delete k3d-wipe k3d-status k3d-airgap-on k3d-airgap-off k3d-airgap-status checkpoint-save checkpoint-restore docker-restart-from-checkpoint checkpoint-list checkpoint-delete check-swift-src sync-openfga-model check-openfga-model-sync check-pure-infrastructure
+.PHONY: help network-create env-setup keycloak-post-install postgres-up keycloak-up seaweedfs-up opensearch-up clickhouse-up langfuse-up prometheus-up grafana-up openfga-post-install openfga-up temporal-up preflight-check docker-up docker-start docker-stop docker-down all-down docker-wipe docker-destroy k3d-create k3d-up k3d-deploy k3d-restart k3d-redeploy k3d-logs k3d-down k3d-uninstall k3d-delete k3d-wipe k3d-status k3d-airgap-on k3d-airgap-off k3d-airgap-status checkpoint-save checkpoint-restore docker-restart-from-checkpoint checkpoint-list checkpoint-delete check-pure-infrastructure keycloak-token-short keycloak-token-normal keycloak-token-status

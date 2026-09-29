@@ -80,6 +80,9 @@ controlPlane:
       temporalWorkflowIdPrefix: control-plane
       temporalConnectTimeoutSeconds: 5
     security:
+      # Strict issuer and audience validation; browser tokens carry the app audience
+      # through the provisioned audience mapper.
+      profile: c3
       m2m:
         enabled: true
       user:
@@ -91,6 +94,19 @@ controlPlane:
         - https://control-plane.playground.fredlab.dev
       rebac:
         enabled: true
+        # Unset, each pod publishes the model its image carries and reads it. To hold
+        # every pod on one model, pin its id and set syncSchemaOnInit: false.
+        syncSchemaOnInit: null
+        authorizationModelId: null
+      # acceptDelegatedCalls (incoming): a workload whose token carries the delegation
+      # caller role may act for a person, and a request is refused while its
+      # subject's account is suspended. serviceAccountsOnly trusts only a service
+      # account's token as a delegation caller (Keycloak-specific).
+      # actForPeople stays off: this service calls no other one for a person.
+      delegation:
+        actForPeople: false
+        acceptDelegatedCalls: true
+        serviceAccountsOnly: true
     opensearch:
       host: http://opensearch:9200
       secure: false
@@ -196,13 +212,28 @@ fredAgents:
   config:
     appBaseUrl: /fred/agents/v2
     logLevel: info
-    openaiCompat: true
+    # The c3 profile refuses to start with the OpenAI-compatible surface on.
+    openaiCompat: false
     keycloakIssuerUrl: https://keycloak.playground.fredlab.dev/realms/app
     keycloakClientId: agentic
     userClientId: app
     authorizedOrigins:
       - https://studio.playground.fredlab.dev
     openfgaUrl: http://openfga:8080
+    security:
+      # Strict issuer and audience validation; browser tokens carry the app audience
+      # through the provisioned audience mapper.
+      profile: c3
+      rebac:
+        # Unset, each pod publishes the model its image carries and reads it. To hold
+        # every pod on one model, pin its id and set syncSchemaOnInit: false.
+        syncSchemaOnInit: null
+        authorizationModelId: null
+      # Person runs use a workload bearer and grant; ordinary service callers
+      # retain their own bearer. Incoming delegation requires both directions.
+      delegation:
+        actForPeople: true
+        acceptDelegatedCalls: false
     openfgaStoreName: fred
     knowledgeFlowUrl: http://knowledge-flow-backend:8080/knowledge-flow/v1
     controlPlaneUrl: http://control-plane-backend:8080/control-plane/v1
@@ -288,6 +319,24 @@ knowledgeFlow:
     authorizedOrigins:
       - https://studio.playground.fredlab.dev
     openfgaUrl: http://openfga:8080
+    security:
+      # Strict issuer and audience validation; browser tokens carry the app audience
+      # through the provisioned audience mapper.
+      profile: c3
+      rebac:
+        # Unset, each pod publishes the model its image carries and reads it. To hold
+        # every pod on one model, pin its id and set syncSchemaOnInit: false.
+        syncSchemaOnInit: null
+        authorizationModelId: null
+      # acceptDelegatedCalls (incoming): a workload whose token carries the delegation
+      # caller role may act for a person, and a request is refused while its
+      # subject's account is suspended. serviceAccountsOnly trusts only a service
+      # account's token as a delegation caller (Keycloak-specific).
+      # actForPeople stays off: this service calls no other one for a person.
+      delegation:
+        actForPeople: false
+        acceptDelegatedCalls: true
+        serviceAccountsOnly: true
     openfgaStoreName: fred
     temporalAddress: temporal:7233
     temporalNamespace: default

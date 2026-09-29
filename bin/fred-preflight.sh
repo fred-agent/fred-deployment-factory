@@ -8,14 +8,14 @@ set -euo pipefail
 # It checks:
 # 1) Keycloak realm/clients, app role definitions, groups scope mapper,
 #    service-account rights
-# 2) OpenFGA store presence + authorization-model shape (AUTHZ-05 target
-#    relations present, no platform-to-team escalation)
+# 2) OpenFGA store presence (each Fred service publishes and validates its own
+#    authorization model at startup)
 # 3) Langfuse endpoints + S3 bucket diagnostics
 #
 # `make docker-up` always produces an empty realm and an empty OpenFGA store
 # (AUTHZ-07): no demo users, no demo teams, no OpenFGA tuples. This script
 # therefore validates INFRASTRUCTURE shape only (clients, role definitions,
-# service accounts, the OpenFGA model) - it makes no assertion about specific
+# service accounts, the OpenFGA store) - it makes no assertion about specific
 # users or team memberships, because none exist at docker-up time. The first
 # platform_admin is created afterward via POST /bootstrap/platform-admin
 # (control-plane, fred monorepo); any further identity/team provisioning is a
@@ -579,45 +579,6 @@ else
   mark_critical "Cannot reach OpenFGA API at ${FGA}"
 fi
 
-MODEL_SHAPE_GAPS=0
-if [[ -n "${STORE_ID}" ]]; then
-  step "Validate authorization-model shape"
-  info "Checking the LIVE model actually pushed to OpenFGA, not just a source file"
-  if latest_models_payload="$(curl -fsS -H "Authorization: Bearer ${OPENFGA_TOKEN}" "${FGA}/stores/${STORE_ID}/authorization-models?page_size=1" 2>/dev/null)"; then
-    current_model="$(jq -c '.authorization_models[0] // empty' <<<"$latest_models_payload")"
-    if [[ -z "$current_model" ]]; then
-      ((MODEL_SHAPE_GAPS+=1))
-      mark_critical "OpenFGA store '${OPENFGA_STORE_NAME}' has no authorization model at all"
-    else
-      org_relations="$(jq -r '.type_definitions[]? | select(.type=="organization") | .relations // {} | keys[]?' <<<"$current_model" | sort -u)"
-      team_relations="$(jq -r '.type_definitions[]? | select(.type=="team") | .relations // {} | keys[]?' <<<"$current_model" | sort -u)"
-
-      if contains_line "platform_admin" "$org_relations" && contains_line "platform_observer" "$org_relations"; then
-        ok "organization type defines platform_admin and platform_observer"
-      else
-        ((MODEL_SHAPE_GAPS+=1))
-        mark_critical "organization type is missing platform_admin/platform_observer"
-      fi
-
-      missing_swift_relations=""
-      for rel in team_member team_editor team_admin team_analyst; do
-        if ! contains_line "$rel" "$team_relations"; then
-          missing_swift_relations+="${rel}"$'\n'
-        fi
-      done
-      if [[ -z "$missing_swift_relations" ]]; then
-        ok "team type defines Swift target relations team_member/team_editor/team_admin/team_analyst"
-      else
-        ((MODEL_SHAPE_GAPS+=1))
-        mark_critical "team type is missing Swift target relations: $(sorted_lines_to_csv "$missing_swift_relations")"
-      fi
-    fi
-  else
-    ((MODEL_SHAPE_GAPS+=1))
-    mark_critical "Cannot read authorization models from OpenFGA store '${OPENFGA_STORE_NAME}'"
-  fi
-fi
-
 TOTAL_TUPLES=-1
 if [[ -n "${ALL_TUPLES}" ]]; then
   step "Inspect OpenFGA tuples"
@@ -759,7 +720,6 @@ elif [[ "${OPENFGA_STATUS}" == "store-missing" ]]; then
 else
   info "OpenFGA store '${OPENFGA_STORE_NAME}': not reachable (${FGA})"
 fi
-info "Authorization-model shape gaps: ${MODEL_SHAPE_GAPS}"
 info "Temporal UI endpoint: ${TEMPORAL_UI_URL} (HTTP ${TEMPORAL_UI_HTTP_CODE})"
 if langfuse_expected; then
   info "Langfuse UI endpoint: ${LANGFUSE_UI_URL} (HTTP ${LANGFUSE_UI_HTTP_CODE})"

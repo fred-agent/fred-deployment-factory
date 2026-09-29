@@ -123,10 +123,7 @@ bash docker/openfga/openfga-post-install.sh
 
 The OpenFGA post-install script is idempotent and enforces:
 - store `OPENFGA_STORE_NAME` (default: `fred`)
-- authorization model from `docker/openfga/openfga-model.json` - kept in sync with
-  `fred-core`'s `schema.fga.json` by `make sync-openfga-model` / `make
-  check-openfga-model-sync`, which compare normalized JSON (`json.dumps(...,
-  sort_keys=True)`), not raw file bytes.
+- no authorization model: each Fred service publishes its own model to the store at startup.
 - an **empty store**: zero tuples. There is no demo identity config left in this repo to seed
   from - `fred-deployment-factory` is pure infrastructure now. The very first `platform_admin`
   goes through `POST /bootstrap/platform-admin` (AUTHZ-07) - see the root README.

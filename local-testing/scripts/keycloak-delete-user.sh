@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Simulates a user swift has never known: removes the Keycloak account and every
-# OpenFGA tuple that references them (as subject, or via their personal team object).
+# Removes the Keycloak account and every OpenFGA tuple that references the person
+# (as subject, or via their personal team object) except a suspension, which Fred
+# keeps so the person stays refused.
 # Usage: ./keycloak-delete-user.sh <username>
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
@@ -25,7 +26,7 @@ fi
 
 all_tuples=$(fga_read_all_tuples "$store_id")
 deleted_tuples=$(jq -c --arg uid "$user_id" \
-  '[.[] | select(.user == "user:" + $uid or .object == "team:personal-" + $uid)]' \
+  '[.[] | select((.user == "user:" + $uid or .object == "team:personal-" + $uid) and .relation != "suspended")]' \
   <<<"$all_tuples")
 
 deleted_count=$(jq 'length' <<<"$deleted_tuples")

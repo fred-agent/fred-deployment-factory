@@ -28,10 +28,8 @@ kc_user_id_by_username() {
 }
 
 # Verify SWIFT_SRC points at a real `fred` checkout containing a given
-# relative path, mirroring the Makefile's own `require_swift_lib` macro
-# (`Makefile:529`) — same env var name, same message shape — for scripts here
-# that read a file out of a sibling `fred` checkout instead of checking
-# fred-core is a valid Python project. Assumes the `fred` and
+# relative path, for scripts here that read a file out of a sibling `fred`
+# checkout. Assumes the `fred` and
 # `fred-deployment-factory` checkouts are siblings under the same parent
 # directory by default (override with SWIFT_SRC=/path/to/fred).
 # Usage: require_swift_path "$SWIFT_SRC" "apps/.../users.json" "$0"

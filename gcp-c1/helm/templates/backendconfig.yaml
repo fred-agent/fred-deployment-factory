@@ -49,6 +49,11 @@ metadata:
   labels:
     {{- include "fredlab-infra.labels" . | nindent 4 }}
 spec:
+  {{- if .Values.fredFrontend.backendConfig.securityPolicyName }}
+  # Cloud Armor policy created by bin/fredlab-gcp-delegation-edge-prereqs.sh.
+  securityPolicy:
+    name: {{ .Values.fredFrontend.backendConfig.securityPolicyName | quote }}
+  {{- end }}
   {{- if .Values.fredFrontend.backendConfig.timeoutSec }}
   # Backend request timeout for the L7 LB. The default is 30s, which severs long
   # SSE chat streams mid-response; raise it so agent answers can stream to completion.

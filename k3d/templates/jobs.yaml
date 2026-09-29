@@ -125,8 +125,6 @@ spec:
           env:
             - name: OPENFGA_URL
               value: http://openfga:9080
-            - name: OPENFGA_MODEL_FILE
-              value: /opt/openfga/openfga-model.json
           command:
             - /bin/sh
             - -ec
@@ -135,16 +133,11 @@ spec:
           volumeMounts:
             - name: scripts
               mountPath: /scripts
-            - name: openfga-config
-              mountPath: /opt/openfga
       volumes:
         - name: scripts
           configMap:
             name: fred-scripts
             defaultMode: 0755
-        - name: openfga-config
-          configMap:
-            name: fred-openfga-config
 {{- if eq (include "fred-stack.clickhouseEnabled" .) "true" }}
 ---
 apiVersion: batch/v1

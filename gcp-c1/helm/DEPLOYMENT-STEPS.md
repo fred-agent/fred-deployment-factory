@@ -655,6 +655,105 @@ embeddings end to end.
 bin/fredlab-deploy.sh frontend start 0.2
 ```
 
+## 16. Delegated Agent Runs
+
+Both charts switch delegation on, one direction per service: fred-agents sets
+`actForPeople` and calls the control plane and Knowledge Flow with its own `agentic`
+token plus a grant naming the person; the control plane and Knowledge Flow set
+`acceptDelegatedCalls` and trust that call because the token carries the
+`delegation_caller` role of the `fred-delegation` client. `values-fredlab.yaml` pins
+Fred v3.0.0, the first release with delegated execution.
+
+`fred`'s `docs/swift/ops/releases/v3.0.0/migration.md` is the upgrade guide from
+v2.2.3, including the delegation activation, verification and rollback procedure;
+releases between the previously pinned v2.1.34 and v2.2.3 ship no guide, so review
+their changes before upgrading. On gcp-c1 it runs as:
+
+1. Record the current image tags and the OpenFGA model id, so a rollback can return
+   to them.
+2. Create the edge policy in preview, then set
+   `fredFrontend.backendConfig.securityPolicyName: fredlab-delegation-edge` in
+   `gcp-c1/helm/fredlab-secrets.values.yaml`, the values file
+   `bin/fredlab-infra-deploy.sh` passes:
+   ```bash
+   bin/fredlab-gcp-delegation-edge-prereqs.sh
+   ```
+3. Upgrade the infrastructure; the frontend BackendConfig attaches the policy:
+   ```bash
+   bin/fredlab-infra-deploy.sh
+   ```
+4. Stop admitting new agent runs and ingestion (announce a maintenance window), then
+   let active work finish or cancel it. Old and new versions must not serve work
+   together: an older receiver treats the `agentic` token as a service identity, and
+   the new control-plane migration drops a table older Knowledge Flow workers write.
+5. Run the control-plane and Knowledge Flow migrations with the matching image.
+   Deployed without `-fast`, the control-plane step also runs the provision job,
+   which creates the `fred-delegation` client and its `delegation_caller` role,
+   grants the role to the `agentic` service account, and gives browser logins the
+   `app` audience:
+   ```bash
+   bin/fredlab-deploy.sh control-plane migrate <tag>
+   bin/fredlab-deploy.sh knowledge-flow migrate <tag>
+   ```
+6. Push the pinned tags, then sync. Services start in any order:
+   ```bash
+   bin/fredlab-argocd-sync.sh
+   ```
+7. Resume admission only after checking that a person's agent run succeeds, that a
+   suspended person is refused with 403 `account_suspended`, and that a long run
+   renews its workload token.
+8. Enforce the edge rule once its preview logs show no hits on real traffic:
+   ```bash
+   bin/fredlab-gcp-delegation-edge-prereqs.sh --enforce
+   ```
+
+To roll back, switch delegation off before selecting older images or an older model;
+switching it off also stops account-status enforcement. Older images also refuse the
+catalog's `delegated` tool modes, so selecting them means reverting this whole
+configuration change. Removing the `delegation_caller` grant is a Keycloak change
+outside Helm; the provision job grants it again on every deploy without `-fast`.
+
+The backends run the strict `c3` profile: each accepts only tokens addressed to its
+login client `app`; the control plane and Knowledge Flow also accept a delegation
+caller's token addressed to `fred-delegation`. Service accounts receive the `app`
+audience through their `app` roles. The profile also turns off fred-agents'
+OpenAI-compatible surface and direct template execution. The receivers set
+`serviceAccountsOnly`, so only a token Keycloak issued to a client's own service
+account is trusted as a delegation caller; the `agentic` token must carry its
+`client_id` claim, which Keycloak adds to client-credentials tokens.
+
+With delegation on, every authenticated request checks the subject's account status
+in OpenFGA; while OpenFGA is unreachable, requests return 503
+`account_status_unavailable`, login and profile included. OpenFGA runs two replicas,
+each capped to half of one replica's datastore connections. Each replica's init
+container runs the datastore migration; when both start together, the one that
+loses that race retries. Remove a person through Fred's `DELETE /users/{id}`, which suspends
+them before deleting the Keycloak account; deleting only in Keycloak leaves runs
+acting for them.
+
+gcp-c1 runs delegated calls over plain in-cluster HTTP: fred-agents to the receivers
+and every service to OpenFGA, in one namespace without NetworkPolicies. This shared
+playground is exempt from Fred's protected-transport requirement; an instance holding
+real data needs in-cluster encryption (service-mesh mTLS, or encrypted node traffic
+plus NetworkPolicies) before delegation is switched on, because a captured `agentic`
+token and a grant act for any person until the token expires.
+
+Ordinary service identities without the delegation caller role retain their own
+bearer, including evaluation workers. Do not assign the delegation caller role to
+those identities. Authenticated tool endpoints use `delegated` mode; the runtime
+selects a workload bearer and grant for person runs, or the caller's own bearer for
+service-identity runs.
+
+Attended ReAct and DeepAgent execution belongs to one HTTP response. Completion,
+human pause, detected disconnect or cancellation ends its local authority. A new
+request receives fresh admission; there is no reconnect affinity requirement.
+Account status refusals stop the run, including an `account_status_unavailable`
+response. With outgoing delegation disabled, parent and child calls use the current
+person token when the runtime receives an update.
+
+Workload tokens renew during active delegated runs. After rotating the workload
+secret, restart participating runtimes so they use the updated credential.
+
 ## Troubleshooting
 
 ### Helm Command Run From The Wrong Directory
