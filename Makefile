@@ -448,6 +448,11 @@ k3d-up: k3d-create ## Deploy the full stack into k3d with Helm
 	fi; \
 	run_step "Validate Helm chart $(HELM_CHART_DIR)" \
 	  helm lint "$(HELM_CHART_DIR)"; \
+		if helm upgrade --help | grep -q -- "--rollback-on-failure"; then \
+		  rollback_flag="--rollback-on-failure"; \
+		else \
+		  rollback_flag="--atomic"; \
+		fi; \
 		step "Deploy Helm release '$(HELM_RELEASE)' into namespace '$(K3D_NAMESPACE)'"; \
 		helm upgrade --install "$(HELM_RELEASE)" "$(HELM_CHART_DIR)" \
 		  --namespace "$(K3D_NAMESPACE)" \
@@ -455,7 +460,7 @@ k3d-up: k3d-create ## Deploy the full stack into k3d with Helm
 		  --set stack=$(STACK) \
 		  --wait \
 		  --wait-for-jobs \
-		  --rollback-on-failure \
+		  "$$rollback_flag" \
 		  --history-max "$(HELM_HISTORY_MAX)" \
 		  --timeout "$(HELM_TIMEOUT)" & \
 		helm_pid=$$!; \
