@@ -733,6 +733,17 @@
     "fullScopeAllowed" : true,
     "nodeReRegistrationTimeout" : -1,
     "protocolMappers" : [ {
+      "id" : "5b1f3c2e-7a4d-4e8b-9c61-2f0d8a7e4b13",
+      "name" : "fred-app-audience",
+      "protocol" : "openid-connect",
+      "protocolMapper" : "oidc-audience-mapper",
+      "consentRequired" : false,
+      "config" : {
+        "included.client.audience" : "app",
+        "access.token.claim" : "true",
+        "id.token.claim" : "false"
+      }
+    }, {
       "id" : "c9c6a953-cb45-4d2b-95f6-e743ee405cdc",
       "name" : "user-client-role",
       "protocol" : "openid-connect",

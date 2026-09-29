@@ -7,12 +7,18 @@ can run on just ChromaDB + SQLite + the local filesystem; this repo gives the fu
 experience (real Postgres, Keycloak, OpenFGA, OpenSearch, Temporal, plus optional
 Prometheus / Grafana / ClickHouse / Langfuse).
 
-Two backends, same Make interface: **Docker Compose** (default, simplest) and **k3d** (local
-Kubernetes). For the raw Compose internals (shared network, `.env`, per-service files) see
+Two ways to run it:
+
+- **Docker Compose** (default, simplest). The infrastructure runs in containers and the Fred
+  apps run on your machine (`make run` in `fred`). Start at "Quick start" below.
+- **k3d**. The infrastructure and the Fred apps all run in a local Kubernetes cluster, with
+  the production Helm chart. Go straight to
+  ["k3d: the full stack in Kubernetes"](#k3d-the-full-stack-in-kubernetes).
+
+For the raw Compose internals (shared network, `.env`, per-service files) see
 [`../docker/README.md`](../docker/README.md).
 
-**Prerequisites:** Docker, Docker Compose (`docker compose`), `bash`. (k3d path also needs
-`k3d`, `kubectl`, `helm`.)
+**Prerequisites (Compose):** Docker, Docker Compose (`docker compose`), `bash`.
 
 ## Quick start (Docker Compose)
 
@@ -268,25 +274,75 @@ check the pytest suite in step 6 cannot do for you.
 For Helm this maps to the chart value `stack` (`--set stack=<profile>`); extended-only
 components deploy only when `stack=extended` **and** their own `enabled` flag is set.
 
-## k3d + Helm stack
+## k3d: the full stack in Kubernetes
 
-A local Kubernetes path: a vanilla `k3d` cluster + the `k3d` chart (covers the
-structural stack + Prometheus + Grafana + ClickHouse; Langfuse stays Compose-only). Optional
-Cilium (`K3D_USE_CILIUM=true`) only for `CiliumNetworkPolicy` / air-gap flows.
+The infrastructure **and** the four Fred apps run in a local k3d cluster, deployed with
+Fred's production Helm chart. Use this mode to work against a representative Kubernetes
+setup, e.g. to deploy other apps or plugins next to Fred. It is independent of the Docker
+Compose stack: don't run both at once, because they use the same host ports.
+
+**Prerequisites:** Docker, [`k3d`](https://k3d.io)
+(`curl -s https://raw.githubusercontent.com/k3d-io/k3d/main/install.sh | bash`), `kubectl`,
+`helm` (3 or 4), and the `fred` monorepo checked out next to this repo (`../fred`).
+
+**1. Make `keycloak` resolve to your machine** (once). The browser is sent to
+`http://keycloak:8080` to log in, the same address the pods use inside the cluster:
 
 ```bash
-make k3d-up            # create cluster 'fred', install the 'fred-stack' release into namespace 'fred'
-make k3d-wipe          # full reset (down + delete)
+grep -qw keycloak /etc/hosts || echo "127.0.0.1 keycloak" | sudo tee -a /etc/hosts
 ```
 
-Host ports (override with `K3D_HOST_PORT_*` if they clash with the Compose stack): Postgres
-`:5432`, Keycloak `:8080`, SeaweedFS S3 `:8333`, OpenSearch `:9200`, OpenFGA HTTP `:9080` /
-gRPC `:9081`, Temporal gRPC `:7233` / UI `:8233`, Prometheus `:9090`, Grafana `:3002`,
-ClickHouse `:8123`. `make k3d-up` prefetches images, retries transient pull failures, and uses
-`helm upgrade --install --rollback-on-failure`, so rerunning it converges cleanly.
+**2. Infrastructure** (this repo): creates the cluster `fred` and installs the release
+`fred-stack` into the namespace `fred`:
 
-Tear down: `make k3d-down` (uninstall release) · `make k3d-delete` (delete cluster) ·
-`make k3d-wipe` (both).
+```bash
+make k3d-up
+```
+
+**3. Fred apps** (in `../fred`):
+
+```bash
+make setup-env      # once: writes apps/*/config/.env, prompts for your model API key
+make k3d-deploy     # builds the 4 images, imports them into k3d, installs the release fred-app
+```
+
+**4. First login.** Register your own account at <http://keycloak:8080/realms/app/account>
+→ **Register**. Fred never creates Keycloak accounts itself. Then, still in `../fred`:
+
+```bash
+make k3d-bootstrap-local BOOTSTRAP_USER=<you> BOOTSTRAP_PASSWORD=<pw>
+```
+
+This makes you the platform's `platform_admin` and turns every capability (tools, agent
+templates) on.
+
+**5. Open Fred** at <http://localhost:8088>.
+
+| URL | What |
+| --- | --- |
+| <http://localhost:8088> | Fred: the frontend and every app API, through the Traefik ingress |
+| <http://keycloak:8080> | Keycloak: login, registration, admin console |
+| <http://localhost:8233> | Temporal UI |
+| <http://localhost:5601> | OpenSearch Dashboards |
+
+Other infrastructure host ports, for tools running on your machine: Postgres `:5432`,
+SeaweedFS S3 `:8333`, OpenSearch `:9200`, OpenFGA HTTP `:9080` / gRPC `:9081`, Temporal
+gRPC `:7233`. With `STACK=extended`, you also get Prometheus `:9090`, Grafana `:3002` and
+ClickHouse `:8123`. Override any of them with `K3D_HOST_PORT_*`.
+
+**Day to day** (in `../fred`):
+- `make k3d-turbo-<app>` rebuilds one app and restarts it, where `<app>` is `fred-agents`,
+  `kf`, `frontend` or `cp`.
+- `make k3d-deploy-only` applies a values change.
+- `make k3d-status` shows the pods.
+
+**Tear down** (this repo):
+- `make k3d-down` uninstalls the infrastructure release.
+- `make k3d-delete` deletes the cluster.
+- `make k3d-wipe` does both; use it to restart from scratch.
+
+`make k3d-up` and `make k3d-deploy` are both safe to rerun: they converge. Optional Cilium
+(`K3D_USE_CILIUM=true`) is only needed for `CiliumNetworkPolicy` / air-gap flows.
 
 ## What `docker-up` / `k3d-up` provisions
 
@@ -325,4 +381,5 @@ the template for custom values. Keycloak backend client secrets:
 
 - **Compose:** `KEYCLOAK_AGENTIC_CLIENT_SECRET`, `KEYCLOAK_KNOWLEDGE_FLOW_CLIENT_SECRET`,
   `KEYCLOAK_CONTROL_PLANE_CLIENT_SECRET` in `docker/.env.template`.
-- **k3d:** `auth.keycloak*ClientSecret` in `k3d/values.yaml`.
+- **k3d:** `auth.keycloak*ClientSecret` in `k3d/values.yaml`. They must match the
+  fred chart's `deploy/local/k3d/values-local.yaml`, which uses the same local default.
