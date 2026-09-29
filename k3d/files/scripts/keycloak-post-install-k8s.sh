@@ -257,6 +257,28 @@ ensure_user_client_role() {
   mark_changed
 }
 
+# Receivers trust a workload that holds this client's caller role. The client issues
+# no tokens; Keycloak adds it to the audience of every holder's tokens.
+ensure_delegation_client() {
+  local payload
+
+  if [[ -z "$(client_uuid fred-delegation)" ]]; then
+    payload="$(jq -nc '{
+      clientId: "fred-delegation",
+      protocol: "openid-connect",
+      enabled: true,
+      publicClient: false,
+      serviceAccountsEnabled: false,
+      standardFlowEnabled: false,
+      implicitFlowEnabled: false,
+      directAccessGrantsEnabled: false
+    }')"
+    kc_http_post_json "/clients" "$payload"
+    mark_changed
+  fi
+  ensure_client_role fred-delegation delegation_caller "workload that may speak for a person"
+}
+
 uri_encode() {
   local raw="$1"
   jq -rn --arg v "$raw" '$v|@uri'
@@ -402,6 +424,10 @@ ensure_user_client_role "$control_plane_service_user" realm-management manage-us
 ensure_user_client_role "$agentic_service_user" app service_agent
 ensure_user_client_role "$knowledge_flow_service_user" app service_agent
 ensure_user_client_role "$control_plane_service_user" app service_agent
+
+# fred-agents speaks for a person on every receiver.
+ensure_delegation_client
+ensure_user_client_role "$agentic_service_user" fred-delegation delegation_caller
 
 if should_force_relogin; then
   if kc_http_post_empty "/logout-all"; then

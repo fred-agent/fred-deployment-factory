@@ -213,6 +213,9 @@ data:
               class_path: knowledge_flow_backend.core.processors.input.image_processor.image_processor.ImageProcessor
 
     security:
+      {{- with .Values.knowledgeFlow.config.security.profile }}
+      profile: {{ . | quote }}
+      {{- end }}
       m2m:
         enabled: true
         client_id: {{ .Values.knowledgeFlow.config.keycloakClientId | quote }}
@@ -232,6 +235,11 @@ data:
         api_url: {{ .Values.knowledgeFlow.config.openfgaUrl | quote }}
         store_name: {{ .Values.knowledgeFlow.config.openfgaStoreName | quote }}
         token_env_var: OPENFGA_API_TOKEN
+        {{- with include "fredlab-infra.openfgaModelSettings" (dict "name" "knowledgeFlow" "rebac" .Values.knowledgeFlow.config.security.rebac) }}
+        {{- . | nindent 8 }}
+        {{- end }}
+      delegation:
+        {{- include "fredlab-infra.delegationSettings" (dict "name" "knowledgeFlow" "delegation" .Values.knowledgeFlow.config.security.delegation) | nindent 8 }}
 
     scheduler:
       enabled: true

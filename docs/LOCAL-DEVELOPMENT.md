@@ -291,14 +291,22 @@ Tear down: `make k3d-down` (uninstall release) · `make k3d-delete` (delete clus
 ## What `docker-up` / `k3d-up` provisions
 
 One mode, no flags. Both backends provision the same thing: Keycloak with an **empty realm**
-(self-registration enabled), OpenFGA with an **empty store** and the Swift authorization model
-only, Postgres, and Temporal - infrastructure only, zero business data. There are no demo
-users, no Keycloak groups, no app roles, and no OpenFGA tuples baked in by either backend. The
-imported Keycloak realm template never carries team groups, and no script in this repo ever
-creates a Keycloak group.
+(self-registration enabled), OpenFGA with an **empty store** whose authorization model each
+Fred service publishes at startup, Postgres, and Temporal - infrastructure only, zero business
+data. There are no demo users, no Keycloak groups, no app roles, and no OpenFGA tuples baked
+in by either backend. The imported Keycloak realm template never carries team groups, and no
+script in this repo ever creates a Keycloak group.
 
 Databases created: `fred` (Fred), `keycloak`, `data` (tabular/vector), `openfga`, `temporal`,
 `temporal_visibility`.
+
+Keycloak also gets the `fred-delegation` client with its `delegation_caller` role, granted
+to the `agentic` service account: holding it is what lets fred-agents speak for a person
+once the Fred apps turn delegation on. For apps run on the host, the fred repository's
+`make delegation` checks the workload token and switches it on; for the k3d `fred-app`
+release, set `security.delegation.act_for_people: true` in the fred-agents configuration
+and `security.delegation.accept_delegated_calls: true` in the control-plane-backend and
+knowledge-flow-backend configurations.
 
 Every identity and role - platform (`platform_admin`/`platform_observer`) and team
 (`team_admin`/`team_editor`/`team_analyst`/`team_member`) - is provisioned afterwards by

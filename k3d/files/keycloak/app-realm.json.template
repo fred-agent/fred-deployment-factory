@@ -545,6 +545,7 @@
     "attributes" : {
       "realm_client" : "false",
       "oidc.ciba.grant.enabled" : "false",
+      "standard.token.exchange.enabled" : "false",
       "client.secret.creation.time" : "1756824373",
       "backchannel.logout.session.required" : "true",
       "post.logout.redirect.uris" : "+",
@@ -630,6 +631,7 @@
     "attributes" : {
       "realm_client" : "false",
       "oidc.ciba.grant.enabled" : "false",
+      "standard.token.exchange.enabled" : "false",
       "client.secret.creation.time" : "1756824500",
       "backchannel.logout.session.required" : "true",
       "post.logout.redirect.uris" : "+",
@@ -807,6 +809,7 @@
     "attributes" : {
       "realm_client" : "false",
       "oidc.ciba.grant.enabled" : "false",
+      "standard.token.exchange.enabled" : "false",
       "client.secret.creation.time" : "1756824456",
       "backchannel.logout.session.required" : "true",
       "post.logout.redirect.uris" : "+",

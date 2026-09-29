@@ -18,9 +18,8 @@ data:
 {{ .Files.Get "files/fred-agents/mcp_catalog.yaml" | replace "http://localhost:8111" "http://knowledge-flow-backend:8080" | indent 4 }}
   configuration.yaml: |
     app:
-      # Must match this pod's controlPlane.config.runtimeCatalogSources entry:
-      # that equality is what joins a log line to its own KPI. Required since
-      # fred-runtime 4.0.0 — a pod without it fails to boot.
+      # Must equal this pod's runtimeId in the control plane's runtimeCatalogSources:
+      # that equality joins a log line to its own KPI, and a pod without it fails to boot.
       runtime_id: "fred-agents"
       name: "Fred default agents"
       base_url: {{ .Values.fredAgents.config.appBaseUrl | quote }}
@@ -31,6 +30,9 @@ data:
       openai_compat: {{ .Values.fredAgents.config.openaiCompat }}
 
     security:
+      {{- with .Values.fredAgents.config.security.profile }}
+      profile: {{ . | quote }}
+      {{- end }}
       m2m:
         enabled: true
         client_id: {{ .Values.fredAgents.config.keycloakClientId | quote }}
@@ -50,6 +52,11 @@ data:
         api_url: {{ .Values.fredAgents.config.openfgaUrl | quote }}
         store_name: {{ .Values.fredAgents.config.openfgaStoreName | quote }}
         token_env_var: OPENFGA_API_TOKEN
+        {{- with include "fredlab-infra.openfgaModelSettings" (dict "name" "fredAgents" "rebac" .Values.fredAgents.config.security.rebac) }}
+        {{- . | nindent 8 }}
+        {{- end }}
+      delegation:
+        {{- include "fredlab-infra.delegationSettings" (dict "name" "fredAgents" "delegation" .Values.fredAgents.config.security.delegation) | nindent 8 }}
 
     ai:
       knowledge_flow_url: {{ .Values.fredAgents.config.knowledgeFlowUrl | quote }}

@@ -98,3 +98,34 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- define "fredlab-infra.secretName" -}}
 {{- default "fredlab-infra-secrets" .Values.secret.fullnameOverride | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
+
+{{- /* OpenFGA model selection for a Fred backend; a pinned id only holds when the pod does not publish. */ -}}
+{{- define "fredlab-infra.openfgaModelSettings" -}}
+{{- if and .rebac.authorizationModelId (ne (toString .rebac.syncSchemaOnInit) "false") -}}
+{{- fail (printf "%s.config.security.rebac.authorizationModelId requires syncSchemaOnInit: false; a publishing pod replaces a pinned id" .name) -}}
+{{- end -}}
+{{- $lines := list -}}
+{{- if not (kindIs "invalid" .rebac.syncSchemaOnInit) -}}
+{{- $lines = append $lines (printf "sync_schema_on_init: %v" .rebac.syncSchemaOnInit) -}}
+{{- end -}}
+{{- with .rebac.authorizationModelId -}}
+{{- $lines = append $lines (printf "authorization_model_id: %s" (quote .)) -}}
+{{- end -}}
+{{- join "\n" $lines -}}
+{{- end -}}
+
+{{- /* Delegation switches for a Fred backend's security block. */ -}}
+{{- define "fredlab-infra.delegationSettings" -}}
+{{- $_ := set . "delegation" (.delegation | default dict) -}}
+{{- if .delegation.callerPolicies -}}
+{{- fail (printf "%s.config.security.delegation.callerPolicies is retired: receivers trust the delegation caller role" .name) -}}
+{{- end -}}
+{{- if hasKey .delegation "enabled" -}}
+{{- fail (printf "%s.config.security.delegation.enabled is split: set actForPeople to call other services for a person, acceptDelegatedCalls to believe such calls" .name) -}}
+{{- end -}}
+act_for_people: {{ .delegation.actForPeople | default false }}
+accept_delegated_calls: {{ .delegation.acceptDelegatedCalls | default false }}
+{{- if .delegation.serviceAccountsOnly }}
+service_accounts_only: true
+{{- end }}
+{{- end -}}

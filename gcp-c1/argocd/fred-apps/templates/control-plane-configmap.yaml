@@ -71,6 +71,9 @@ data:
         connect_timeout_seconds: {{ .Values.controlPlane.config.scheduler.temporalConnectTimeoutSeconds }}
 
     security:
+      {{- with .Values.controlPlane.config.security.profile }}
+      profile: {{ . | quote }}
+      {{- end }}
       m2m:
         enabled: {{ .Values.controlPlane.config.security.m2m.enabled }}
         realm_url: {{ .Values.controlPlane.config.keycloakIssuerUrl | quote }}
@@ -90,6 +93,11 @@ data:
         api_url: {{ .Values.controlPlane.config.openfgaUrl | quote }}
         store_name: {{ .Values.controlPlane.config.openfgaStoreName | quote }}
         token_env_var: OPENFGA_API_TOKEN
+        {{- with include "fredlab-infra.openfgaModelSettings" (dict "name" "controlPlane" "rebac" .Values.controlPlane.config.security.rebac) }}
+        {{- . | nindent 8 }}
+        {{- end }}
+      delegation:
+        {{- include "fredlab-infra.delegationSettings" (dict "name" "controlPlane" "delegation" .Values.controlPlane.config.security.delegation) | nindent 8 }}
 
     storage:
       postgres:

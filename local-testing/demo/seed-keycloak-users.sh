@@ -20,9 +20,8 @@ source ../scripts/keycloak-lib.sh
 
 # Assumes `fred` and `fred-deployment-factory` are sibling checkouts under the
 # same parent directory (three levels up from here: demo/ -> local-testing/ ->
-# fred-deployment-factory/ -> parent). Same SWIFT_SRC convention as the
-# Makefile's own check-swift-src/sync-openfga-model (Makefile:522) — override
-# with SWIFT_SRC=/path/to/fred if your checkout isn't laid out that way.
+# fred-deployment-factory/ -> parent). Override with SWIFT_SRC=/path/to/fred
+# if your checkout isn't laid out that way.
 SWIFT_SRC="${SWIFT_SRC:-../../../fred}"
 USERS_JSON_REL="apps/control-plane-backend/tests/fixtures/import_export/demo_provisioning/users.json"
 echo "Looking for the demo fixture at: $SWIFT_SRC/$USERS_JSON_REL"

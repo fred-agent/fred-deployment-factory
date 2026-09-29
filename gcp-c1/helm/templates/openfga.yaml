@@ -114,6 +114,10 @@ spec:
                 secretKeyRef:
                   name: {{ include "fredlab-infra.secretName" . }}
                   key: OPENFGA_API_TOKEN
+            - name: OPENFGA_DATASTORE_MAX_OPEN_CONNS
+              value: {{ .Values.openfga.datastore.maxOpenConns | quote }}
+            - name: OPENFGA_DATASTORE_MAX_IDLE_CONNS
+              value: {{ .Values.openfga.datastore.maxIdleConns | quote }}
             - name: OPENFGA_LOG_FORMAT
               value: json
             - name: OPENFGA_HTTP_ADDR

@@ -168,10 +168,11 @@ keycloak:
           - query-users
         accountRoles: []
       agentic:
-        # Confidential M2M client for fred-agents. Same shape as knowledge-flow:
-        # service_agent app role + read-only user roles, reserved for background
-        # administration (not currently used for any runtime API call). No
-        # group-scoped role: fred-agents never calls a Keycloak group-admin API.
+        # Confidential M2M client for fred-agents: its token carries every delegated
+        # call, and the provision job grants its service account the
+        # fred-delegation/delegation_caller role. Otherwise shaped like knowledge-flow:
+        # service_agent app role + read-only user roles. No group-scoped role:
+        # fred-agents never calls a Keycloak group-admin API.
         clientId: agentic
         appRoles:
           - service_agent
@@ -226,7 +227,13 @@ keycloak:
 openfga:
   enabled: true
   fullnameOverride: openfga
-  replicaCount: 1
+  # Every authenticated request checks account status with delegation on; a second
+  # replica keeps logins served while one restarts.
+  replicaCount: 2
+  # Per replica: the pair stays within the Postgres connections one default replica used.
+  datastore:
+    maxOpenConns: 15
+    maxIdleConns: 5
   service:
     type: ClusterIP
     httpPort: 8080
@@ -550,6 +557,9 @@ controlPlane:
       temporalWorkflowIdPrefix: control-plane
       temporalConnectTimeoutSeconds: 5
     security:
+      # Strict issuer and audience validation; browser tokens carry the app audience
+      # through the provisioned audience mapper.
+      profile: c3
       m2m:
         enabled: true
       user:
@@ -561,6 +571,19 @@ controlPlane:
         - https://control-plane.playground.fredlab.dev
       rebac:
         enabled: true
+        # Unset, each pod publishes the model its image carries and reads it. To hold
+        # every pod on one model, pin its id and set syncSchemaOnInit: false.
+        syncSchemaOnInit: null
+        authorizationModelId: null
+      # acceptDelegatedCalls (incoming): a workload whose token carries the delegation
+      # caller role may act for a person, and a request is refused while its
+      # subject's account is suspended. serviceAccountsOnly trusts only a service
+      # account's token as a delegation caller (Keycloak-specific).
+      # actForPeople stays off: this service calls no other one for a person.
+      delegation:
+        actForPeople: false
+        acceptDelegatedCalls: true
+        serviceAccountsOnly: true
     # OpenSearch connection used as the KPI store backend for the analytics dashboard.
     # Same in-cluster, security-disabled OpenSearch as knowledge-flow (password ignored
     # by the server but must be non-empty; passed via OPENSEARCH_PASSWORD env).
@@ -672,6 +695,24 @@ knowledgeFlow:
     authorizedOrigins:
       - https://studio.playground.fredlab.dev
     openfgaUrl: http://openfga:8080
+    security:
+      # Strict issuer and audience validation; browser tokens carry the app audience
+      # through the provisioned audience mapper.
+      profile: c3
+      rebac:
+        # Unset, each pod publishes the model its image carries and reads it. To hold
+        # every pod on one model, pin its id and set syncSchemaOnInit: false.
+        syncSchemaOnInit: null
+        authorizationModelId: null
+      # acceptDelegatedCalls (incoming): a workload whose token carries the delegation
+      # caller role may act for a person, and a request is refused while its
+      # subject's account is suspended. serviceAccountsOnly trusts only a service
+      # account's token as a delegation caller (Keycloak-specific).
+      # actForPeople stays off: this service calls no other one for a person.
+      delegation:
+        actForPeople: false
+        acceptDelegatedCalls: true
+        serviceAccountsOnly: true
     openfgaStoreName: fred
     temporalAddress: temporal:7233
     temporalNamespace: default
@@ -884,13 +925,28 @@ fredAgents:
   config:
     appBaseUrl: /fred/agents/v2
     logLevel: info
-    openaiCompat: true
+    # The c3 profile refuses to start with the OpenAI-compatible surface on.
+    openaiCompat: false
     keycloakIssuerUrl: https://keycloak.playground.fredlab.dev/realms/app
     keycloakClientId: agentic
     userClientId: app
     authorizedOrigins:
       - https://studio.playground.fredlab.dev
     openfgaUrl: http://openfga:8080
+    security:
+      # Strict issuer and audience validation; browser tokens carry the app audience
+      # through the provisioned audience mapper.
+      profile: c3
+      rebac:
+        # Unset, each pod publishes the model its image carries and reads it. To hold
+        # every pod on one model, pin its id and set syncSchemaOnInit: false.
+        syncSchemaOnInit: null
+        authorizationModelId: null
+      # Person runs use a workload bearer and grant; ordinary service callers
+      # retain their own bearer. Incoming delegation requires both directions.
+      delegation:
+        actForPeople: true
+        acceptDelegatedCalls: false
     openfgaStoreName: fred
     knowledgeFlowUrl: http://knowledge-flow-backend:8080/knowledge-flow/v1
     controlPlaneUrl: http://control-plane-backend:8080/control-plane/v1
@@ -982,6 +1038,10 @@ fredFrontend:
     # L7 LB backend request timeout (seconds). Default is 30s, which cuts long SSE
     # chat streams mid-answer; 600s lets agent responses stream to completion.
     timeoutSec: 600
+    # Cloud Armor policy refusing grant parameters on requests from outside. Left
+    # empty until bin/fredlab-gcp-delegation-edge-prereqs.sh has created it: a name
+    # referencing a missing policy stops the BackendConfig from syncing.
+    securityPolicyName: ""
     healthCheck:
       requestPath: /config.json
       port: 8080

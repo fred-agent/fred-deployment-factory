@@ -329,6 +329,24 @@ ensure_user_client_role() {
   mark_changed
 }
 
+# Receivers trust a workload that holds this client's caller role. The client issues
+# no tokens; Keycloak adds it to the audience of every holder's tokens.
+ensure_delegation_client() {
+  if [[ -z "$(client_uuid fred-delegation)" ]]; then
+    kc create clients -r "$KEYCLOAK_REALM" \
+      -s clientId=fred-delegation \
+      -s protocol=openid-connect \
+      -s enabled=true \
+      -s publicClient=false \
+      -s serviceAccountsEnabled=false \
+      -s standardFlowEnabled=false \
+      -s implicitFlowEnabled=false \
+      -s directAccessGrantsEnabled=false >/dev/null
+    mark_changed
+  fi
+  ensure_client_role fred-delegation delegation_caller "workload that may speak for a person"
+}
+
 kc_http_admin_token() {
   local response
   local token
@@ -542,6 +560,10 @@ ensure_user_client_role "$eval_worker_service_user" app service_agent
 # Publishing a declaration and reporting a run is all a Knowledge Base pod does:
 # service_agent only, no realm-management role, same posture as the worker above.
 ensure_user_client_role "$kb_fred_samples_service_user" app service_agent
+
+# fred-agents speaks for a person on every receiver.
+ensure_delegation_client
+ensure_user_client_role "$agentic_service_user" fred-delegation delegation_caller
 
 # AUTHZ-05/06: Swift never represents a team as a Keycloak group - a team is a
 # team_metadata row + OpenFGA relations, created later via the control-plane

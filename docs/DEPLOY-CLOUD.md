@@ -179,7 +179,7 @@ Once the new instance is verified (through §4), decommission the old namespace'
 
 ```bash
 NAMESPACE=<instance> bin/fredlab-status.sh
-NAMESPACE=<instance> bin/fred-preflight.sh   # read-only: realm/OpenFGA shape, no live users expected yet
+NAMESPACE=<instance> bin/fred-preflight.sh   # read-only: realm shape and OpenFGA store, no live users expected yet
 ```
 
 ---

@@ -1,6 +1,8 @@
 - targets:
+    - host.docker.internal:9000
     - host.docker.internal:9005
     - host.docker.internal:9111
     - host.docker.internal:9112
+    - host.docker.internal:9222
   labels:
     job: localhost-metrics
