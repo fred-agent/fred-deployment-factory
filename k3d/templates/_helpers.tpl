@@ -45,10 +45,16 @@ Returns "true" when enabled, "" otherwise.
 {{- if and (eq (include "fred-stack.stackExtended" .) "true") .Values.clickhouse.enabled -}}true{{- end -}}
 {{- end -}}
 
+{{- /* Observability is part of the base k3d stack: a development instance
+without metrics or logs cannot be used to find problems. */ -}}
 {{- define "fred-stack.prometheusEnabled" -}}
-{{- if and (eq (include "fred-stack.stackExtended" .) "true") .Values.prometheus.enabled -}}true{{- end -}}
+{{- if .Values.prometheus.enabled -}}true{{- end -}}
 {{- end -}}
 
 {{- define "fred-stack.grafanaEnabled" -}}
-{{- if and (eq (include "fred-stack.stackExtended" .) "true") .Values.grafana.enabled -}}true{{- end -}}
+{{- if .Values.grafana.enabled -}}true{{- end -}}
+{{- end -}}
+
+{{- define "fred-stack.logCollectionEnabled" -}}
+{{- if .Values.logCollection.enabled -}}true{{- end -}}
 {{- end -}}

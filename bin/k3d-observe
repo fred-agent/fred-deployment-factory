@@ -1,0 +1,279 @@
+#!/usr/bin/env python3
+"""Find what is wrong on the k3d instance, from the logs, events, metrics and
+workflows the stack already collects.
+
+    bin/k3d-observe health [--since 30m]    what needs attention, one screen
+    bin/k3d-observe logs QUERY [--since 1h] [--app APP] [--limit 50]
+    bin/k3d-observe trace ID [--since 24h]  every log line naming ID, its
+                                            Temporal workflow, its evaluation run
+    bin/k3d-observe promql EXPR             one Prometheus query
+    bin/k3d-observe kpi                     model and tool latencies, request errors
+
+Sources: container logs and Kubernetes events in OpenSearch (k3d-logs-*,
+k3d-events-*, shipped by Fluent Bit), pod state from the cluster, Prometheus,
+and Temporal. Standard library only.
+"""
+
+import argparse
+import base64
+import json
+import re
+import ssl
+import subprocess
+import sys
+import urllib.parse
+import urllib.request
+
+NAMESPACE = "fred"
+OPENSEARCH = "https://localhost:9200"
+PROMETHEUS = "http://localhost:9090"
+# A pod name minus its ReplicaSet and pod suffixes: fred-agents-7f9c-x2k4p -> fred-agents
+POD_SUFFIX = re.compile(r"-[a-z0-9]{8,10}-[a-z0-9]{5}$|-[a-z0-9]{5}$")
+LEVEL = re.compile(r"\b(ERROR|CRITICAL|WARNING)\b")
+HTTP_5XX = re.compile(r'HTTP/1\.[01]" (5\d\d)')
+# A capability a service switched off at startup still answers, but fails.
+DEGRADED = re.compile(r"\b(disabled|unavailable|not configured|falling back|fallback)\b", re.I)
+
+
+def fail(message):
+    print(f"k3d-observe: {message}", file=sys.stderr)
+    sys.exit(1)
+
+
+def kubectl(*args):
+    result = subprocess.run(["kubectl", "-n", NAMESPACE, *args], capture_output=True, text=True)
+    if result.returncode != 0:
+        fail(f"kubectl {' '.join(args)}: {result.stderr.strip()}")
+    return result.stdout
+
+
+def secret(key):
+    data = json.loads(kubectl("get", "secret", "fred-secrets", "-o", "json"))["data"]
+    return base64.b64decode(data[key]).decode()
+
+
+_auth = None
+
+
+def opensearch(path, body):
+    global _auth
+    if _auth is None:
+        _auth = base64.b64encode(
+            f"{secret('OPENSEARCH_ADMIN')}:{secret('OPENSEARCH_ADMIN_PASSWORD')}".encode()
+        ).decode()
+    request = urllib.request.Request(
+        OPENSEARCH + path,
+        data=json.dumps(body).encode(),
+        headers={"Content-Type": "application/json", "Authorization": f"Basic {_auth}"},
+    )
+    context = ssl.create_default_context()
+    context.check_hostname = False
+    context.verify_mode = ssl.CERT_NONE  # the stack's self-signed certificate
+    try:
+        with urllib.request.urlopen(request, context=context, timeout=20) as response:
+            return json.load(response)
+    except OSError as exc:
+        fail(f"OpenSearch at {OPENSEARCH}: {exc}")
+
+
+def prometheus(query):
+    url = f"{PROMETHEUS}/api/v1/query?" + urllib.parse.urlencode({"query": query})
+    try:
+        with urllib.request.urlopen(url, timeout=20) as response:
+            return json.load(response)["data"]["result"]
+    except OSError as exc:
+        fail(f"Prometheus at {PROMETHEUS}: {exc}")
+
+
+def search_logs(query, since, limit, app=None):
+    must = [{"range": {"@timestamp": {"gte": f"now-{since}"}}}]
+    if query:
+        must.append({"query_string": {"query": query, "default_field": "log"}})
+    if app:
+        must.append({"prefix": {"kubernetes.pod_name": app}})
+    body = {"size": limit, "sort": [{"@timestamp": "desc"}], "query": {"bool": {"must": must}}}
+    hits = opensearch("/k3d-logs-*/_search", body)["hits"]["hits"]
+    return [hit["_source"] for hit in reversed(hits)]
+
+
+def service(doc):
+    return POD_SUFFIX.sub("", doc.get("kubernetes", {}).get("pod_name", "?"))
+
+
+def show(doc):
+    time = doc.get("@timestamp", "")[11:19]
+    print(f"{time}  {service(doc):28} {doc.get('log', '').strip()[:220]}")
+
+
+# ── health ───────────────────────────────────────────────────────────────────
+def cmd_health(args):
+    print(f"== Pods (namespace {NAMESPACE})")
+    pods = json.loads(kubectl("get", "pods", "-o", "json"))["items"]
+    trouble = 0
+    for pod in pods:
+        name = pod["metadata"]["name"]
+        if pod["status"].get("phase") == "Succeeded":
+            continue
+        for status in pod["status"].get("containerStatuses", []):
+            last = status.get("lastState", {}).get("terminated", {})
+            waiting = status.get("state", {}).get("waiting", {})
+            if not status.get("ready") or status.get("restartCount", 0) or waiting:
+                trouble += 1
+                print(f"  {name:48} ready={status.get('ready')} restarts={status.get('restartCount', 0)}"
+                      f" last={last.get('reason', '-')} at {last.get('finishedAt', '-')}"
+                      f"{'  waiting=' + waiting['reason'] if waiting else ''}")
+    if not trouble:
+        print("  every container ready, no restart")
+
+    print(f"\n== Kubernetes warnings (last {args.since})")
+    body = {"size": 0, "query": {"bool": {"must": [
+        {"term": {"type.keyword": "Warning"}},
+        {"range": {"@timestamp": {"gte": f"now-{args.since}"}}}]}},
+        "aggs": {"reason": {"terms": {"field": "reason.keyword", "size": 10},
+                            "aggs": {"object": {"terms": {"field": "involvedObject.name.keyword", "size": 3}}}}}}
+    buckets = opensearch("/k3d-events-*/_search", body)["aggregations"]["reason"]["buckets"]
+    for bucket in buckets:
+        objects = ", ".join(o["key"] for o in bucket["object"]["buckets"])
+        print(f"  {bucket['key']:22} x{bucket['doc_count']:<4} {objects}")
+    if not buckets:
+        print("  none")
+
+    print(f"\n== Errors, warnings, HTTP 5xx and degraded features in the logs (last {args.since})")
+    per_service = {}
+    degraded, errors_5xx = [], []
+    for doc in search_logs("ERROR OR CRITICAL OR WARNING OR Traceback", args.since, 2000):
+        line = doc.get("log", "")
+        counts = per_service.setdefault(service(doc), {"ERROR": 0, "WARNING": 0, "5xx": 0})
+        match = LEVEL.search(line)
+        if match:
+            counts["WARNING" if match.group(1) == "WARNING" else "ERROR"] += 1
+            if DEGRADED.search(line):
+                degraded.append(doc)
+        elif "Traceback" in line:
+            counts["ERROR"] += 1
+    # Access lines are many (probes): look for the status codes first, then
+    # keep the lines where they are the response status.
+    for doc in search_logs("HTTP AND (500 OR 501 OR 502 OR 503 OR 504)", args.since, 500):
+        if HTTP_5XX.search(doc.get("log", "")):
+            per_service.setdefault(service(doc), {"ERROR": 0, "WARNING": 0, "5xx": 0})["5xx"] += 1
+            errors_5xx.append(doc)
+    for name, counts in sorted(per_service.items()):
+        print(f"  {name:28} errors={counts['ERROR']:<4} warnings={counts['WARNING']:<4} http_5xx={counts['5xx']}")
+    if not per_service:
+        print("  none")
+    for title, found in (("HTTP 5xx", errors_5xx), ("Degraded at startup or since", degraded)):
+        if found:
+            print(f"\n  {title}:")
+            for doc in found[-8:]:
+                show(doc)
+
+    print("\n== Prometheus targets")
+    targets = prometheus("up")
+    down = [t for t in targets if t["value"][1] != "1"]
+    print(f"  {len(targets) - len(down)} up, {len(down)} down")
+    for target in down:
+        print(f"  DOWN {target['metric'].get('job')} {target['metric'].get('instance')}")
+
+    print("\n== Temporal: workflows running")
+    result = subprocess.run(
+        ["kubectl", "-n", NAMESPACE, "exec", "deploy/temporal", "-c", "temporal", "--",
+         "temporal", "workflow", "list", "--address", "temporal:7233",
+         "--query", 'ExecutionStatus="Running"', "--limit", "20"],
+        capture_output=True, text=True)
+    lines = [l for l in result.stdout.splitlines()[1:] if l.strip()]
+    print(f"  {len(lines)} running" + ("" if not lines else ":"))
+    for line in lines[:10]:
+        print("  " + line.strip())
+
+
+# ── logs, trace ──────────────────────────────────────────────────────────────
+def cmd_logs(args):
+    for doc in search_logs(args.query, args.since, args.limit, args.app):
+        show(doc)
+
+
+def cmd_trace(args):
+    print(f"== Log lines naming {args.id} (last {args.since})")
+    docs = search_logs(f'"{args.id}"', args.since, 200)
+    for doc in docs:
+        show(doc)
+    if not docs:
+        print("  none")
+    result = subprocess.run(
+        ["kubectl", "-n", NAMESPACE, "exec", "deploy/temporal", "-c", "temporal", "--",
+         "temporal", "workflow", "list", "--address", "temporal:7233",
+         "--query", f"WorkflowId STARTS_WITH '{args.id}' OR WorkflowId = 'run-eval-{args.id}'",
+         "--limit", "5"], capture_output=True, text=True)
+    lines = [l for l in result.stdout.splitlines()[1:] if l.strip()]
+    if lines:
+        print("\n== Temporal workflows")
+        for line in lines:
+            print("  " + line.strip())
+    if args.id.startswith("eval-run-"):
+        print("\n== Evaluation run (database `evaluation`)")
+        sql = ("select operational_state, verdict, total_cases, completed_cases, passed_cases,"
+               " execution_error_cases, scoring_error_cases, insufficient_cases"
+               f" from evaluation_run where run_id = '{args.id}'")
+        print(subprocess.run(["kubectl", "-n", NAMESPACE, "exec", "deploy/postgres", "--",
+                              "psql", "-U", "admin", "-d", "evaluation", "-c", sql],
+                             capture_output=True, text=True).stdout.rstrip())
+
+
+# ── metrics ──────────────────────────────────────────────────────────────────
+def cmd_promql(args):
+    for series in prometheus(args.expr):
+        labels = {k: v for k, v in series["metric"].items() if k not in ("instance", "job")}
+        print(f"  {series['value'][1]:>14}  {labels}")
+
+
+# Metric names as the Fred apps expose them (fred-core KPI writer).
+KPI_QUERIES = (
+    ("API errors: requests per minute answered 5xx, by app and route, last 15m",
+     'sum by (app, route, http_status) (rate(api_request_latency_ms_count{http_status=~"5.."}[15m])) * 60 > 0'),
+    ("API latency p95 (ms) by app, last 15m",
+     "histogram_quantile(0.95, sum by (le, app) (rate(api_request_latency_ms_bucket[15m])))"),
+    ("Model call latency p95 (ms), last 15m",
+     "histogram_quantile(0.95, sum by (le, app) (rate(llm_call_latency_ms_bucket[15m])))"),
+    ("Tool call latency p95 (ms), last 15m",
+     "histogram_quantile(0.95, sum by (le, app) (rate(agent_tool_latency_ms_bucket[15m])))"),
+    ("Tool failures, last 1h",
+     "sum by (app) (increase(agent_tool_failed_total[1h])) > 0"),
+    ("Event loop lag p95 (ms) by app, last 15m: a blocked loop slows every request",
+     "histogram_quantile(0.95, sum by (le, app) (rate(event_loop_lag_ms_bucket[15m])))"),
+)
+
+
+def cmd_kpi(args):
+    for title, query in KPI_QUERIES:
+        print(f"== {title}\n   {query}")
+        result = prometheus(query)
+        if not result:
+            print("   no data (nothing measured yet, or another metric name)")
+        for series in result:
+            labels = {k: v for k, v in series["metric"].items() if k not in ("instance", "job")}
+            print(f"   {series['value'][1]:>14}  {labels}")
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    commands = parser.add_subparsers(dest="command", required=True)
+    health = commands.add_parser("health")
+    health.add_argument("--since", default="30m")
+    logs = commands.add_parser("logs")
+    logs.add_argument("query", help="OpenSearch query string on the log line, e.g. 'ERROR AND analyze'")
+    logs.add_argument("--since", default="1h")
+    logs.add_argument("--app", help="pod name prefix, e.g. fred-evaluator-api")
+    logs.add_argument("--limit", type=int, default=50)
+    trace = commands.add_parser("trace")
+    trace.add_argument("id", help="a run, workflow, document or request id")
+    trace.add_argument("--since", default="24h")
+    promql = commands.add_parser("promql")
+    promql.add_argument("expr")
+    commands.add_parser("kpi")
+    args = parser.parse_args()
+    {"health": cmd_health, "logs": cmd_logs, "trace": cmd_trace,
+     "promql": cmd_promql, "kpi": cmd_kpi}[args.command](args)
+
+
+if __name__ == "__main__":
+    main()

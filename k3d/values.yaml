@@ -4,10 +4,11 @@ fullnameOverride: ""
 imagePullPolicy: IfNotPresent
 
 # Stack profile — selects which services are deployed:
-#   base (default) → minimal stack: drops ClickHouse, Prometheus and Grafana
+#   base (default) → drops ClickHouse (only Langfuse uses it)
 #   extended       → the full stack (everything)
-# Extended-only components are deployed only when stack=extended AND their own
-# `enabled` flag below is true.
+# ClickHouse is deployed only when stack=extended AND clickhouse.enabled.
+# Observability (Prometheus, Grafana, log collection) is part of both profiles,
+# each behind its own `enabled` flag below.
 stack: base
 
 host:
@@ -82,18 +83,19 @@ prometheus:
   scrapeInterval: 15s
   evaluationInterval: 15s
   retention: 7d
-  extraMetricsTargets:
-    - enabled: true
-      jobName: agentic-backend
-      target: agentic-backend-metrics:9000
-      metricsPath: /metrics
-    - enabled: true
-      jobName: knowledge-flow-backend
-      target: knowledge-flow-backend-metrics:9111
-      metricsPath: /metrics
-  seaweedfsMetricsPath: /metrics
+  # Every pod of the namespace that declares a container port named `metrics`
+  # is scraped (job `apps`): the Fred apps do, with no target list to keep.
 
 grafana:
+  enabled: true
+
+# Fluent Bit ships every container's output and the namespace's Kubernetes
+# events (OOMKilled, BackOff, failed probes...) to OpenSearch:
+#   k3d-logs-YYYY.MM.DD    one document per log line, with pod, container, app
+#   k3d-events-YYYY.MM.DD  one document per event
+# Browse them in OpenSearch Dashboards (:5601); query them with
+# bin/k3d-observe.sh.
+logCollection:
   enabled: true
 
 service:
@@ -140,3 +142,4 @@ images:
   temporalUi: mirror.gcr.io/temporalio/ui:2.38.3
   prometheus: prom/prometheus:v2.54.1
   grafana: grafana/grafana:11.1.4
+  fluentBit: fluent/fluent-bit:4.0.3

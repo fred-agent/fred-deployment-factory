@@ -35,6 +35,10 @@ extraEnvVars:
   - name: MISTRAL_API_KEY
     valueFrom:
       secretKeyRef: { name: fred-secrets, key: OPENAI_API_KEY, optional: false }
+  # observability: a wide console, so Rich does not wrap one log line into
+  # several before the log collector reads it.
+  - name: COLUMNS
+    value: "250"
 
 configuration:
   security:

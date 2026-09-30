@@ -11,11 +11,24 @@ data:
     apiVersion: 1
     datasources:
       - name: Prometheus
+        # A fixed uid: the dashboards loaded from a Fred checkout reference it.
+        uid: prometheus
         type: prometheus
         access: proxy
         url: http://prometheus:9090
         isDefault: true
         editable: true
+  dashboards.yaml: |
+    apiVersion: 1
+    providers:
+      # The grafana-dashboards ConfigMap, written by `make k3d-fred` from the
+      # Fred checkout's deploy/grafana/*.json; reread every 30s.
+      - name: fred
+        folder: Fred
+        type: file
+        updateIntervalSeconds: 30
+        options:
+          path: /etc/grafana/dashboards/fred
 ---
 apiVersion: v1
 kind: Service
@@ -99,6 +112,12 @@ spec:
             - name: grafana-provisioning
               mountPath: /etc/grafana/provisioning/datasources/prometheus.yaml
               subPath: prometheus.yaml
+            - name: grafana-provisioning
+              mountPath: /etc/grafana/provisioning/dashboards/dashboards.yaml
+              subPath: dashboards.yaml
+            # No subPath: a ConfigMap update reaches the files without a restart.
+            - name: grafana-dashboards
+              mountPath: /etc/grafana/dashboards/fred
       volumes:
         - name: grafana-data
           persistentVolumeClaim:
@@ -106,4 +125,8 @@ spec:
         - name: grafana-provisioning
           configMap:
             name: grafana-provisioning
+        - name: grafana-dashboards
+          configMap:
+            name: grafana-dashboards
+            optional: true
 {{- end }}

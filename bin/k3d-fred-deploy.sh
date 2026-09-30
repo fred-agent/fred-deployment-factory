@@ -142,6 +142,27 @@ if $installed && $key_changed; then
   ok "Restart the applications that read the model API key"
 fi
 
+# Fred's own Grafana dashboards, from this checkout. They are made for the
+# Import page (a ${DS_PROMETHEUS} input); file provisioning resolves no input,
+# so the input becomes the uid of the stack's Prometheus data source.
+if kubectl get deployment grafana -n "$ns" >/dev/null 2>&1 && compgen -G "$fred_dir/deploy/grafana/*.json" >/dev/null; then
+  dashboards="$(mktemp -d)"
+  for f in "$fred_dir"/deploy/grafana/*.json; do
+    sed 's/\${DS_PROMETHEUS}/prometheus/g' "$f" >"$dashboards/$(basename "$f")"
+  done
+  before="$(kubectl get configmap grafana-dashboards -n "$ns" -o jsonpath='{.data}' 2>/dev/null | sha256sum)"
+  kubectl create configmap grafana-dashboards -n "$ns" --from-file="$dashboards" --dry-run=client -o yaml \
+    | kubectl apply -f - >/dev/null
+  rm -rf "$dashboards"
+  # Grafana started before the ConfigMap existed never sees it (an optional
+  # volume is not filled in later): restart it whenever the dashboards change.
+  if [[ "$(kubectl get configmap grafana-dashboards -n "$ns" -o jsonpath='{.data}' | sha256sum)" != "$before" ]]; then
+    kubectl rollout restart deployment/grafana -n "$ns" >/dev/null
+    kubectl rollout status deployment/grafana -n "$ns" --timeout "$timeout" >/dev/null
+  fi
+  ok "Fred's Grafana dashboards loaded: http://localhost:${K3D_HOST_PORT_GRAFANA:-3002} (folder Fred)"
+fi
+
 ok "Fred is running: http://localhost:${K3D_HOST_PORT_FRONTEND:-8088}"
 if ! getent hosts keycloak >/dev/null; then
   warn "'keycloak' does not resolve on this machine: the browser cannot log in. Once, with sudo:"

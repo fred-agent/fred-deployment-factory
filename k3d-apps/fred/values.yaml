@@ -57,6 +57,21 @@ x-env-model-key: &env-model-key
   valueFrom:
     secretKeyRef: { name: fred-secrets, key: OPENAI_API_KEY, optional: false }
 
+# ── observability ────────────────────────────────────────────────────────────
+# The console handler (Rich) wraps at 80 columns when there is no terminal, so
+# one log line became several: every app gets a wide console, and one line
+# stays one record for the log collector (k3d-logs-* in OpenSearch).
+x-env-columns: &env-columns
+  name: COLUMNS
+  value: "250"
+# The KPI Prometheus endpoint listens on 127.0.0.1 by default, which only the
+# pod itself reaches: open it to Prometheus, which scrapes every container
+# port named `metrics`.
+x-observability: &observability
+  kpi:
+    prometheus:
+      address: "0.0.0.0"
+
 # ── knowledge-flow (backend and worker) ──────────────────────────────────────
 x-kf-security: &kf-security
   profile: c3                              # posture
@@ -165,6 +180,7 @@ x-kf-configuration: &kf-configuration
   storage: *kf-storage
   mcp: *kf-mcp
   filesystem: *kf-filesystem
+  observability: *observability
 
 # ── control-plane (backend and worker) ───────────────────────────────────────
 x-cp-security: &cp-security
@@ -209,6 +225,7 @@ x-cp-configuration: &cp-configuration
   security: *cp-security
   scheduler: *cp-scheduler
   storage: *cp-storage
+  observability: *observability
 
 applications:
 
@@ -218,6 +235,7 @@ applications:
       enabled: true                        # posture
       extraEnvVars: [*env-postgres]
     extraEnvVars:                          # secret
+      - *env-columns                     # observability
       - *env-postgres
       - *env-opensearch
       - *env-openfga
@@ -244,6 +262,7 @@ applications:
           act_for_people: true
       ai:
         timeout: { connect: 20, read: 60 } # choice (as on fredlab)
+      observability: *observability
       storage:
         object_store:                      # choice: S3 (SeaweedFS)
           type: minio
@@ -351,6 +370,7 @@ applications:
       enabled: true                        # posture
       extraEnvVars: [*env-postgres]
     extraEnvVars: &kf-env                  # secret
+      - *env-columns                     # observability
       - *env-postgres
       - *env-opensearch
       - *env-openfga
@@ -394,6 +414,7 @@ applications:
       enabled: true                        # posture
       extraEnvVars: [*env-postgres]
     extraEnvVars:                          # secret
+      - *env-columns                     # observability
       - *env-postgres
       - *env-opensearch
       - *env-openfga
@@ -440,6 +461,7 @@ applications:
     deployment:
       enabled: true
     extraEnvVars:                          # secret: the bootstrap token stays on the backend
+      - *env-columns                     # observability
       - *env-postgres
       - *env-opensearch
       - *env-openfga
