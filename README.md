@@ -1,24 +1,20 @@
 # Fred Deployment Factory
 
-The **deployment operator** for [Fred](https://github.com/ThalesGroup/fred). Fred itself —
-the apps and their container images — lives in the `fred` monorepo. **This** repo answers a
-different question: *where and how does a concrete Fred instance actually run?*
+Run [Fred](https://github.com/ThalesGroup/fred) and its applications on your machine. Fred
+itself — the apps, their images and their Helm chart — lives in the `fred` monorepo; **this**
+repository says how a local instance runs, in two ways:
 
-It does that in two ways:
+- **k3d** — the whole platform in a local Kubernetes cluster: the infrastructure, Fred
+  deployed with its official chart and the same posture as production, its applications
+  (the evaluation application), and the logs, events and metrics to find what goes wrong.
+- **Docker Compose** — the backing services (Keycloak, Postgres, OpenFGA, OpenSearch,
+  Temporal, …) on the host, with the Fred apps run from a `fred` checkout.
 
-- **Locally** — bring up Fred's backing services (Keycloak, Postgres, OpenFGA, OpenSearch,
-  Temporal, …) on your laptop with one `make` command, for development and testing.
-- **In the cloud** — a live **GKE/GCP** instance, GitOps-managed by **ArgoCD**, that you ship
-  the latest Fred to with a short, scripted, reviewable loop.
+Both keep the same split: an **infrastructure** layer (the stateful services) that changes
+rarely, and the **applications** you redeploy often.
 
-The design is deliberately simple: a **Foundation** layer (the stateful backbone — Postgres,
-Keycloak, OpenFGA, OpenSearch, Temporal) that changes rarely, and an **Apps** layer (the four
-stateless Fred apps) that you redeploy often. The same shape is meant to be reused per
-instance, per classification, and per platform.
-
-> **Default branch: `swift`.** It matches `ThalesGroup/fred` and is the branch ArgoCD deploys
-> from (`targetRevision: swift`), so "the default branch" and "what's running in the cluster"
-> stay the same thing by construction. (`kea` was the previous release line.)
+> **Default branch: `swift`**, matching `ThalesGroup/fred`. (`kea` was the previous release
+> line.)
 
 ## Quick start: Fred and its applications on k3d
 
@@ -99,23 +95,16 @@ Start with the guide that matches what you're trying to do:
 | 🖥️ Run Fred's services locally, **and bootstrap a working platform** (Docker Compose) | [`docs/LOCAL-DEVELOPMENT.md`](docs/LOCAL-DEVELOPMENT.md) — fast path: `make setup-env` + `make run` + `make bootstrap-local` (see the callout above); manual steps: "Full bootstrap walkthrough" |
 | ☸️ Run the whole stack in a local Kubernetes cluster (k3d) | [`docs/LOCAL-DEVELOPMENT.md` → "k3d: the full stack in Kubernetes"](docs/LOCAL-DEVELOPMENT.md#k3d-the-full-stack-in-kubernetes) |
 | 🧪 Load local test data — demo persona-per-role, or 3000-user/100-team OpenFGA bench | [`local-testing/README.md`](local-testing/README.md) |
-| ☁️ Ship the latest Fred to the live cloud instance | [`docs/DEPLOY-CLOUD.md`](docs/DEPLOY-CLOUD.md) |
-| 🔁 Operate ArgoCD (bootstrap, boundary, cutover, rollback) | [`gcp-c1/argocd/README.md`](gcp-c1/argocd/README.md) |
-| 🧱 Deploy / understand the GKE Foundation (infra) | [`gcp-c1/helm/README.md`](gcp-c1/helm/README.md) · [`DEPLOYMENT-STEPS.md`](gcp-c1/helm/DEPLOYMENT-STEPS.md) |
 | 🔐 Run the auth / team-isolation validation (release gate) | now lives in the [`fred`](https://github.com/ThalesGroup/fred) monorepo's own `validation/README.md` — no longer part of this repo |
 | 🐳 Docker Compose internals (network, `.env`, per-service) | [`docker/README.md`](docker/README.md) |
 
 ---
 
-## Deeper references
+## For contributors
 
-The *why* and the *open work* — not the day-to-day how-to:
-
-| Doc | What |
-| --- | --- |
-| [`docs/rfc/RFC-0001-gitops-deployment-pattern.md`](docs/rfc/RFC-0001-gitops-deployment-pattern.md) | the deployment pattern + every decision (Foundation/Apps split, the boundary, the classification model) |
-| [`docs/BACKLOG.md`](docs/BACKLOG.md) | open work — a new instance (e.g. C2 on TDP/AKS) is tracked here |
-| [`CLAUDE.md`](CLAUDE.md) | what the repo is + the order work must happen in (for contributors / AI assistants) |
+[`CLAUDE.md`](CLAUDE.md): what the repository holds, the model (charts stay with their
+product, each instance's values here, one Foundation Secret) and the working rules — for
+contributors and AI assistants alike.
 
 **Related links:** Fred website <https://site.fredlab.dev> · Fred repository
 <https://github.com/ThalesGroup/fred>
