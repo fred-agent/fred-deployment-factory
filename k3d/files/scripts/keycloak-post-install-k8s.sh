@@ -394,6 +394,11 @@ app_client_uuid="$(client_uuid app)"
 
 ensure_client_role app service_agent "application service agent role"
 
+# Evaluation worker: its own least-privilege service identity (RFC EVAL-AUTH),
+# as docker/keycloak/keycloak-post-install.sh creates it. Absent from the realm
+# import, so created here.
+eval_worker_client_uuid="$(ensure_service_client_confidential fred-evaluation-worker "$KEYCLOAK_EVAL_WORKER_CLIENT_SECRET")"
+
 # The imported realm ships with zero users (.users=[]): Keycloak still
 # auto-creates service-account-<clientId> for every confidential client with
 # serviceAccountsEnabled=true (agentic, knowledge-flow, control-plane are
@@ -403,6 +408,7 @@ ensure_client_role app service_agent "application service agent role"
 agentic_service_user="$(wait_for_service_account_username agentic)"
 knowledge_flow_service_user="$(wait_for_service_account_username knowledge-flow)"
 control_plane_service_user="$(wait_for_service_account_username control-plane)"
+eval_worker_service_user="$(wait_for_service_account_username fred-evaluation-worker)"
 
 # Neither agentic (fred-agents), knowledge-flow, nor control-plane call any
 # Keycloak group-admin API (a_get_groups/a_get_group_members) - confirmed
@@ -424,6 +430,8 @@ ensure_user_client_role "$control_plane_service_user" realm-management manage-us
 ensure_user_client_role "$agentic_service_user" app service_agent
 ensure_user_client_role "$knowledge_flow_service_user" app service_agent
 ensure_user_client_role "$control_plane_service_user" app service_agent
+# service_agent only, no realm-management role: least privilege by design.
+ensure_user_client_role "$eval_worker_service_user" app service_agent
 
 # fred-agents speaks for a person on every receiver.
 ensure_delegation_client
@@ -438,4 +446,4 @@ if should_force_relogin; then
   fi
 fi
 
-log "post-install completed (app=${app_client_uuid}, changes=${CHANGED})"
+log "post-install completed (app=${app_client_uuid}, fred-evaluation-worker=${eval_worker_client_uuid}, changes=${CHANGED})"
