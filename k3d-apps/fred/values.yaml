@@ -368,6 +368,12 @@ applications:
     deployment:
       enabled: true
     replicaCount: 1                        # sizing
+    # sizing: this one pod runs every extraction. A docling extraction takes
+    # 1 to 2 GiB; 3 per role (the chart's default, sized for one role per pod)
+    # put up to 9 in 4 GiB and got the pod OOMKilled on a batch of PDFs.
+    resources:
+      requests: { cpu: "1", memory: 2Gi }
+      limits: { cpu: "4", memory: 6Gi }
     extraEnvVars: *kf-env                  # secret
     configuration:
       <<: *kf-configuration
@@ -377,6 +383,10 @@ applications:
         # gives each role its own deployment). Drop a role and the documents
         # routed to it wait on a queue nobody polls.
         worker_roles: ["common", "extraction-fast", "extraction-medium", "extraction-rich"]
+        temporal:
+          host: "temporal:7233"            # address (the merge above is shallow)
+          # sizing: one extraction at a time per role, 3 at most in this pod.
+          ingestion_max_concurrent_activities: 1
 
   # ===========================================================================
   control-plane-backend:
