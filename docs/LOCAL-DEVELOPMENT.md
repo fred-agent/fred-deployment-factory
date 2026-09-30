@@ -321,9 +321,20 @@ Your account becomes the platform's `platform_admin`; this works once per platfo
 first account keeps the role. Then turn the tools and agent templates on in
 **Admin > Capabilities** (select all).
 
+**6. The evaluation application** (optional, this repo): builds fred-agent-evaluator's API,
+worker and UI from `EVALUATOR_DIR` (default `../fred-agent-evaluator`) and deploys its chart
+with `k3d-apps/fred-evaluator/values.yaml`. Fred already knows the application
+(`application_sources` in `k3d-apps/fred/values.yaml`); it shows up once a platform admin
+enables `evaluation` for a team in **Admin > Features** (filter "app").
+
+```bash
+make k3d-evaluator EVALUATOR_DIR=../fred-agent-evaluator
+```
+
 | URL | What |
 | --- | --- |
 | <http://localhost:8088> | Fred: the frontend and every app API, through the Traefik ingress |
+| <http://localhost:8088/apps/evaluation/> | The evaluation application, inside Fred |
 | <http://keycloak:8080> | Keycloak: login, registration, admin console |
 | <http://localhost:8233> | Temporal UI |
 | <http://localhost:5601> | OpenSearch Dashboards |
@@ -343,7 +354,8 @@ ClickHouse `:8123`. Override any of them with `K3D_HOST_PORT_*`.
 - `make k3d-status` shows the pods.
 
 **Tear down** (this repo):
-- `make k3d-fred-uninstall` removes Fred; its data stays in the infrastructure.
+- `make k3d-fred-uninstall` and `make k3d-evaluator-uninstall` remove Fred or the evaluation
+  application; their data stays in the infrastructure.
 - `make k3d-down` stops the cluster and frees the host ports; `make k3d-up` starts it again.
 - `make k3d-delete` deletes the cluster.
 - `make k3d-wipe` uninstalls the infrastructure release and deletes the cluster; use it to

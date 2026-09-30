@@ -508,6 +508,23 @@ k3d-fred: ## Build Fred from FRED_DIR (default ../fred) and deploy it on k3d; re
 k3d-fred-uninstall: ## Remove the Fred release; its data stays in the infrastructure
 	-helm uninstall "$(FRED_RELEASE)" -n "$(K3D_NAMESPACE)"
 
+##@ k3d: the evaluation application (fred-agent-evaluator's chart, values in k3d-apps/fred-evaluator)
+# The fred-agent-evaluator checkout the images are built from, and whose chart is deployed.
+EVALUATOR_DIR ?= ../fred-agent-evaluator
+EVALUATOR_RELEASE ?= fred-evaluator
+EVALUATOR_CHART ?= $(EVALUATOR_DIR)/deploy/charts/fred-evaluator
+EVALUATOR_CHART_VERSION ?=
+EVALUATOR_VALUES ?= k3d-apps/fred-evaluator/values.yaml
+
+k3d-evaluator: ## Build the evaluation application from EVALUATOR_DIR (default ../fred-agent-evaluator) and deploy it next to Fred
+	@EVALUATOR_DIR="$(EVALUATOR_DIR)" EVALUATOR_RELEASE="$(EVALUATOR_RELEASE)" EVALUATOR_CHART="$(EVALUATOR_CHART)" \
+		EVALUATOR_CHART_VERSION="$(EVALUATOR_CHART_VERSION)" EVALUATOR_VALUES="$(EVALUATOR_VALUES)" \
+		K3D_CLUSTER="$(K3D_CLUSTER)" K3D_NAMESPACE="$(K3D_NAMESPACE)" HELM_TIMEOUT="$(HELM_TIMEOUT)" \
+		K3D_HOST_PORT_FRONTEND="$(K3D_HOST_PORT_FRONTEND)" bin/k3d-evaluator-deploy.sh
+
+k3d-evaluator-uninstall: ## Remove the evaluation application; its data stays in the infrastructure
+	-helm uninstall "$(EVALUATOR_RELEASE)" -n "$(K3D_NAMESPACE)"
+
 ##@ k3d service targets
 k3d-restart: ## Restart a k3d component: make k3d-restart COMPONENT=openfga
 	@test -n "$(COMPONENT)" || (echo "ERROR: COMPONENT is required. Usage: make k3d-restart COMPONENT=<name>"; exit 1)
@@ -624,4 +641,4 @@ check-pure-infrastructure: ## Offline guard: fail if a tracked artifact carries 
 	@echo "✓ no local validation/ harness wiring left in the Makefile"
 	@echo "✓ check-pure-infrastructure passed"
 
-.PHONY: help network-create env-setup keycloak-post-install postgres-up keycloak-up seaweedfs-up opensearch-up clickhouse-up langfuse-up prometheus-up grafana-up openfga-post-install openfga-up temporal-up preflight-check docker-up docker-start docker-stop docker-down all-down docker-wipe docker-destroy k3d-create k3d-up k3d-restart k3d-redeploy k3d-logs k3d-down k3d-uninstall k3d-delete k3d-wipe k3d-status k3d-fred k3d-fred-uninstall k3d-airgap-on k3d-airgap-off k3d-airgap-status checkpoint-save checkpoint-restore docker-restart-from-checkpoint checkpoint-list checkpoint-delete check-pure-infrastructure keycloak-token-short keycloak-token-normal keycloak-token-status
+.PHONY: help network-create env-setup keycloak-post-install postgres-up keycloak-up seaweedfs-up opensearch-up clickhouse-up langfuse-up prometheus-up grafana-up openfga-post-install openfga-up temporal-up preflight-check docker-up docker-start docker-stop docker-down all-down docker-wipe docker-destroy k3d-create k3d-up k3d-restart k3d-redeploy k3d-logs k3d-down k3d-uninstall k3d-delete k3d-wipe k3d-status k3d-fred k3d-fred-uninstall k3d-evaluator k3d-evaluator-uninstall k3d-airgap-on k3d-airgap-off k3d-airgap-status checkpoint-save checkpoint-restore docker-restart-from-checkpoint checkpoint-list checkpoint-delete check-pure-infrastructure keycloak-token-short keycloak-token-normal keycloak-token-status

@@ -304,6 +304,16 @@ applications:
     env:
       - name: VITE_BACKEND_URL_KNOWLEDGE   # address
         value: "http://localhost:8088"
+      # address: where the gateway proxies /apps/<id>/ and /app-services/<id>/,
+      # one entry per application_sources entry above. Fully qualified names:
+      # nginx resolves them per request, so an application not deployed yet
+      # never stops the frontend from starting.
+      - name: FRONTEND_APPLICATIONS_JSON
+        value: >-
+          [{"app_id": "evaluation",
+          "ui_upstream": "http://fred-evaluator-ui.fred.svc.cluster.local:8080",
+          "service_upstream": "http://fred-evaluator-api.fred.svc.cluster.local:8336",
+          "service_required": true}]
     # Branding fetched from SeaweedFS at startup; with no object the pod logs
     # one warning and serves the baked assets. See the fred frontend README.
     extraEnvVars:
@@ -393,6 +403,27 @@ applications:
             base_url: http://fred-agents/fred/agents/v2
             enabled: true
             ingress_prefix: /fred/agents/v2
+        # choice: the applications this instance serves. Registration alone
+        # shows nothing: a platform admin enables an application per team
+        # (Admin > Features, filter "app"). The frontend's gateway entry for
+        # each one is FRONTEND_APPLICATIONS_JSON, below.
+        frontend:
+          feature_flags:
+            enableApplications: true
+        application_sources:
+          # fred-agent-evaluator, deployed by `make k3d-evaluator`. Until it is,
+          # /apps/evaluation/ answers with an error and nothing else breaks.
+          - app_id: evaluation
+            ui_prefix: /apps/evaluation
+            version: 1.1.0
+            icon: fact_check
+            display_name:
+              en: "Evaluation"
+              fr: "Évaluation"
+            description:
+              en: "Evaluate agents against versioned test sets."
+              fr: "Évaluer les agents sur des jeux de tests versionnés."
+            enabled: true
 
   control-plane-worker:
     enabled: true                          # posture
