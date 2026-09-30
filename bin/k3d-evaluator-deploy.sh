@@ -20,6 +20,8 @@ ok() { printf "%b[OK]%b %s\n" "$c_ok" "$c_reset" "$1"; }
 warn() { printf "%b[WARN]%b %s\n" "$c_warn" "$c_reset" "$1"; }
 info() { printf "%b[INFO]%b %s\n" "$c_info" "$c_reset" "$1"; }
 fail() { printf "%b[FAIL]%b %s\n" "$c_err" "$c_reset" "$1" >&2; exit 1; }
+# Never stop without saying where: any unexpected failure names its line and command.
+trap 'fail "unexpected failure at line $LINENO: $BASH_COMMAND"' ERR
 
 here="$(cd "$(dirname "$0")/.." && pwd)"
 evaluator_dir="$(cd "${EVALUATOR_DIR:?}" 2>/dev/null && pwd)" \

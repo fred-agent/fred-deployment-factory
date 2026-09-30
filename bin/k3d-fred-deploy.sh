@@ -23,6 +23,8 @@ ok() { printf "%b[OK]%b %s\n" "$c_ok" "$c_reset" "$1"; }
 warn() { printf "%b[WARN]%b %s\n" "$c_warn" "$c_reset" "$1"; }
 info() { printf "%b[INFO]%b %s\n" "$c_info" "$c_reset" "$1"; }
 fail() { printf "%b[FAIL]%b %s\n" "$c_err" "$c_reset" "$1" >&2; exit 1; }
+# Never stop without saying where: any unexpected failure names its line and command.
+trap 'fail "unexpected failure at line $LINENO: $BASH_COMMAND"' ERR
 
 here="$(cd "$(dirname "$0")/.." && pwd)"
 fred_dir="$(cd "${FRED_DIR:?}" 2>/dev/null && pwd)" || fail "FRED_DIR=$FRED_DIR: no such directory (a fred checkout)"
@@ -138,7 +140,8 @@ if kubectl get deployment grafana -n "$ns" >/dev/null 2>&1 && compgen -G "$fred_
   for f in "$fred_dir"/deploy/grafana/*.json; do
     sed 's/\${DS_PROMETHEUS}/prometheus/g' "$f" >"$dashboards/$(basename "$f")"
   done
-  before="$(kubectl get configmap grafana-dashboards -n "$ns" -o jsonpath='{.data}' 2>/dev/null | sha256sum)"
+  # Absent on a fresh cluster: then "before" is the hash of nothing.
+  before="$( { kubectl get configmap grafana-dashboards -n "$ns" -o jsonpath='{.data}' 2>/dev/null || true; } | sha256sum)"
   kubectl create configmap grafana-dashboards -n "$ns" --from-file="$dashboards" --dry-run=client -o yaml \
     | kubectl apply -f - >/dev/null
   rm -rf "$dashboards"
