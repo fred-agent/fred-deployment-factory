@@ -55,8 +55,9 @@ HELM_TIMEOUT ?= 20m
 HELM_HISTORY_MAX ?= 10
 IMAGE_REGISTRY_HOST ?= registry-1.docker.io
 K3D_PREFETCH_IMAGES ?= true
-K3D_PREFETCH_SYSTEM_IMAGES ?= true
-K3D_IMAGE_IMPORT_MODE ?= tools-node
+# k3s nodes pull their own system images (coredns, traefik, ...) when the cluster
+# is created; copying them from the host again only adds downloads.
+K3D_PREFETCH_SYSTEM_IMAGES ?= false
 IMAGE_PULL_RETRIES ?= 3
 IMAGE_PULL_RETRY_DELAY ?= 5
 K3D_USE_CILIUM ?= false
@@ -85,10 +86,20 @@ K3D_HOST_PORT_PROMETHEUS ?= 9090
 K3D_HOST_PORT_GRAFANA ?= 3002
 K3D_HOST_PORT_FRONTEND ?= 8088
 
+# Kubelet disk thresholds in absolute sizes. The defaults are percentages of the
+# host disk (image GC above 85% used, eviction under 15% free): on a developer
+# laptop with a well-filled large disk they delete prefetched images and evict
+# pods although hundreds of GiB are free.
+K3D_KUBELET_DISK_ARGS := \
+	--k3s-arg "--kubelet-arg=image-gc-high-threshold=100@server:*;agent:*" \
+	--k3s-arg "--kubelet-arg=image-gc-low-threshold=99@server:*;agent:*" \
+	--k3s-arg "--kubelet-arg=eviction-hard=memory.available<100Mi,nodefs.available<2Gi,imagefs.available<2Gi,nodefs.inodesFree<5%,imagefs.inodesFree<5%@server:*;agent:*"
+
 K3D_CLUSTER_CREATE_BASE_ARGS := \
 	--servers 1 \
 	--agents 1 \
 	--wait \
+	$(K3D_KUBELET_DISK_ARGS) \
 	-p "$(K3D_HOST_PORT_POSTGRES):30432@server:0" \
 	-p "$(K3D_HOST_PORT_KEYCLOAK):30080@server:0" \
 	-p "$(K3D_HOST_PORT_SEAWEEDFS_S3):30833@server:0" \
@@ -316,7 +327,7 @@ k3d-create: ## Create a local k3d cluster (set K3D_USE_CILIUM=true for air-gap/C
 		run_step() { local title="$$1"; shift; step "$$title"; if "$$@"; then ok "$$title"; else local rc=$$?; fail "$$title (exit $$rc)" "$$rc"; fi; }; \
 	command -v k3d >/dev/null 2>&1 || fail "k3d is required"; \
 	if k3d cluster get "$(K3D_CLUSTER)" >/dev/null 2>&1; then \
-	  warn "Cluster '$(K3D_CLUSTER)' already exists, skipping creation."; \
+	  info "Cluster '$(K3D_CLUSTER)' already exists, skipping creation."; \
 	  exit 0; \
 	fi; \
 	if [ "$(K3D_USE_CILIUM)" = "true" ] || [ "$(K3D_USE_CILIUM)" = "1" ]; then \
@@ -345,24 +356,6 @@ k3d-up: k3d-create ## Deploy the full stack into k3d with Helm
 		info() { printf "%b[INFO]%b %s\n" "$$c_info" "$$c_reset" "$$1"; }; \
 		fail() { local msg="$$1"; local rc="$${2:-1}"; printf "%b[FAIL]%b %s\n" "$$c_err" "$$c_reset" "$$msg"; exit "$$rc"; }; \
 		run_step() { local title="$$1"; shift; step "$$title"; if "$$@"; then ok "$$title"; else local rc=$$?; fail "$$title (exit $$rc)" "$$rc"; fi; }; \
-		run_step_retry() { \
-		  local title="$$1"; local retries="$$2"; local delay="$$3"; shift 3; \
-		  local attempt=1; \
-		  step "$$title"; \
-		  while true; do \
-		    if "$$@"; then \
-		      ok "$$title"; \
-		      return 0; \
-		    fi; \
-		    local rc=$$?; \
-		    if [ "$$attempt" -ge "$$retries" ]; then \
-		      fail "$$title (exit $$rc after $$attempt attempt(s))" "$$rc"; \
-		    fi; \
-		    warn "$$title failed (attempt $$attempt/$$retries). Retrying in $${delay}s..."; \
-		    sleep "$$delay"; \
-		    attempt=$$((attempt + 1)); \
-		  done; \
-		}; \
 		helm_pid=""; \
 		on_interrupt() { \
 		  warn "Interrupted (Ctrl+C). Stopping running subprocesses..."; \
@@ -414,11 +407,9 @@ k3d-up: k3d-create ## Deploy the full stack into k3d with Helm
 	      warn "Could not resolve kube-system images; continuing with chart images only."; \
 	    fi; \
 	  fi; \
-		  for image in "$${all_images[@]}"; do \
-		    run_step_retry "Pre-pull image $$image" "$(IMAGE_PULL_RETRIES)" "$(IMAGE_PULL_RETRY_DELAY)" docker pull "$$image"; \
-		  done; \
-	  run_step "Import $${#all_images[@]} images into k3d cluster $(K3D_CLUSTER)" \
-	    k3d image import -c "$(K3D_CLUSTER)" --mode "$(K3D_IMAGE_IMPORT_MODE)" "$${all_images[@]}"; \
+	  run_step "Prefetch $${#all_images[@]} images into k3d cluster $(K3D_CLUSTER)" \
+	    env IMAGE_PULL_RETRIES="$(IMAGE_PULL_RETRIES)" IMAGE_PULL_RETRY_DELAY="$(IMAGE_PULL_RETRY_DELAY)" \
+	    bin/k3d-prefetch-images.sh "$(K3D_CLUSTER)" "$${all_images[@]}"; \
 	else \
 	  k3d_server_container="$$(docker ps --format '{{.Names}}' | awk '$$0 ~ /^k3d-$(K3D_CLUSTER)-server-0$$/ {print; exit}')"; \
 	  if [ -n "$$k3d_server_container" ]; then \
