@@ -20,13 +20,62 @@ instance, per classification, and per platform.
 > from (`targetRevision: swift`), so "the default branch" and "what's running in the cluster"
 > stay the same thing by construction. (`kea` was the previous release line.)
 
+## Quick start: Fred and its applications on k3d
+
+The whole platform in a local Kubernetes cluster: the infrastructure, Fred (its official
+Helm chart, with the same posture as production), the evaluation application, and the
+logs, events and metrics to find what goes wrong.
+
+**Once:** Docker, [`k3d`](https://k3d.io), `kubectl`, `helm` (3 or 4); a `fred` checkout
+where you ran `make setup-env` (it asks for your model API key); and, for the browser:
+
+```bash
+grep -qw keycloak /etc/hosts || echo "127.0.0.1 keycloak" | sudo tee -a /etc/hosts
+```
+
+**Then, from this repository:**
+
+```bash
+make k3d-up                                                # the infrastructure and the observability
+make k3d-fred FRED_DIR=../fred                             # build and deploy Fred; rerun after any change
+make k3d-evaluator EVALUATOR_DIR=../fred-agent-evaluator   # optional: the evaluation application
+make k3d-health                                            # what needs attention, on one screen
+```
+
+`make k3d-fred` ends by printing a **bootstrap token**. Open <http://localhost:8088>, create
+your account with **Register** on the login page, and paste the token where Fred asks for
+it: you are the platform's `platform_admin` (once per platform). Then, in **Admin >
+Features**, turn on the capabilities, the models and the `evaluation` application.
+
+| URL | What | Login |
+| --- | --- | --- |
+| <http://localhost:8088> | Fred, and its applications (`/apps/evaluation/`) | your account |
+| <http://localhost:8233> | Temporal UI: ingestions, evaluation runs | — |
+| <http://localhost:3002> | Grafana: folder **Fred** | `admin` / `Azerty123_` |
+| <http://localhost:9090> | Prometheus: the apps' KPIs | — |
+| <http://localhost:5601> | OpenSearch Dashboards: Discover on `k3d-logs*` (every pod's output), `k3d-events*` (Kubernetes events) | `admin` / `FredOpensearch123!!` |
+| <http://keycloak:8080> | Keycloak | `admin` / `Azerty123_` (realm `master`) |
+
+**Something wrong?** `make k3d-health` first: restarted containers and why (OOMKilled...),
+Kubernetes warnings, errors and HTTP 5xx per service, features a service switched off at
+startup, Prometheus targets down, workflows running. Then `bin/k3d-observe trace <id>`
+(a run, a workflow, a document), `bin/k3d-observe logs '<query>'`, `bin/k3d-observe kpi`.
+The `k3d-observability` skill (`.claude/skills/`) describes the method.
+
+**Every command is safe to rerun: they converge.** To stop: `make k3d-down` (the cluster
+sleeps, data kept). To start over: `make k3d-wipe` — **it deletes every volume: all
+accounts, documents and runs.** All the details: [`docs/LOCAL-DEVELOPMENT.md` → "k3d: the
+full stack in Kubernetes"](docs/LOCAL-DEVELOPMENT.md#k3d-the-full-stack-in-kubernetes).
+
+---
+
 > **New here? Which local setup do you want?**
 >
 > | You want to… | Go to |
 > | --- | --- |
 > | Just chat with Fred solo, no auth, no teams | the `fred` monorepo's own `README.md` → "Getting started" (`make run`) — **not this repo** |
 > | Real Keycloak/OpenFGA auth, and/or the 3-team demo (`fredlab`/`swiftpost`/`northbridge`) | **you're in the right repo.** `make docker-up` below, then in `fred`: `make setup-env` (once) → `make run` → `cd apps/control-plane-backend && make bootstrap-local BOOTSTRAP_USER=<you>`. Manual step-by-step: `docs/LOCAL-DEVELOPMENT.md` → "Full bootstrap walkthrough". |
-> | A representative Kubernetes setup (Fred's production Helm chart, room to deploy plugins next to Fred) | **you're in the right repo.** in `fred`: `make setup-env` (once); then here: `make k3d-up` → `make k3d-fred FRED_DIR=<fred checkout>` → <http://localhost:8088>, where you register and paste the bootstrap token `make k3d-fred` printed. Prerequisites and the one-time `/etc/hosts` entry: `docs/LOCAL-DEVELOPMENT.md` → "k3d: the full stack in Kubernetes". |
+> | A representative Kubernetes setup (Fred's production Helm chart, room to deploy plugins next to Fred) | **you're in the right repo:** "Quick start: Fred and its applications on k3d" above. |
 >
 > `bootstrap-local` gets you `platform_admin` — the one step with no UI
 > shortcut. Before importing the demo bundle, populate its 15 named users in
