@@ -268,11 +268,13 @@ check the pytest suite in step 6 cannot do for you.
 
 | `STACK` | Services |
 |---------|----------|
-| `base` (default) | Minimal stack — drops ClickHouse, Langfuse, Redis, Prometheus, Grafana |
-| `extended` | Full stack, including ClickHouse, Langfuse (+ Redis), Prometheus, Grafana |
+| `base` (default) | Minimal stack — Docker drops ClickHouse, Langfuse, Redis, Prometheus, Grafana; k3d drops ClickHouse only |
+| `extended` | Full stack, including ClickHouse, Langfuse (+ Redis, Docker only), Prometheus, Grafana |
 
-For Helm this maps to the chart value `stack` (`--set stack=<profile>`); extended-only
-components deploy only when `stack=extended` **and** their own `enabled` flag is set.
+For Helm this maps to the chart value `stack` (`--set stack=<profile>`). On k3d,
+observability (Prometheus, Grafana, Fluent Bit log collection) is part of both profiles,
+each behind its own `enabled` flag; ClickHouse deploys only when `stack=extended` and
+`clickhouse.enabled`.
 
 ## k3d: the full stack in Kubernetes
 
@@ -337,12 +339,22 @@ make k3d-evaluator EVALUATOR_DIR=../fred-agent-evaluator
 | <http://localhost:8088/apps/evaluation/> | The evaluation application, inside Fred |
 | <http://keycloak:8080> | Keycloak: login, registration, admin console |
 | <http://localhost:8233> | Temporal UI |
-| <http://localhost:5601> | OpenSearch Dashboards |
+| <http://localhost:3002> | Grafana (`admin` / `Azerty123_`): folder **Fred**, the dashboards of the Fred checkout |
+| <http://localhost:9090> | Prometheus: the apps' KPIs, scraped from every `metrics` port |
+| <http://localhost:5601> | OpenSearch Dashboards (`admin` / `FredOpensearch123!!`): Discover on `k3d-logs*` (every pod's output), `k3d-events*` (Kubernetes events), `app-logs-index*` |
 
 Other infrastructure host ports, for tools running on your machine: Postgres `:5432`,
 SeaweedFS S3 `:8333`, OpenSearch `:9200`, OpenFGA HTTP `:9080` / gRPC `:9081`, Temporal
-gRPC `:7233`. With `STACK=extended`, you also get Prometheus `:9090`, Grafana `:3002` and
-ClickHouse `:8123`. Override any of them with `K3D_HOST_PORT_*`.
+gRPC `:7233`. With `STACK=extended`, you also get ClickHouse `:8123`. Override any of
+them with `K3D_HOST_PORT_*`.
+
+**Finding a problem.** Fluent Bit ships every pod's output and the Kubernetes events to
+OpenSearch; Prometheus scrapes the apps' KPIs. `make k3d-health` (or `bin/k3d-observe
+health`) shows, on one screen, the containers restarted and why (OOMKilled...), the
+Kubernetes warnings, the errors and HTTP 5xx per service, the features a service switched
+off at startup, the Prometheus targets down and the workflows running. Then
+`bin/k3d-observe trace <run, workflow or document id>`, `logs '<query>'`, `kpi` and
+`promql '<expr>'`. The `k3d-observability` skill describes the method.
 
 **Day to day** (this repo):
 - `make k3d-fred` after any change, in code or in `k3d-apps/fred/values.yaml`: it rebuilds

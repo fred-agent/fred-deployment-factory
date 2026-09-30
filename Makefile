@@ -13,7 +13,8 @@ DOCKER_COMPOSE_BASE := docker compose -f docker/docker-compose-
 
 # STACK selects which services are launched (Docker Compose and Helm):
 #   base (default) → minimal stack: drops ClickHouse, Langfuse (+ its Redis),
-#                    Prometheus and Grafana
+#                    and, on Docker only, Prometheus and Grafana (k3d keeps its
+#                    observability: Prometheus, Grafana, Fluent Bit)
 #   extended       → the full stack (everything)
 STACK ?= base
 export STACK
@@ -511,6 +512,9 @@ k3d-evaluator: ## Build the evaluation application from EVALUATOR_DIR (default .
 		EVALUATOR_CHART_VERSION="$(EVALUATOR_CHART_VERSION)" EVALUATOR_VALUES="$(EVALUATOR_VALUES)" \
 		K3D_CLUSTER="$(K3D_CLUSTER)" K3D_NAMESPACE="$(K3D_NAMESPACE)" HELM_TIMEOUT="$(HELM_TIMEOUT)" \
 		K3D_HOST_PORT_FRONTEND="$(K3D_HOST_PORT_FRONTEND)" bin/k3d-evaluator-deploy.sh
+
+k3d-health: ## What needs attention on k3d: pods, events, errors, 5xx, degraded features, targets, workflows (bin/k3d-observe)
+	@bin/k3d-observe health
 
 k3d-evaluator-uninstall: ## Remove the evaluation application; its data stays in the infrastructure
 	-helm uninstall "$(EVALUATOR_RELEASE)" -n "$(K3D_NAMESPACE)"
