@@ -512,15 +512,6 @@ k3d-fred-uninstall: ## Remove the Fred release; its data stays in the infrastruc
 	-helm uninstall "$(FRED_RELEASE)" -n "$(K3D_NAMESPACE)"
 
 ##@ k3d service targets
-k3d-deploy: ## Redeploy the full fred-stack Helm chart (no image prefetch)
-	helm upgrade --install "$(HELM_RELEASE)" "$(HELM_CHART_DIR)" \
-		--namespace "$(K3D_NAMESPACE)" \
-		--create-namespace \
-		--set stack=$(STACK) \
-		--wait \
-		--wait-for-jobs \
-		--timeout "$(HELM_TIMEOUT)"
-
 k3d-restart: ## Restart a k3d component: make k3d-restart COMPONENT=openfga
 	@test -n "$(COMPONENT)" || (echo "ERROR: COMPONENT is required. Usage: make k3d-restart COMPONENT=<name>"; exit 1)
 	kubectl rollout restart statefulset/$(COMPONENT) -n "$(K3D_NAMESPACE)" 2>/dev/null || \
@@ -531,7 +522,7 @@ k3d-redeploy: ## Restart a k3d component and re-run its post-install job: make k
 	kubectl delete job $(COMPONENT)-post-install -n "$(K3D_NAMESPACE)" --ignore-not-found
 	kubectl rollout restart statefulset/$(COMPONENT) -n "$(K3D_NAMESPACE)" 2>/dev/null || \
 		kubectl rollout restart deployment/$(COMPONENT) -n "$(K3D_NAMESPACE)"
-	$(MAKE) k3d-deploy
+	$(MAKE) k3d-up
 
 k3d-logs: ## Show logs for a service: make k3d-logs SVC=openfga-post-install
 	@if [ -z "$(SVC)" ]; then echo "Usage: make k3d-logs SVC=<name>"; exit 1; fi
@@ -636,4 +627,4 @@ check-pure-infrastructure: ## Offline guard: fail if a tracked artifact carries 
 	@echo "✓ no local validation/ harness wiring left in the Makefile"
 	@echo "✓ check-pure-infrastructure passed"
 
-.PHONY: help network-create env-setup keycloak-post-install postgres-up keycloak-up seaweedfs-up opensearch-up clickhouse-up langfuse-up prometheus-up grafana-up openfga-post-install openfga-up temporal-up preflight-check docker-up docker-start docker-stop docker-down all-down docker-wipe docker-destroy k3d-create k3d-up k3d-deploy k3d-restart k3d-redeploy k3d-logs k3d-down k3d-uninstall k3d-delete k3d-wipe k3d-status k3d-fred k3d-fred-bootstrap k3d-fred-uninstall k3d-airgap-on k3d-airgap-off k3d-airgap-status checkpoint-save checkpoint-restore docker-restart-from-checkpoint checkpoint-list checkpoint-delete check-pure-infrastructure keycloak-token-short keycloak-token-normal keycloak-token-status
+.PHONY: help network-create env-setup keycloak-post-install postgres-up keycloak-up seaweedfs-up opensearch-up clickhouse-up langfuse-up prometheus-up grafana-up openfga-post-install openfga-up temporal-up preflight-check docker-up docker-start docker-stop docker-down all-down docker-wipe docker-destroy k3d-create k3d-up k3d-restart k3d-redeploy k3d-logs k3d-down k3d-uninstall k3d-delete k3d-wipe k3d-status k3d-fred k3d-fred-bootstrap k3d-fred-uninstall k3d-airgap-on k3d-airgap-off k3d-airgap-status checkpoint-save checkpoint-restore docker-restart-from-checkpoint checkpoint-list checkpoint-delete check-pure-infrastructure keycloak-token-short keycloak-token-normal keycloak-token-status
