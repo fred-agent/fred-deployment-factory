@@ -26,7 +26,7 @@ instance, per classification, and per platform.
 > | --- | --- |
 > | Just chat with Fred solo, no auth, no teams | the `fred` monorepo's own `README.md` → "Getting started" (`make run`) — **not this repo** |
 > | Real Keycloak/OpenFGA auth, and/or the 3-team demo (`fredlab`/`swiftpost`/`northbridge`) | **you're in the right repo.** `make docker-up` below, then in `fred`: `make setup-env` (once) → `make run` → `cd apps/control-plane-backend && make bootstrap-local BOOTSTRAP_USER=<you>`. Manual step-by-step: `docs/LOCAL-DEVELOPMENT.md` → "Full bootstrap walkthrough". |
-> | A representative Kubernetes setup (Fred's production Helm chart, room to deploy plugins next to Fred) | **you're in the right repo.** in `fred`: `make setup-env` (once); then here: `make k3d-up` → `make k3d-fred FRED_DIR=<fred checkout>` → `make k3d-fred-bootstrap BOOTSTRAP_USER=<you> BOOTSTRAP_PASSWORD=<pw>` → <http://localhost:8088>. Prerequisites and the one-time `/etc/hosts` entry: `docs/LOCAL-DEVELOPMENT.md` → "k3d: the full stack in Kubernetes". |
+> | A representative Kubernetes setup (Fred's production Helm chart, room to deploy plugins next to Fred) | **you're in the right repo.** in `fred`: `make setup-env` (once); then here: `make k3d-up` → `make k3d-fred FRED_DIR=<fred checkout>` → <http://localhost:8088>, where you register and paste the bootstrap token `make k3d-fred` printed. Prerequisites and the one-time `/etc/hosts` entry: `docs/LOCAL-DEVELOPMENT.md` → "k3d: the full stack in Kubernetes". |
 >
 > `bootstrap-local` gets you `platform_admin` — the one step with no UI
 > shortcut. Before importing the demo bundle, populate its 15 named users in

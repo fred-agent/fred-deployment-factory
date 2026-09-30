@@ -147,5 +147,11 @@ if ! getent hosts keycloak >/dev/null; then
   warn "'keycloak' does not resolve on this machine: the browser cannot log in. Once, with sudo:"
   printf '       grep -qw keycloak /etc/hosts || echo "127.0.0.1 keycloak" | sudo tee -a /etc/hosts\n'
 fi
-info "First time only: register at http://keycloak:${K3D_HOST_PORT_KEYCLOAK:-8080}/realms/app/account, then"
-info "  make k3d-fred-bootstrap BOOTSTRAP_USER=<you> BOOTSTRAP_PASSWORD=<pw>"
+# Until someone becomes platform_admin, Fred asks for the root bootstrap token
+# right after the first login: show it only as long as it is needed.
+if curl -fsS "http://localhost:${K3D_HOST_PORT_FRONTEND:-8088}/control-plane/v1/frontend/config" 2>/dev/null \
+    | grep -Eq '"root_bootstrap_required": ?true'; then
+  info "First login: open Fred, create your account with Register on the login page,"
+  info "then paste this token where Fred asks for it; it makes you platform_admin:"
+  printf '       %s\n' "$(kubectl get secret fred-secrets -n "$ns" -o jsonpath='{.data.CONTROL_PLANE_BOOTSTRAP_TOKEN}' | base64 -d)"
+fi

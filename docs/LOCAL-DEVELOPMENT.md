@@ -288,7 +288,7 @@ same host ports.
 (`curl -s https://raw.githubusercontent.com/k3d-io/k3d/main/install.sh | bash`), `kubectl`,
 `helm` (3 or 4), and a `fred` checkout. `FRED_DIR` points at it; it defaults to `../fred`.
 
-**1. Make `keycloak` resolve to your machine** (once). The browser is sent to
+**1. Make `keycloak` resolve to your machine** (once). Fred sends the browser to
 `http://keycloak:8080` to log in, the same address the pods use inside the cluster:
 
 ```bash
@@ -307,23 +307,19 @@ make k3d-up
 ```
 
 **4. Fred** (this repo): builds the four images from `FRED_DIR`, copies them into the
-cluster and installs the release `fred-app`, waiting until every pod is ready:
+cluster and installs the release `fred-app`, waiting until every pod is ready. As long as
+nobody is `platform_admin` yet, it ends by printing the root bootstrap token:
 
 ```bash
 make k3d-fred FRED_DIR=../fred
 ```
 
-**5. First login.** Register your own account at <http://keycloak:8080/realms/app/account>
-→ **Register**. Fred never creates Keycloak accounts itself. Then:
-
-```bash
-make k3d-fred-bootstrap BOOTSTRAP_USER=<you> BOOTSTRAP_PASSWORD=<pw>
-```
-
-This makes you the platform's `platform_admin` and turns every capability (tools, agent
-templates) on. It works once per platform: the first account keeps the role.
-
-**6. Open Fred** at <http://localhost:8088>.
+**5. First login, in Fred.** Open <http://localhost:8088>. Fred sends you to the Keycloak
+login page: create your account with **Register** (Fred never creates accounts itself).
+Back in Fred, a page asks for the bootstrap token: paste the one `make k3d-fred` printed.
+Your account becomes the platform's `platform_admin`; this works once per platform, the
+first account keeps the role. Then turn the tools and agent templates on in
+**Admin > Capabilities** (select all).
 
 | URL | What |
 | --- | --- |
