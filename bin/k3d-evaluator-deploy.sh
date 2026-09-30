@@ -81,19 +81,7 @@ step "Copy the images into the cluster"
 # ── Helm ─────────────────────────────────────────────────────────────────────
 # A release left pending (Ctrl+C) or a first install that failed: Helm refuses
 # both. Go back to the last deployed revision, or start over when there is none.
-status="$(helm status "$release" -n "$ns" 2>/dev/null | awk '/^STATUS:/ {print $2}' || true)"
-if [[ "$status" == pending-* || "$status" == failed ]]; then
-  last_deployed="$(helm history "$release" -n "$ns" 2>/dev/null | awk '$3 == "deployed" || $3 == "superseded" {rev = $1} END {print rev}')"
-  if [[ "$status" == failed && -n "$last_deployed" ]]; then
-    :  # a failed upgrade: Helm upgrades it as it is
-  elif [[ -n "$last_deployed" ]]; then
-    warn "Release '$release' is $status: rolling back to revision $last_deployed"
-    helm rollback "$release" "$last_deployed" -n "$ns" --wait --timeout "$timeout" >/dev/null
-  else
-    warn "Release '$release' is $status and was never deployed: uninstalling it first"
-    helm uninstall "$release" -n "$ns" --wait >/dev/null
-  fi
-fi
+"$here/bin/k3d-helm-recover.sh" "$release" "$ns" "$timeout"
 helm_args=(upgrade --install "$release" "$chart" --namespace "$ns" --wait --timeout "$timeout")
 [[ -n "${EVALUATOR_CHART_VERSION:-}" ]] && helm_args+=(--version "$EVALUATOR_CHART_VERSION")
 for f in "${values_files[@]}"; do helm_args+=(-f "$here/$f"); done

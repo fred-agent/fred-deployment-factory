@@ -107,19 +107,7 @@ fi
 # An interrupted run (Ctrl+C) leaves the release pending, and a failed first
 # install leaves it without any deployed revision: Helm refuses both. Go back
 # to the last deployed revision, or start over when there is none.
-status="$(helm status "$release" -n "$ns" 2>/dev/null | awk '/^STATUS:/ {print $2}' || true)"
-if [[ "$status" == pending-* || "$status" == failed ]]; then
-  last_deployed="$(helm history "$release" -n "$ns" 2>/dev/null | awk '$3 == "deployed" || $3 == "superseded" {rev = $1} END {print rev}')"
-  if [[ "$status" == failed && -n "$last_deployed" ]]; then
-    :  # a failed upgrade: Helm upgrades it as it is
-  elif [[ -n "$last_deployed" ]]; then
-    warn "Release '$release' is $status: rolling back to revision $last_deployed"
-    helm rollback "$release" "$last_deployed" -n "$ns" --wait --timeout "$timeout" >/dev/null
-  else
-    warn "Release '$release' is $status and was never deployed: uninstalling it first"
-    helm uninstall "$release" -n "$ns" --wait >/dev/null
-  fi
-fi
+"$here/bin/k3d-helm-recover.sh" "$release" "$ns" "$timeout"
 installed=false
 helm status "$release" -n "$ns" >/dev/null 2>&1 && installed=true
 helm_args=(upgrade --install "$release" "$chart" --namespace "$ns" --wait --timeout "$timeout")

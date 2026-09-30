@@ -425,18 +425,8 @@ k3d-up: k3d-create ## Deploy the full stack into k3d with Helm
 	    warn "Could not find k3d server container for DNS preflight; continuing."; \
 	  fi; \
 	fi; \
-		release_status="$$(helm status "$(HELM_RELEASE)" -n "$(K3D_NAMESPACE)" 2>/dev/null | awk '/^STATUS:/ {print $$2}' || true)"; \
-	if [[ "$$release_status" == pending-* ]]; then \
-	  warn "Helm release '$(HELM_RELEASE)' is in status '$$release_status'; attempting automatic recovery."; \
-	  last_deployed_rev="$$(helm history "$(HELM_RELEASE)" -n "$(K3D_NAMESPACE)" | awk '$$3 == "deployed" {rev = $$1} END {print rev}')"; \
-	  if [ -n "$$last_deployed_rev" ]; then \
-	    run_step "Rollback release $(HELM_RELEASE) to deployed revision $$last_deployed_rev" \
-	      helm rollback "$(HELM_RELEASE)" "$$last_deployed_rev" -n "$(K3D_NAMESPACE)" --cleanup-on-fail; \
-	  else \
-	    run_step "Uninstall pending release $(HELM_RELEASE)" \
-	      helm uninstall "$(HELM_RELEASE)" -n "$(K3D_NAMESPACE)"; \
-	  fi; \
-	fi; \
+	run_step "Recover release $(HELM_RELEASE) if an earlier run left it pending or failed" \
+	  bin/k3d-helm-recover.sh "$(HELM_RELEASE)" "$(K3D_NAMESPACE)" "$(HELM_TIMEOUT)"; \
 	run_step "Validate Helm chart $(HELM_CHART_DIR)" \
 	  helm lint "$(HELM_CHART_DIR)"; \
 		if helm upgrade --help | grep -q -- "--rollback-on-failure"; then \
