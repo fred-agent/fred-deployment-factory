@@ -59,6 +59,10 @@ metadata:
     app.kubernetes.io/component: grafana
 spec:
   replicas: 1
+  # One replica on its own volume, which it locks: stop the old pod before the
+  # new one starts, or the new one crashloops on the lock and the rollout hangs.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app.kubernetes.io/component: grafana

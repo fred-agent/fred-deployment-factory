@@ -71,6 +71,10 @@ metadata:
     app.kubernetes.io/component: prometheus
 spec:
   replicas: 1
+  # One replica on its own volume, which it locks: stop the old pod before the
+  # new one starts, or the new one crashloops on the lock and the rollout hangs.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app.kubernetes.io/component: prometheus
@@ -80,6 +84,10 @@ spec:
       labels:
         app.kubernetes.io/component: prometheus
         {{- include "fred-stack.selectorLabels" . | nindent 8 }}
+      annotations:
+        # The config is mounted with subPath, which never updates: a changed
+        # config rolls the pod instead.
+        checksum/config: {{ tpl (.Files.Get "files/prometheus/prometheus.yml.tpl") . | sha256sum }}
     spec:
       enableServiceLinks: false
       serviceAccountName: prometheus

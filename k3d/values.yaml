@@ -85,6 +85,8 @@ prometheus:
   retention: 7d
   # Every pod of the namespace that declares a container port named `metrics`
   # is scraped (job `apps`): the Fred apps do, with no target list to keep.
+  # SeaweedFS is scraped through its pod annotations (job `fred-stack-pods`).
+  seaweedfsMetricsPath: /metrics
 
 grafana:
   enabled: true
