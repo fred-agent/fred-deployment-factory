@@ -488,6 +488,29 @@ k3d-up: k3d-create ## Deploy the full stack into k3d with Helm
 	run_step "Show namespace status $(K3D_NAMESPACE)" \
 	  kubectl get pods,svc -n "$(K3D_NAMESPACE)"
 
+##@ k3d: Fred apps (the official fred chart, this instance's values in k3d-apps/fred)
+# The fred checkout the images are built from, and whose chart is deployed.
+FRED_DIR ?= ../fred
+FRED_RELEASE ?= fred-app
+# A chart directory, or oci://… for a published chart (with FRED_CHART_VERSION).
+FRED_CHART ?= $(FRED_DIR)/deploy/charts/fred
+FRED_CHART_VERSION ?=
+# Values files, applied in order.
+FRED_VALUES ?= k3d-apps/fred/values.yaml
+FRED_ENV = FRED_DIR="$(FRED_DIR)" FRED_RELEASE="$(FRED_RELEASE)" FRED_CHART="$(FRED_CHART)" \
+	FRED_CHART_VERSION="$(FRED_CHART_VERSION)" FRED_VALUES="$(FRED_VALUES)" \
+	K3D_CLUSTER="$(K3D_CLUSTER)" K3D_NAMESPACE="$(K3D_NAMESPACE)" HELM_TIMEOUT="$(HELM_TIMEOUT)" \
+	K3D_HOST_PORT_FRONTEND="$(K3D_HOST_PORT_FRONTEND)" K3D_HOST_PORT_KEYCLOAK="$(K3D_HOST_PORT_KEYCLOAK)"
+
+k3d-fred: ## Build Fred from FRED_DIR (default ../fred) and deploy it on k3d; rerun after any change
+	@$(FRED_ENV) bin/k3d-fred-deploy.sh
+
+k3d-fred-bootstrap: ## Become platform_admin (once per platform): make k3d-fred-bootstrap BOOTSTRAP_USER=<you> BOOTSTRAP_PASSWORD=<pw>
+	@$(FRED_ENV) BOOTSTRAP_USER="$(BOOTSTRAP_USER)" BOOTSTRAP_PASSWORD="$(BOOTSTRAP_PASSWORD)" bin/k3d-fred-bootstrap.sh
+
+k3d-fred-uninstall: ## Remove the Fred release; its data stays in the infrastructure
+	-helm uninstall "$(FRED_RELEASE)" -n "$(K3D_NAMESPACE)"
+
 ##@ k3d service targets
 k3d-deploy: ## Redeploy the full fred-stack Helm chart (no image prefetch)
 	helm upgrade --install "$(HELM_RELEASE)" "$(HELM_CHART_DIR)" \
@@ -613,4 +636,4 @@ check-pure-infrastructure: ## Offline guard: fail if a tracked artifact carries 
 	@echo "✓ no local validation/ harness wiring left in the Makefile"
 	@echo "✓ check-pure-infrastructure passed"
 
-.PHONY: help network-create env-setup keycloak-post-install postgres-up keycloak-up seaweedfs-up opensearch-up clickhouse-up langfuse-up prometheus-up grafana-up openfga-post-install openfga-up temporal-up preflight-check docker-up docker-start docker-stop docker-down all-down docker-wipe docker-destroy k3d-create k3d-up k3d-deploy k3d-restart k3d-redeploy k3d-logs k3d-down k3d-uninstall k3d-delete k3d-wipe k3d-status k3d-airgap-on k3d-airgap-off k3d-airgap-status checkpoint-save checkpoint-restore docker-restart-from-checkpoint checkpoint-list checkpoint-delete check-pure-infrastructure keycloak-token-short keycloak-token-normal keycloak-token-status
+.PHONY: help network-create env-setup keycloak-post-install postgres-up keycloak-up seaweedfs-up opensearch-up clickhouse-up langfuse-up prometheus-up grafana-up openfga-post-install openfga-up temporal-up preflight-check docker-up docker-start docker-stop docker-down all-down docker-wipe docker-destroy k3d-create k3d-up k3d-deploy k3d-restart k3d-redeploy k3d-logs k3d-down k3d-uninstall k3d-delete k3d-wipe k3d-status k3d-fred k3d-fred-bootstrap k3d-fred-uninstall k3d-airgap-on k3d-airgap-off k3d-airgap-status checkpoint-save checkpoint-restore docker-restart-from-checkpoint checkpoint-list checkpoint-delete check-pure-infrastructure keycloak-token-short keycloak-token-normal keycloak-token-status
