@@ -287,6 +287,17 @@ applications:
             settings:
               base_url: https://api.mistral.ai/v1
               reasoning_effort: high
+        # The Test agent's deterministic model, served inside the fred-agents
+        # pod (streamed text, structured output, tool calls): no LLM, no cost.
+        # A development instance keeps it, as the docker-compose catalog does.
+        - profile_id: default.chat.fred-test-mock
+          capability: chat
+          model_display_name: "Fred test mock (in-process)"
+          model:
+            provider: fred-test-mock
+            name: fred-test-mock
+            settings:
+              chunk_delay_s: 0.03
 
   # ===========================================================================
   frontend:
