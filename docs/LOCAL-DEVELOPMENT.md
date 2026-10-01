@@ -262,6 +262,49 @@ Log into the frontend (`http://localhost:5173`) as the `platform_admin` from ste
 real agent execution → assert marker → delete through the actual browser UI — the one
 check the pytest suite in step 6 cannot do for you.
 
+## Identity provider portability
+
+The default `make docker-up` path remains the Keycloak baseline. These opt-in
+local profiles accompany [Fred issue #2862](https://github.com/ThalesGroup/fred/issues/2862)
+and [draft PR #2863](https://github.com/ThalesGroup/fred/pull/2863). Follow the
+full bootstrap walkthrough above for each profile; run `make validation-report`
+from the sibling `fred` checkout after starting its applications. The UI
+self-test still needs a browser. Use a fresh test deployment when comparing
+provider identities, personal spaces or administrator bootstrap state.
+
+1. **Keycloak baseline:** run the walkthrough above without an OIDC overlay.
+   Save it with `make checkpoint-save NAME=kc-baseline` before changing the realm.
+2. **Keycloak with generic OIDC claims:** run `make keycloak-generic-oidc STRICT=1`,
+   generate the three Fred backend configs with
+   `scripts/prepare_identity_provider_configs.py --profile generic_oidc`, and restart
+   the Fred applications. Run `local-testing/demo/seed-keycloak-users.sh`, then
+   `local-testing/scripts/warm-local-directory.sh` before importing the demo
+   bundle. The strict profile removes legacy role claims and Keycloak Admin API
+   rights from the service accounts. Use `make keycloak-generic-oidc-revert` to
+   restore the baseline realm settings.
+3. **Mock OIDC, without Keycloak:** run `make mock-oidc-up`, generate the
+   Fred configs with `scripts/prepare_identity_provider_configs.py --profile mock_oidc`,
+   restart Fred, and stop
+   Keycloak with `docker stop app-keycloak`. The mock issuer is
+   `http://localhost:8090/fred`. After testing, run `make mock-oidc-down` and
+   restore the Keycloak checkpoint.
+4. **Microsoft Entra ID:** follow the app registrations and generator command in
+   `fred/docs/swift/platform/IDENTITY-PROVIDERS.md`. Supply six public UUIDs,
+   workload secrets through the environment and the configured token lifetime;
+   then run the Fred validation report and UI self-test against that tenant.
+5. **ZITADEL:** run `make zitadel-configure SWIFT_SRC=../fred` or the matching
+   Fred VS Code launch task. The factory provisions clients and generates
+   configs and a private credentials file under `/tmp/fred-idp-tests/zitadel/`.
+   Follow the ZITADEL procedure below for identity and delegation checks.
+
+Use `make checkpoint-restore NAME=kc-baseline` followed by `make docker-up` to
+return to the saved baseline without reprovisioning from scratch. Keep each
+profile's complete configuration in a separate temporary `CONFIG_FILE`.
+Use the Fred generator or the ZITADEL provisioner: the tracked example overlays
+are references, not launchable `CONFIG_FILE` values. These commands prepare
+host-run Fred applications; Kubernetes provider rollout uses Fred's chart and
+migration guide and still needs a fresh deployment and administrator self-test.
+
 ## Stack profiles: `base` vs `extended`
 
 `STACK` selects which services launch, for both `make docker-up` and `make k3d-up`:
@@ -416,3 +459,87 @@ the template for custom values. Keycloak backend client secrets:
 - **k3d:** `auth.keycloak*ClientSecret` in `k3d/values.yaml`. They land in the `fred-secrets`
   Secret, which the Fred apps read by reference (`k3d-apps/fred/values.yaml`): one place to
   change them.
+
+## Real non-Keycloak provider: ZITADEL
+
+This opt-in profile runs ZITADEL v4.19.2, its Login UI, a private PostgreSQL and
+an HTTP/2 proxy on **http://localhost:8091**. It has its own Compose project and
+volumes; it neither resets Fred nor changes Keycloak. Compose configuration
+follows [ZITADEL's local deployment](https://zitadel.com/docs/self-hosting/deploy/compose).
+
+From deployment-factory:
+
+```bash
+make zitadel-configure SWIFT_SRC=../fred
+make zitadel-status
+```
+
+The first start downloads images. Local credentials are generated once in
+`docker/zitadel/.env` (ignored, owner-only). The bootstrap operator PAT and
+resumable provisioning state are also ignored under `docker/zitadel/state/`.
+Do not publish these files. The provider is bound to loopback and is a local
+HTTP development deployment, not a production configuration.
+
+Provisioning creates the Fred project, a public SPA using code + PKCE and JWT
+access tokens, and three machine users with client secrets. Only `agentic`
+holds `delegation_caller`; all three workloads hold `service_agent`. A
+[complement-token action](https://zitadel.com/docs/apis/actions/complement-token)
+projects roles from this specific project into Fred's flat `roles` claim.
+The project ID is the API audience requested through ZITADEL's project scope.
+M2M requests also explicitly request the assigned role scopes; requesting only
+the audience does not include the workload roles.
+People keep their provider-issued non-UUID IDs; Fred normalizes them.
+
+Complete schema-validated configs, the conversation policy catalog and a private
+`service-credentials.env` are generated under `/tmp/fred-idp-tests/zitadel/`.
+For manual launches, source the credentials in each backend terminal, select
+that directory's CONFIG_FILE, set FRED_LOCAL_DELEGATION_FILE empty and
+FRED_JWT_MAX_LIFETIME_SECONDS=5400; use the Fred identity-provider launch guide.
+Existing backend `.env` files still supply database, storage and model settings.
+The new secrets use ZITADEL-specific environment names and do not replace the
+Keycloak secrets.
+
+With the matching Fred checkout, VS Code task **IDP zitadel — launch all** handles
+preparation and all six applications. Run **Fred — kill all** before switching.
+Visit http://localhost:8091/ui/console and log in as
+`fred-admin@zitadel.localhost` (the generated file records the exact login).
+The provisioner creates this console administrator separately because initial
+machine bootstrapping does not create a human administrator. Display its initial
+login details locally; the first login may require a password change:
+
+```bash
+cat docker/zitadel/state/admin-login.json
+```
+
+Create test users in the console, then sign in to Fred in a private window.
+If Fred was already bootstrapped with another provider, its root admin marker
+is retained: a new ZITADEL identity cannot reuse bootstrap. For a fresh admin
+walkthrough, use an explicitly reset/checkpointed test platform or have an
+existing Fred admin assign the role after the new person has authenticated.
+ZITADEL administrator status does not grant Fred platform administrator status.
+
+The generated ZITADEL configs enable CGU version `v1` in all three backends.
+Restart Fred after regeneration; a new user must accept before entering the app.
+Previously accepted `v1` is retained. Root bootstrap is deployment-wide and is
+not reopened when changing providers.
+
+Check CGU acceptance for a new user, personal-space identity,
+local user lookup, the JWT self-test, document/agent delegation, and isolation
+between two users. The live checks are independent from Keycloak. Keep optional
+samples/evaluator runtimes in mind when selecting an agent.
+
+```bash
+make zitadel-down  # preserves users and volumes; does not stop Fred
+```
+
+`docker-wipe` targets the usual Foundation stack, not the opt-in ZITADEL project.
+If deliberately wiping ZITADEL, also remove its ignored provisioning state before
+running configure again; retained IDs otherwise refer to deleted resources.
+
+Verification (2026-09-28): all four ZITADEL containers reached readiness;
+discovery and the console responded; the SPA authorization request with PKCE
+reached the real login page; all three workload JWT signatures, issuer,
+audience, expiration and assigned roles were verified using Fred's installed JWT
+library. All three generated configs passed their JSON schemas and Fred provider
+validation. Offline tests cover required claims and exclusive delegation roles.
+The Fred PR #2863 local ZITADEL walkthrough was declared successful by the developer on 2026-10-01; no exported administrator self-test report is attached. Fresh Kubernetes acceptance remains separate.

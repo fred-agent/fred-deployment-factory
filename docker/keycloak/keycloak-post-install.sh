@@ -499,6 +499,11 @@ should_force_relogin() {
   esac
 }
 
+# Allow opt-in local profiles to reuse the provisioning helpers without rerunning bootstrap.
+if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then
+  return 0
+fi
+
 log "waiting for Keycloak container '${KEYCLOAK_CONTAINER}'"
 wait_for_container "$KEYCLOAK_CONTAINER" || die "container '${KEYCLOAK_CONTAINER}' not found"
 wait_for_container_running "$KEYCLOAK_CONTAINER" || die "container '${KEYCLOAK_CONTAINER}' is not running"

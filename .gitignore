@@ -44,3 +44,7 @@ config/fredlab-keycloak-identity.local.json
 .vscode/
 .idea/
 *.swp
+
+# Local ZITADEL bootstrap credentials and provisioning state.
+/docker/zitadel/.env
+/docker/zitadel/state/

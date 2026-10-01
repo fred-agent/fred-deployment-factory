@@ -1,0 +1,83 @@
+# Opt-in localhost test provider, isolated from Fred's Foundation.
+services:
+  postgres:
+    image: postgres:17.10-alpine
+    environment:
+      POSTGRES_DB: zitadel
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?run make zitadel-env}
+    volumes:
+      - data:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U postgres -d zitadel]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+  api:
+    image: ghcr.io/zitadel/zitadel:v4.19.2
+    user: "0"
+    command: start-from-init --masterkey ${ZITADEL_MASTERKEY:?run make zitadel-env}
+    environment:
+      ZITADEL_DATABASE_POSTGRES_DSN: postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/zitadel?sslmode=disable
+      ZITADEL_EXTERNALDOMAIN: localhost
+      ZITADEL_EXTERNALPORT: 8091
+      ZITADEL_EXTERNALSECURE: "false"
+      ZITADEL_TLS_ENABLED: "false"
+      ZITADEL_FIRSTINSTANCE_PATPATH: /bootstrap/operator.pat
+      ZITADEL_FIRSTINSTANCE_ORG_MACHINE_MACHINE_USERNAME: fred-provisioner
+      ZITADEL_FIRSTINSTANCE_ORG_MACHINE_MACHINE_NAME: Fred local provisioner
+      ZITADEL_FIRSTINSTANCE_ORG_MACHINE_PAT_EXPIRATIONDATE: "2099-01-01T00:00:00Z"
+      ZITADEL_FIRSTINSTANCE_LOGINCLIENTPATPATH: /bootstrap/login.pat
+      ZITADEL_FIRSTINSTANCE_ORG_LOGINCLIENT_MACHINE_USERNAME: login-client
+      ZITADEL_FIRSTINSTANCE_ORG_LOGINCLIENT_MACHINE_NAME: Local Login UI
+      ZITADEL_FIRSTINSTANCE_ORG_LOGINCLIENT_PAT_EXPIRATIONDATE: "2099-01-01T00:00:00Z"
+      ZITADEL_DEFAULTINSTANCE_FEATURES_LOGINV2_REQUIRED: "true"
+      ZITADEL_DEFAULTINSTANCE_FEATURES_LOGINV2_BASEURI: http://localhost:8091/ui/v2/login/
+      ZITADEL_OIDC_DEFAULTLOGINURLV2: http://localhost:8091/ui/v2/login/login?authRequest=
+      ZITADEL_OIDC_DEFAULTLOGOUTURLV2: http://localhost:8091/ui/v2/login/logout?post_logout_redirect=
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - bootstrap:/bootstrap
+    healthcheck:
+      test: [CMD, /app/zitadel, ready]
+      interval: 5s
+      timeout: 10s
+      retries: 30
+  login:
+    image: ghcr.io/zitadel/zitadel-login:v4.19.2
+    user: "0"
+    environment:
+      ZITADEL_API_URL: http://api:8080
+      NEXT_PUBLIC_BASE_PATH: /ui/v2/login
+      ZITADEL_SERVICE_USER_TOKEN_FILE: /bootstrap/login.pat
+      ZITADEL_SESSION_COOKIE_SECRET: ${LOGIN_COOKIE_SECRET:?run make zitadel-env}
+      CUSTOM_REQUEST_HEADERS: Host:localhost:8091,X-Forwarded-Proto:http
+    volumes:
+      - bootstrap:/bootstrap:ro
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, /bin/sh, -c, node /app/healthcheck.mjs http://localhost:3000/ui/v2/login/healthy]
+      interval: 5s
+      timeout: 10s
+      retries: 30
+  proxy:
+    image: traefik:v3.7.7
+    command:
+      - --entrypoints.web.address=:80
+      - --providers.file.filename=/etc/traefik/routes.yaml
+    ports:
+      - "127.0.0.1:8091:80"
+    volumes:
+      - ./routes.yaml:/etc/traefik/routes.yaml:ro
+    depends_on:
+      api:
+        condition: service_healthy
+      login:
+        condition: service_healthy
+volumes:
+  data:
+  bootstrap:

@@ -146,6 +146,18 @@ postgres-up: network-create env-setup
 			exit 1; \
 		fi
 
+mock-oidc-up: ## Start the opt-in local generic OIDC test provider
+	docker compose -f docker/docker-compose-mock-oidc.yml -p mock-oidc up -d
+
+mock-oidc-down: ## Stop the local generic OIDC test provider
+	docker compose -f docker/docker-compose-mock-oidc.yml -p mock-oidc down
+
+keycloak-generic-oidc: ## Opt in to generic OIDC token claims on the local Keycloak realm
+	STRICT="$(STRICT)" bash docker/keycloak/generic-oidc-profile.sh apply
+
+keycloak-generic-oidc-revert: ## Restore the local Keycloak baseline claims and admin roles
+	bash docker/keycloak/generic-oidc-profile.sh revert
+
 keycloak-up: postgres-up
 	@echo "Launching Keycloak..."
 	$(DOCKER_COMPOSE_BASE)keycloak.yml -p keycloak up -d
@@ -636,3 +648,24 @@ check-pure-infrastructure: ## Offline guard: fail if a tracked artifact carries 
 	@echo "✓ check-pure-infrastructure passed"
 
 .PHONY: help network-create env-setup keycloak-post-install postgres-up keycloak-up seaweedfs-up opensearch-up clickhouse-up langfuse-up prometheus-up grafana-up openfga-post-install openfga-up temporal-up preflight-check docker-up docker-start docker-stop docker-down all-down docker-wipe docker-destroy k3d-create k3d-up k3d-restart k3d-redeploy k3d-logs k3d-down k3d-uninstall k3d-delete k3d-wipe k3d-status k3d-fred k3d-fred-uninstall k3d-evaluator k3d-evaluator-uninstall k3d-airgap-on k3d-airgap-off k3d-airgap-status checkpoint-save checkpoint-restore docker-restart-from-checkpoint checkpoint-list checkpoint-delete check-pure-infrastructure keycloak-token-short keycloak-token-normal keycloak-token-status
+
+##@ Optional ZITADEL identity-provider test
+ZITADEL_COMPOSE = docker compose --env-file docker/zitadel/.env -f docker/zitadel/compose.yaml -p fred-zitadel
+FRED_IDP_CONFIG_DIR ?= /tmp/fred-idp-tests/zitadel
+
+.PHONY: zitadel-env zitadel-up zitadel-down zitadel-status zitadel-configure
+zitadel-env: ## Generate ignored local ZITADEL credentials once
+	python3 docker/zitadel/env.py
+
+zitadel-up: zitadel-env ## Start isolated ZITADEL on localhost:8091 (keeps Keycloak)
+	$(ZITADEL_COMPOSE) up -d --wait --wait-timeout 180
+
+zitadel-down: ## Stop ZITADEL, preserving its users and volumes
+	$(ZITADEL_COMPOSE) down
+
+zitadel-status: ## Show ZITADEL containers
+	$(ZITADEL_COMPOSE) ps
+
+zitadel-configure: zitadel-up ## Provision SPA/services and generate complete Fred configs
+	@set -eu; umask 077; mkdir -p docker/zitadel/state; $(ZITADEL_COMPOSE) cp api:/bootstrap/operator.pat docker/zitadel/state/operator.pat; chmod 600 docker/zitadel/state/operator.pat
+	/usr/bin/python3 docker/zitadel/provision.py --fred-root "$(SWIFT_SRC)" --output-dir "$(FRED_IDP_CONFIG_DIR)"
