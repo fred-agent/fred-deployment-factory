@@ -62,7 +62,13 @@ def stop_session(manifest: Path) -> int:
         return 0
     # Never signal a reused PID belonging to an unrelated application.
     args = command.read_bytes().split(b"\0")
-    if str(Path(__file__).resolve()).encode() not in args:
+    process_cwd = Path(f"/proc/{pid}/cwd").resolve()
+    script = Path(__file__).resolve()
+    if not any(
+        (process_cwd / os.fsdecode(arg)).resolve() == script
+        for arg in args[1:]
+        if arg and not arg.startswith(b"-")
+    ):
         raise RuntimeError("Recorded PID no longer belongs to this launcher")
     os.kill(pid, signal.SIGTERM)
     deadline = time.monotonic() + 25
@@ -88,7 +94,8 @@ def main() -> int:
     args = parser.parse_args()
     checkout = args.checkout.resolve()
     log_dir = args.log_dir.resolve()
-    log_dir.mkdir(parents=True, exist_ok=True)
+    log_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+    log_dir.chmod(0o700)
     manifest = log_dir / "session.json"
     if args.stop:
         return stop_session(manifest)
@@ -144,6 +151,8 @@ def main() -> int:
     ):
         try:
             for name, app, role, port in selected:
+                if stopping:
+                    break
                 cwd = checkout / "apps" / app
                 env = os.environ.copy()
                 env.update(
@@ -191,10 +200,21 @@ def main() -> int:
                             f"{package}.main_worker",
                         ]
                 output = (
-                    stack.enter_context((log_dir / f"{name}.log").open("ab"))
+                    stack.enter_context(
+                        os.fdopen(
+                            os.open(
+                                log_dir / f"{name}.log",
+                                os.O_WRONLY | os.O_CREAT | os.O_APPEND,
+                                0o600,
+                            ),
+                            "ab",
+                        )
+                    )
                     if args.mode == "json"
                     else None
                 )
+                if output is not None:
+                    os.fchmod(output.fileno(), 0o600)
                 process = subprocess.Popen(
                     command,
                     cwd=cwd,
@@ -214,6 +234,7 @@ def main() -> int:
                 )
                 print(f"Started {name}: PID {process.pid}", flush=True)
             manifest.write_text(json.dumps(session, indent=2))
+            manifest.chmod(0o600)
             print(
                 "JSON logs: http://localhost:3002/explore (Fred Logs)"
                 if args.mode == "json"

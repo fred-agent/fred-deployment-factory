@@ -69,7 +69,7 @@ time.sleep(120)
         process = subprocess.Popen(
             [
                 sys.executable,
-                str(LAUNCHER),
+                "bin/fred-local-logs.py",
                 "--checkout",
                 str(checkout),
                 "--log-dir",
@@ -79,6 +79,7 @@ time.sleep(120)
                 "--mode",
                 mode,
             ],
+            cwd=LAUNCHER.parents[1],
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
@@ -97,6 +98,8 @@ time.sleep(120)
                     time.sleep(0.05)
                 event = json.loads(output.read_text())
                 self.assertEqual(event["mode"], "json")
+                self.assertEqual(logs.stat().st_mode & 0o777, 0o700)
+                self.assertEqual(output.stat().st_mode & 0o777, 0o600)
                 manifest = json.loads((logs / "session.json").read_text())
                 env = (
                     Path(f"/proc/{manifest['processes'][0]['pid']}/environ")
@@ -126,7 +129,19 @@ time.sleep(120)
                     timeout=5,
                 )
                 self.assertNotEqual(duplicate.returncode, 0)
-                process.send_signal(signal.SIGTERM)
+                stop = subprocess.run(
+                    [
+                        "make",
+                        "fred-stop",
+                        f"FRED_CHECKOUT={Path(temporary) / 'fred'}",
+                        f"FRED_LOG_DIR={logs}",
+                    ],
+                    cwd=LAUNCHER.parents[1],
+                    capture_output=True,
+                    text=True,
+                    timeout=25,
+                )
+                self.assertEqual(stop.returncode, 0, stop.stdout + stop.stderr)
                 process.communicate(timeout=20)
                 self.assertEqual(process.returncode, 0)
                 self.assertFalse(config.exists())

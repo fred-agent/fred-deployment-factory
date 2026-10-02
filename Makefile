@@ -24,7 +24,7 @@ endif
 # Service groups for `docker-up`. The base group is always launched; the
 # extended group is appended only when STACK=extended.
 DOCKER_BASE_SERVICES := postgres-up keycloak-up seaweedfs-up opensearch-up openfga-up temporal-up
-DOCKER_EXTENDED_SERVICES := clickhouse-up langfuse-up prometheus-up grafana-up fred-json fred-text fred-stop logging-up
+DOCKER_EXTENDED_SERVICES := clickhouse-up langfuse-up prometheus-up grafana-up logging-up
 ifeq ($(STACK),extended)
 DOCKER_UP_SERVICES := $(DOCKER_BASE_SERVICES) $(DOCKER_EXTENDED_SERVICES)
 else
@@ -184,16 +184,17 @@ FRED_LOG_DIR ?= /tmp/fred-structured-logs
 export FRED_LOG_DIR
 
 fred-json: logging-up ## Run Fred APIs, workers and frontend with JSON logs in Grafana (FRED_CHECKOUT=...)
-	python3 bin/fred-local-logs.py --checkout "$(FRED_CHECKOUT)" --log-dir "$(FRED_LOG_DIR)" --mode json
+	python3 "$(CURDIR)/bin/fred-local-logs.py" --checkout "$(FRED_CHECKOUT)" --log-dir "$(FRED_LOG_DIR)" --mode json
 
 fred-text: ## Run the same Fred services with readable terminal logs
-	python3 bin/fred-local-logs.py --checkout "$(FRED_CHECKOUT)" --log-dir "$(FRED_LOG_DIR)" --mode text
+	python3 "$(CURDIR)/bin/fred-local-logs.py" --checkout "$(FRED_CHECKOUT)" --log-dir "$(FRED_LOG_DIR)" --mode text
 
 fred-stop: ## Stop only the Fred processes started by fred-json/fred-text
-	python3 bin/fred-local-logs.py --checkout "$(FRED_CHECKOUT)" --log-dir "$(FRED_LOG_DIR)" --stop
+	python3 "$(CURDIR)/bin/fred-local-logs.py" --checkout "$(FRED_CHECKOUT)" --log-dir "$(FRED_LOG_DIR)" --stop
 
 logging-up: ## Start Loki, Alloy and Grafana for local JSON log exploration
-	@mkdir -p "$${FRED_LOG_DIR:-/tmp/fred-structured-logs}"
+	@mkdir -p -m 700 "$(FRED_LOG_DIR)"
+	@chmod 700 "$(FRED_LOG_DIR)"
 	$(DOCKER_COMPOSE_BASE)logging.yml -p logging up -d
 	$(DOCKER_COMPOSE_BASE)grafana.yml -p grafana up -d
 
@@ -641,4 +642,4 @@ check-pure-infrastructure: ## Offline guard: fail if a tracked artifact carries 
 	@echo "✓ no local validation/ harness wiring left in the Makefile"
 	@echo "✓ check-pure-infrastructure passed"
 
-.PHONY: help network-create env-setup keycloak-post-install postgres-up keycloak-up seaweedfs-up opensearch-up clickhouse-up langfuse-up prometheus-up grafana-up fred-json fred-text fred-stop logging-up logging-down openfga-post-install openfga-up temporal-up preflight-check docker-up docker-start docker-stop docker-down all-down docker-wipe docker-destroy k3d-create k3d-up k3d-deploy k3d-restart k3d-redeploy k3d-logs k3d-down k3d-uninstall k3d-delete k3d-wipe k3d-status k3d-airgap-on k3d-airgap-off k3d-airgap-status checkpoint-save checkpoint-restore docker-restart-from-checkpoint checkpoint-list checkpoint-delete check-pure-infrastructure keycloak-token-short keycloak-token-normal keycloak-token-status
+.PHONY: fred-json fred-text fred-stop help network-create env-setup keycloak-post-install postgres-up keycloak-up seaweedfs-up opensearch-up clickhouse-up langfuse-up prometheus-up grafana-up logging-up logging-down openfga-post-install openfga-up temporal-up preflight-check docker-up docker-start docker-stop docker-down all-down docker-wipe docker-destroy k3d-create k3d-up k3d-deploy k3d-restart k3d-redeploy k3d-logs k3d-down k3d-uninstall k3d-delete k3d-wipe k3d-status k3d-airgap-on k3d-airgap-off k3d-airgap-status checkpoint-save checkpoint-restore docker-restart-from-checkpoint checkpoint-list checkpoint-delete check-pure-infrastructure keycloak-token-short keycloak-token-normal keycloak-token-status

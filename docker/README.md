@@ -322,6 +322,8 @@ Open **Explore**, select **Fred Logs**, then query `{environment="dev"} | json`.
 
 Select `app.log_format: json` in local Fred API/worker configuration, and capture
 stdout/stderr to one `*.log` file per process under `/tmp/fred-structured-logs`.
+The launcher restricts this directory to its owner (0700) and captured logs to
+0600; Alloy reads the mounted directory as container root.
 Override that directory with `FRED_LOG_DIR=/absolute/path make logging-up`.
 The directory must be readable by the collector. Docker applications opt in with
 the container label `fred.logs=true`; unrelated dependency logs are not collected.
