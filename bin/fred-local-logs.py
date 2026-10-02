@@ -236,7 +236,7 @@ def main() -> int:
             manifest.write_text(json.dumps(session, indent=2))
             manifest.chmod(0o600)
             print(
-                "JSON logs: http://localhost:3002/explore (Fred Logs)"
+                "JSON logs: http://localhost:3002/d/fred-local-logs/fred-logs"
                 if args.mode == "json"
                 else "Text logs: this terminal",
                 flush=True,

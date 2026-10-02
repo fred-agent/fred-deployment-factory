@@ -1,0 +1,149 @@
+{
+  "uid": "fred-local-logs",
+  "title": "Fred Logs",
+  "description": "Local Fred logs: timestamp, service, severity and message. Expand a line for all fields and quick include/exclude filters.",
+  "tags": [
+    "fred",
+    "logs",
+    "dev"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 41,
+  "version": 1,
+  "editable": false,
+  "refresh": "",
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "timepicker": {
+    "refresh_intervals": [
+      "5s",
+      "10s",
+      "30s",
+      "1m",
+      "5m"
+    ]
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "service",
+        "label": "Service",
+        "type": "query",
+        "datasource": {
+          "type": "loki",
+          "uid": "fred-logs"
+        },
+        "query": "label_values({environment=\"dev\"}, service)",
+        "definition": "label_values({environment=\"dev\"}, service)",
+        "refresh": 2,
+        "sort": 1,
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        },
+        "options": [],
+        "hide": 0,
+        "skipUrlSync": false
+      },
+      {
+        "name": "severity",
+        "label": "Severity",
+        "type": "query",
+        "datasource": {
+          "type": "loki",
+          "uid": "fred-logs"
+        },
+        "query": "label_values({environment=\"dev\"}, severity)",
+        "definition": "label_values({environment=\"dev\"}, severity)",
+        "refresh": 2,
+        "sort": 1,
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        },
+        "options": [],
+        "hide": 0,
+        "skipUrlSync": false
+      },
+      {
+        "name": "filters",
+        "label": "Field filters",
+        "type": "adhoc",
+        "datasource": {
+          "type": "loki",
+          "uid": "fred-logs"
+        },
+        "filters": [],
+        "hide": 0,
+        "skipUrlSync": false
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "logs",
+      "title": "Fred logs",
+      "description": "Service names have stable colors; severity uses red for errors, yellow for warnings, green for info. Expand any line for parsed fields and the original raw_record. Use the field filter buttons to include or exclude a value.",
+      "datasource": {
+        "type": "loki",
+        "uid": "fred-logs"
+      },
+      "gridPos": {
+        "h": 22,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "fred-logs"
+          },
+          "expr": "{environment=\"dev\", service=~\"${service:regex}\", severity=~\"${severity:regex}\"} | json | drop __error__, __error_details__ | label_format raw_record=\"{{ __line__ }}\", level=\"{{ if .severity }}{{ lower .severity }}{{ else }}{{ lower .level }}{{ end }}\" | line_format `{{ if or .message .msg }}{{ if eq .service \"control-plane\" }}{{ printf \"\\x1b[96m\" }}{{ else if eq .service \"knowledge-flow\" }}{{ printf \"\\x1b[94m\" }}{{ else if eq .service \"fred-agents\" }}{{ printf \"\\x1b[95m\" }}{{ else if eq .service \"control-plane-worker\" }}{{ printf \"\\x1b[96m\" }}{{ else if eq .service \"knowledge-flow-worker\" }}{{ printf \"\\x1b[93m\" }}{{ else if eq .service \"frontend\" }}{{ printf \"\\x1b[92m\" }}{{ else }}{{ printf \"\\x1b[37m\" }}{{ end }}{{ printf \"%-24s\" .service }}{{ printf \"\\x1b[0m\" }} {{ if or (eq .level \"error\") (eq .level \"critical\") (eq .level \"fatal\") }}{{ printf \"\\x1b[91m\" }}{{ else if or (eq .level \"warning\") (eq .level \"warn\") }}{{ printf \"\\x1b[93m\" }}{{ else if eq .level \"info\" }}{{ printf \"\\x1b[92m\" }}{{ else if eq .level \"debug\" }}{{ printf \"\\x1b[96m\" }}{{ else }}{{ printf \"\\x1b[37m\" }}{{ end }}{{ if .severity }}{{ printf \"%-8s\" .severity }}{{ else }}{{ printf \"%-8s\" (upper .level) }}{{ end }}{{ printf \"\\x1b[0m\" }} {{ if .message }}{{ .message }}{{ else }}{{ .msg }}{{ end }}{{ else }}{{ __line__ }}{{ end }}`",
+          "queryType": "range",
+          "maxLines": 1000
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {
+        "showTime": true,
+        "showLabels": false,
+        "showCommonLabels": false,
+        "wrapLogMessage": true,
+        "prettifyLogMessage": false,
+        "enableLogDetails": true,
+        "detailsMode": "inline",
+        "sortOrder": "Descending",
+        "dedupStrategy": "none",
+        "fontSize": "small",
+        "showControls": true,
+        "showFieldSelector": false,
+        "syntaxHighlighting": false,
+        "displayedFields": [],
+        "timestampResolution": "ms",
+        "enableInfiniteScrolling": false
+      },
+      "links": [
+        {
+          "title": "Open in Explore",
+          "url": "/explore",
+          "targetBlank": false
+        }
+      ]
+    }
+  ]
+}

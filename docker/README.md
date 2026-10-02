@@ -318,7 +318,20 @@ Hereunder, these are the information to connect to each service with their _loca
 
 With the existing Docker foundation running, `make logging-up` starts Loki and Alloy
 and the existing Grafana on http://localhost:3002. It preserves `docker/.env`.
-Open **Explore**, select **Fred Logs**, then query `{environment="dev"} | json`.
+Open http://localhost:3002/d/fred-local-logs/fred-logs (also the default home dashboard).
+The compact view shows **timestamp · service · severity · message**, with stable
+service colors and severity colors (errors red, warnings yellow, info green).
+Use the **Service** and **Severity** dropdowns to select one or more values.
+Expand a line for all parsed fields and its original **raw_record**, then use
+the include/exclude buttons to add **Field filters**; clear them to reset the view.
+The dashboard keeps raw records in Loki unchanged and formats only query results.
+Native text lines remain visible when All is selected. Grafana also shows its
+native level badge beside the timestamp. Refresh is manual by default so an
+expanded log stays open; the refresh menu can enable automatic updates.
+
+Local Docker Grafana is pinned to 12.4.11 for the native log panel and field-filter
+controls; `GRAFANA_IMAGE` overrides the image. For free-form queries, open **Explore**,
+select the **Fred Logs** datasource and use `{environment="dev"} | json`.
 
 Select `app.log_format: json` in local Fred API/worker configuration, and capture
 stdout/stderr to one `*.log` file per process under `/tmp/fred-structured-logs`.
