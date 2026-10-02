@@ -1,0 +1,11 @@
+apiVersion: 1
+
+datasources:
+  - name: Fred Logs
+    uid: fred-logs
+    type: loki
+    access: proxy
+    url: http://app-loki:3100
+    editable: true
+    jsonData:
+      maxLines: 1000

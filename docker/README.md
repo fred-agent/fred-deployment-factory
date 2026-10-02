@@ -313,3 +313,58 @@ Hereunder, these are the information to connect to each service with their _loca
 
 - URLs:
   - http://$(DOCKER_COMPOSE_HOST_FQDN):$(PROMETHEUS_PORT) (web UI / API, default: `9090`)
+
+## Local structured logs
+
+With the existing Docker foundation running, `make logging-up` starts Loki and Alloy
+and the existing Grafana on http://localhost:3002. It preserves `docker/.env`.
+Open **Explore**, select **Fred Logs**, then query `{environment="dev"} | json`.
+
+Select `app.log_format: json` in local Fred API/worker configuration, and capture
+stdout/stderr to one `*.log` file per process under `/tmp/fred-structured-logs`.
+Override that directory with `FRED_LOG_DIR=/absolute/path make logging-up`.
+The directory must be readable by the collector. Docker applications opt in with
+the container label `fred.logs=true`; unrelated dependency logs are not collected.
+The Docker socket grants the collector Docker API access even when mounted read-only.
+
+Loki retains logs for 72 hours in a named volume; Alloy persists reader positions.
+The collector recognizes Python seconds/nanoseconds, nginx ISO timestamps and audit
+epoch timestamps, preserves original lines and keeps native text diagnostics.
+Only environment, source, service, service role, severity and source file/container
+are labels; operation and identity references remain queryable JSON fields.
+
+Useful queries:
+
+```logql
+{environment="dev", severity=~"ERROR|CRITICAL"} | json
+{environment="dev"} | json | correlation_id="YOUR_ID"
+{environment="dev", service_role="worker"} | json | document_id="YOUR_ID"
+{environment="dev", service="frontend"} | json | http_status >= 400
+```
+
+`make logging-down` stops collection without deleting stored logs. The extended
+Docker stack includes logging; the ordinary stop/down/wipe commands handle it too.
+This validates local output and field queries; GKE timestamp/severity promotion
+still requires a canary in Cloud Logging.
+
+### Switch Fred between terminal and Grafana
+
+From deployment-factory, with Fred dependencies and per-app `.env` files prepared:
+
+```bash
+make fred-json FRED_CHECKOUT=../fred-wt-sl-output
+# Ctrl+C stops all six Fred processes; collectors stay running.
+make fred-text FRED_CHECKOUT=../fred-wt-sl-output
+```
+
+From another terminal, `make fred-stop` stops only the recorded launcher session.
+The launcher checks for an existing session and refuses to replace it silently.
+It uses temporary copies of `configuration_prod.yaml`, selecting only the log mode
+and the local Control Plane-to-Knowledge Flow URL. Tracked configurations and `.env`
+files are untouched. API reloads watch the source packages. The ports match the
+VS Code prod tasks: Control Plane 9661, Knowledge Flow 9331, Fred Agents 8000 and
+frontend 9583; the frontend proxies all three APIs. Workers use existing installed
+Python environments directly, avoiding repeated model downloads.
+JSON mode writes append-only component log files; text mode prints to the terminal.
+The session record is `FRED_LOG_DIR/session.json`. Only one launcher session may use
+a log directory. Existing API processes must be stopped before starting this session.

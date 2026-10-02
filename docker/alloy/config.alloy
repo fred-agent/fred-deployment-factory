@@ -1,0 +1,83 @@
+logging {
+  level = "info"
+}
+
+loki.source.file "fred" {
+  targets = [{__path__ = "/var/log/fred/*.log", environment = "dev", source = "host"}]
+  file_match {
+    enabled = true
+    sync_period = "2s"
+  }
+  forward_to = [loki.process.fred.receiver]
+}
+
+// Opt Docker applications in with the label fred.logs=true.
+discovery.docker "fred" {
+  host = "unix:///var/run/docker.sock"
+  filter {
+    name = "label"
+    values = ["fred.logs=true"]
+  }
+}
+
+discovery.relabel "fred" {
+  targets = discovery.docker.fred.targets
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex = "/(.*)"
+    target_label = "container"
+  }
+  rule {
+    target_label = "environment"
+    replacement = "dev"
+  }
+  rule {
+    target_label = "source"
+    replacement = "docker"
+  }
+}
+
+loki.source.docker "fred" {
+  host = "unix:///var/run/docker.sock"
+  targets = discovery.relabel.fred.output
+  forward_to = [loki.process.fred.receiver]
+}
+
+loki.process "fred" {
+  forward_to = [loki.write.local.receiver]
+  stage.json {
+    expressions = {
+      service = "service",
+      service_role = "service_role",
+      severity = "severity || level",
+      seconds = "to_string(timestamp.seconds || '')",
+      nanos = "to_string(timestamp.nanos || `0`)",
+      iso_timestamp = "type(timestamp) == 'string' && timestamp || ''",
+      audit_timestamp = "to_string(ts || '')",
+    }
+    drop_malformed = false
+  }
+  stage.labels {
+    values = {service = "", service_role = "", severity = ""}
+  }
+  stage.template {
+    source = "event_timestamp"
+    template = "{{ if .seconds }}{{ .seconds }}.{{ printf \"%09s\" .nanos }}{{ else if .audit_timestamp }}{{ .audit_timestamp }}{{ end }}"
+  }
+  stage.timestamp {
+    source = "event_timestamp"
+    format = "Unix"
+    action_on_failure = "skip"
+  }
+  stage.timestamp {
+    source = "iso_timestamp"
+    format = "RFC3339Nano"
+    action_on_failure = "skip"
+  }
+}
+
+loki.write "local" {
+  endpoint {
+    url = "http://app-loki:3100/loki/api/v1/push"
+  }
+}

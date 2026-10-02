@@ -1,0 +1,36 @@
+services:
+  loki:
+    container_name: app-loki
+    image: grafana/loki:3.7.8
+    restart: unless-stopped
+    command: -config.file=/etc/loki/config.yml
+    ports:
+      - "127.0.0.1:${LOKI_PORT:-3100}:3100"
+    volumes:
+      - ./loki/config.yml:/etc/loki/config.yml:ro
+      - vol-loki-data:/loki
+    networks: [app-network]
+
+  alloy:
+    container_name: app-alloy
+    image: grafana/alloy:v1.20.1
+    restart: unless-stopped
+    command: run --server.http.listen-addr=0.0.0.0:12345 --storage.path=/var/lib/alloy/data /etc/alloy/config.alloy
+    ports:
+      - "127.0.0.1:${ALLOY_PORT:-12345}:12345"
+    volumes:
+      - ./alloy/config.alloy:/etc/alloy/config.alloy:ro
+      - ${FRED_LOG_DIR:-/tmp/fred-structured-logs}:/var/log/fred:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - vol-alloy-data:/var/lib/alloy/data
+    networks: [app-network]
+    depends_on: [loki]
+
+volumes:
+  vol-loki-data:
+  vol-alloy-data:
+
+networks:
+  app-network:
+    external: true
+    name: fred-shared-network
