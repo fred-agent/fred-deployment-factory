@@ -11,6 +11,9 @@ imagePullPolicy: IfNotPresent
 # each behind its own `enabled` flag below.
 stack: base
 
+keycloak:
+  enabled: true
+
 host:
   fqdn: localhost
 
@@ -71,6 +74,7 @@ auth:
 
 temporal:
   uiPort: 8233
+  uiEnabled: true
 
 postgres:
   maxConnections: 250

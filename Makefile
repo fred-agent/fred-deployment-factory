@@ -86,6 +86,9 @@ K3D_HOST_PORT_TEMPORAL_UI ?= 8233
 K3D_HOST_PORT_PROMETHEUS ?= 9090
 K3D_HOST_PORT_GRAFANA ?= 3002
 K3D_HOST_PORT_FRONTEND ?= 8088
+K3D_ZITADEL_PORT ?= 5173
+K3D_KEYCLOAK_ENABLED ?= true
+K3D_TEMPORAL_UI_ENABLED ?= true
 
 # Kubelet disk thresholds in absolute sizes. The defaults are percentages of the
 # host disk (image GC above 85% used, eviction under 15% free): on a developer
@@ -396,7 +399,7 @@ k3d-up: k3d-create ## Deploy the full stack into k3d with Helm
 	  helm_images=(); \
 	  while IFS= read -r image; do \
 	    [ -n "$$image" ] && helm_images+=("$$image"); \
-	  done < <(helm template "$(HELM_RELEASE)" "$(HELM_CHART_DIR)" --set stack=$(STACK) | awk '/image:[[:space:]]*/ {print $$2}' | tr -d '"' | sort -u); \
+	  done < <(helm template "$(HELM_RELEASE)" "$(HELM_CHART_DIR)" --set stack=$(STACK) --set keycloak.enabled=$(K3D_KEYCLOAK_ENABLED) --set temporal.uiEnabled=$(K3D_TEMPORAL_UI_ENABLED) | awk '/image:[[:space:]]*/ {print $$2}' | tr -d '"' | sort -u); \
 	  if [ "$${#helm_images[@]}" -eq 0 ]; then \
 	    fail "No images found in chart template for prefetch."; \
 	  fi; \
@@ -441,7 +444,7 @@ k3d-up: k3d-create ## Deploy the full stack into k3d with Helm
 	run_step "Recover release $(HELM_RELEASE) if an earlier run left it pending or failed" \
 	  bin/k3d-helm-recover.sh "$(HELM_RELEASE)" "$(K3D_NAMESPACE)" "$(HELM_TIMEOUT)"; \
 	run_step "Validate Helm chart $(HELM_CHART_DIR)" \
-	  helm lint "$(HELM_CHART_DIR)"; \
+	  helm lint "$(HELM_CHART_DIR)" --set keycloak.enabled=$(K3D_KEYCLOAK_ENABLED) --set temporal.uiEnabled=$(K3D_TEMPORAL_UI_ENABLED); \
 		if helm upgrade --help | grep -q -- "--rollback-on-failure"; then \
 		  rollback_flag="--rollback-on-failure"; \
 		else \
@@ -452,6 +455,8 @@ k3d-up: k3d-create ## Deploy the full stack into k3d with Helm
 		  --namespace "$(K3D_NAMESPACE)" \
 		  --create-namespace \
 		  --set stack=$(STACK) \
+		  --set keycloak.enabled=$(K3D_KEYCLOAK_ENABLED) \
+		  --set temporal.uiEnabled=$(K3D_TEMPORAL_UI_ENABLED) \
 		  --wait \
 		  --wait-for-jobs \
 		  "$$rollback_flag" \
@@ -507,6 +512,27 @@ FRED_ENV = FRED_DIR="$(FRED_DIR)" FRED_RELEASE="$(FRED_RELEASE)" FRED_CHART="$(F
 
 k3d-fred: ## Build Fred from FRED_DIR (default ../fred) and deploy it on k3d; rerun after any change
 	@$(FRED_ENV) bin/k3d-fred-deploy.sh
+
+k3d-zitadel-cloud: ## Deploy Fred on local k3d with ZITADEL Cloud fred-lab: OPENAI_API_KEY only (ZITADEL_PAT only to provision Cloud)
+	@$(FRED_ENV) K3D_ZITADEL_PORT="$(K3D_ZITADEL_PORT)" bin/k3d-zitadel-cloud.sh
+
+k3d-zitadel-cloud-bundle: ## (ZITADEL admin) Refresh the committed, public fred-lab bundle docker/zitadel/fred-lab-bundle.json (no PAT inside)
+	@bin/k3d-zitadel-cloud.sh bundle
+
+k3d-zitadel-cloud-join: ## (Tester, no ZITADEL admin) Deploy Fred with the bundle received: ZITADEL_BUNDLE=<file>, OPENAI_API_KEY
+	@$(FRED_ENV) K3D_ZITADEL_PORT="$(K3D_ZITADEL_PORT)" bin/k3d-zitadel-cloud.sh join "$(ZITADEL_BUNDLE)"
+
+k3d-zitadel-cloud-wipe: ## Delete the k3d cluster and ALL its data; ZITADEL_PURGE=1 (with ZITADEL_PAT) also deletes the ZITADEL Cloud objects
+	@$(MAKE) k3d-wipe
+	@if [ "$(ZITADEL_PURGE)" = "1" ]; then bin/k3d-zitadel-cloud.sh purge; \
+	  else echo "ZITADEL Cloud provisioning kept: make k3d-zitadel-cloud redeploys without a PAT."; fi
+
+.PHONY: k3d-bootstrap-token
+k3d-bootstrap-token: ## Display the one-time Fred admin token locally for the first administrator
+	@set -euo pipefail; \
+	  kubectl config use-context "k3d-$(K3D_CLUSTER)" >/dev/null; \
+	  kubectl get secret fred-secrets -n "$(K3D_NAMESPACE)" -o jsonpath='{.data.CONTROL_PLANE_BOOTSTRAP_TOKEN}' | base64 -d; \
+	  printf '\n'
 
 k3d-fred-uninstall: ## Remove the Fred release; its data stays in the infrastructure
 	-helm uninstall "$(FRED_RELEASE)" -n "$(K3D_NAMESPACE)"
@@ -647,7 +673,7 @@ check-pure-infrastructure: ## Offline guard: fail if a tracked artifact carries 
 	@echo "✓ no local validation/ harness wiring left in the Makefile"
 	@echo "✓ check-pure-infrastructure passed"
 
-.PHONY: help network-create env-setup keycloak-post-install postgres-up keycloak-up seaweedfs-up opensearch-up clickhouse-up langfuse-up prometheus-up grafana-up openfga-post-install openfga-up temporal-up preflight-check docker-up docker-start docker-stop docker-down all-down docker-wipe docker-destroy k3d-create k3d-up k3d-restart k3d-redeploy k3d-logs k3d-down k3d-uninstall k3d-delete k3d-wipe k3d-status k3d-fred k3d-fred-uninstall k3d-evaluator k3d-evaluator-uninstall k3d-airgap-on k3d-airgap-off k3d-airgap-status checkpoint-save checkpoint-restore docker-restart-from-checkpoint checkpoint-list checkpoint-delete check-pure-infrastructure keycloak-token-short keycloak-token-normal keycloak-token-status
+.PHONY: help network-create env-setup keycloak-post-install postgres-up keycloak-up seaweedfs-up opensearch-up clickhouse-up langfuse-up prometheus-up grafana-up openfga-post-install openfga-up temporal-up preflight-check docker-up docker-start docker-stop docker-down all-down docker-wipe docker-destroy k3d-create k3d-up k3d-restart k3d-redeploy k3d-logs k3d-down k3d-uninstall k3d-delete k3d-wipe k3d-status k3d-fred k3d-zitadel-cloud k3d-zitadel-cloud-bundle k3d-zitadel-cloud-join k3d-zitadel-cloud-wipe k3d-fred-uninstall k3d-evaluator k3d-evaluator-uninstall k3d-airgap-on k3d-airgap-off k3d-airgap-status checkpoint-save checkpoint-restore docker-restart-from-checkpoint checkpoint-list checkpoint-delete check-pure-infrastructure keycloak-token-short keycloak-token-normal keycloak-token-status
 
 ##@ Optional ZITADEL identity-provider test
 ZITADEL_COMPOSE = docker compose --env-file docker/zitadel/.env -f docker/zitadel/compose.yaml -p fred-zitadel

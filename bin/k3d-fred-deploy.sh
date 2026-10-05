@@ -155,7 +155,7 @@ if kubectl get deployment grafana -n "$ns" >/dev/null 2>&1 && compgen -G "$fred_
 fi
 
 ok "Fred is running: http://localhost:${K3D_HOST_PORT_FRONTEND:-8088}"
-if ! getent hosts keycloak >/dev/null; then
+if [[ "${K3D_IDP:-keycloak}" == keycloak ]] && ! getent hosts keycloak >/dev/null; then
   warn "'keycloak' does not resolve on this machine: the browser cannot log in. Once, with sudo:"
   printf '       grep -qw keycloak /etc/hosts || echo "127.0.0.1 keycloak" | sudo tee -a /etc/hosts\n'
 fi
@@ -163,7 +163,12 @@ fi
 # right after the first login: show it only as long as it is needed.
 if curl -fsS "http://localhost:${K3D_HOST_PORT_FRONTEND:-8088}/control-plane/v1/frontend/config" 2>/dev/null \
     | grep -Eq '"root_bootstrap_required": ?true'; then
-  info "First login: open Fred, create your account with Register on the login page,"
-  info "then paste this token where Fred asks for it; it makes you platform_admin:"
+  if [[ "${K3D_IDP:-keycloak}" == zitadel-cloud ]]; then
+    info "First Fred administrator: sign up on ZITADEL Cloud, then paste this token in Fred."
+    info "It grants platform_admin once; keep it private and do not give it to other testers:"
+  else
+    info "First login: open Fred, create your account with Register on the login page,"
+    info "then paste this token where Fred asks for it; it makes you platform_admin:"
+  fi
   printf '       %s\n' "$(kubectl get secret fred-secrets -n "$ns" -o jsonpath='{.data.CONTROL_PLANE_BOOTSTRAP_TOKEN}' | base64 -d)"
 fi

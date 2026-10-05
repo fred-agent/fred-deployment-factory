@@ -148,6 +148,7 @@ spec:
             periodSeconds: 20
             timeoutSeconds: 5
             failureThreshold: 6
+{{- if .Values.temporal.uiEnabled }}
 ---
 apiVersion: v1
 kind: Service
@@ -243,3 +244,4 @@ spec:
             periodSeconds: 20
             timeoutSeconds: 5
             failureThreshold: 6
+{{- end }}

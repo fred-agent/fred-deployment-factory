@@ -1,0 +1,38 @@
+{
+  "_disclaimer": "PUBLIC LAB CREDENTIALS, NOT A SECRET STORE. These fred-lab ZITADEL service-account secrets are deliberately public so that anyone can run a local Fred test instance. Use them only with Fred bound to localhost; never expose its port or use them in production.",
+  "issuer": "https://fred-lab-instance-qeuzio.ch1.zitadel.cloud",
+  "fred_url": "http://localhost:5173",
+  "project": {
+    "id": "393367599930428964"
+  },
+  "spa": {
+    "clientId": "393367600551271268"
+  },
+  "secret-agentic": {
+    "clientId": "fred-k3d-agentic",
+    "clientSecret": "mp0uLrkuZHrwpkmDAEMCRmpHLgDo3zqgCWsRIRRUOS1F5Ks3fVTOuELVmfCiX993",
+    "details": {
+      "sequence": "2",
+      "creationDate": "2026-10-02T17:16:01.166916Z",
+      "resourceOwner": "393360121234824036"
+    }
+  },
+  "secret-knowledge-flow": {
+    "clientId": "fred-k3d-knowledge-flow",
+    "clientSecret": "vyD2ab6GmZaPppS6Cq4KUZGz3Dq8DIgaObOPHaiD7Wrl92JJqaBFBchGKk6wPdim",
+    "details": {
+      "sequence": "2",
+      "creationDate": "2026-10-02T17:16:01.454285Z",
+      "resourceOwner": "393360121234824036"
+    }
+  },
+  "secret-control-plane": {
+    "clientId": "fred-k3d-control-plane",
+    "clientSecret": "A7TveotSYfsoilNuih6QdQobVjVLerNdnUFn83pMhoeJr8Qd6VXWDDeGS3j7JwIQ",
+    "details": {
+      "sequence": "2",
+      "creationDate": "2026-10-02T17:16:01.750758Z",
+      "resourceOwner": "393360121234824036"
+    }
+  }
+}

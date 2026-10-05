@@ -52,6 +52,7 @@ spec:
         - name: opensearch-config
           configMap:
             name: fred-opensearch-config
+{{- if .Values.keycloak.enabled }}
 ---
 apiVersion: batch/v1
 kind: Job
@@ -95,6 +96,7 @@ spec:
           configMap:
             name: fred-scripts
             defaultMode: 0755
+{{- end }}
 ---
 apiVersion: batch/v1
 kind: Job
