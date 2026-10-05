@@ -341,7 +341,7 @@ grep -qw keycloak /etc/hosts || echo "127.0.0.1 keycloak" | sudo tee -a /etc/hos
 ```
 
 **2. Your model API key** (once, in the `fred` checkout): `make setup-env` writes
-`apps/*/config/.env` and asks for it. `make k3d-fred` copies `OPENAI_API_KEY` from
+`apps/*/config/.env` and asks for it. `make k3d-app` copies `OPENAI_API_KEY` from
 `apps/fred-agents/config/.env` into the cluster's `fred-secrets`.
 
 **3. Infrastructure** (this repo): creates the cluster `fred` and installs the release
@@ -353,15 +353,15 @@ make k3d-up
 
 **4. Fred** (this repo): builds the four images from `FRED_DIR`, copies them into the
 cluster and installs the release `fred-app`, waiting until every pod is ready. As long as
-nobody is `platform_admin` yet, it ends by printing the root bootstrap token:
+nobody is `platform_admin` yet, it ends with a command to retrieve the root bootstrap token:
 
 ```bash
-make k3d-fred FRED_DIR=../fred
+make k3d-app FRED_DIR=../fred
 ```
 
 **5. First login, in Fred.** Open <http://localhost:8088>. Fred sends you to the Keycloak
 login page: create your account with **Register** (Fred never creates accounts itself).
-Back in Fred, a page asks for the bootstrap token: paste the one `make k3d-fred` printed.
+Back in Fred, a page asks for the bootstrap token: retrieve it with the command `make k3d-app` prints, then paste it.
 Your account becomes the platform's `platform_admin`; this works once per platform, the
 first account keeps the role. Then turn the tools and agent templates on in
 **Admin > Capabilities** (select all).
@@ -400,24 +400,64 @@ off at startup, the Prometheus targets down and the workflows running. Then
 `promql '<expr>'`. The `k3d-observability` skill describes the method.
 
 **Day to day** (this repo):
-- `make k3d-fred` after any change, in code or in `k3d-apps/fred/values.yaml`: it rebuilds
+- `make k3d-app` after any change, in code or in `k3d-apps/fred/values.yaml`: it rebuilds
   (from Docker's cache), copies the images and rolls out whatever changed.
-- A published chart instead of the checkout's:
-  `make k3d-fred FRED_CHART=oci://ghcr.io/<org>/fred FRED_CHART_VERSION=<version>`. Install
-  a published version, then `make k3d-fred` with the checkout's chart to rehearse an upgrade
-  and its migrations.
+- `make k3d-app-validate FRED_DIR=../fred` runs lint and schema-checked rendering
+  without builds or cluster mutations. Set `FRED_IMAGE_VALUES=/absolute/path/to/images.json`
+  to check prepared image overrides too; otherwise it checks installation values only.
+- This slice supports the local checkout chart only. Published OCI charts and other
+  deployment environments are outside this workflow.
 - `make k3d-status` shows the pods.
 
 **Tear down** (this repo):
-- `make k3d-fred-uninstall` and `make k3d-evaluator-uninstall` remove Fred or the evaluation
-  application; their data stays in the infrastructure.
+- To remove only Fred, use `helm --kube-context k3d-fred uninstall fred-app -n fred`.
+  `make k3d-evaluator-uninstall` removes the evaluation application. Neither command
+  removes the infrastructure holding their data.
 - `make k3d-down` stops the cluster and frees the host ports; `make k3d-up` starts it again.
 - `make k3d-delete` deletes the cluster.
 - `make k3d-wipe` uninstalls the infrastructure release and deletes the cluster; use it to
   restart from scratch.
 
-`make k3d-up` and `make k3d-fred` are both safe to rerun: they converge. Optional Cilium
+`make k3d-up` and `make k3d-app` are both safe to rerun: they converge. Optional Cilium
 (`K3D_USE_CILIUM=true`) is only needed for `CiliumNetworkPolicy` / air-gap flows.
+
+### Helmfile and local image preparation
+
+Install Helmfile from its official release and verify the archive against the published
+checksums (tested: Helmfile 1.8.1, Helm 3.21.2). No Helm plugins are needed for this flow.
+`helmfile.yaml.gotmpl` describes only `fred-app`; `make k3d-up` still owns infrastructure.
+There are no product variants in this slice; `STACK=base|extended` remains an infrastructure
+choice. Evaluator continues to use its existing command.
+
+`make k3d-app` validates, builds the four images with Fred's existing Make targets,
+validates again with their content-derived tags, imports the images using the existing
+helper, recovers the Fred release with the PVC guard, prepares the model key, runs Helmfile
+sync, then installs Fred's dashboards. Every cluster call targets `k3d-$K3D_CLUSTER` explicitly;
+the current kubectl context is left unchanged. Failed builds/renders stop deployment.
+Helm 3's lint retains `null` deletion markers from the storage overrides, so its schema
+check is skipped; **template and sync still enforce the complete chart schema**.
+
+Values precedence: chart defaults, `FRED_VALUES` (one file, default
+`k3d-apps/fred/values.yaml`), generated image values. Wrapper paths are resolved relative
+to this factory checkout, even when the script is invoked from elsewhere. Absolute paths
+and spaces are supported. `FRED_RELEASE`, `K3D_CLUSTER` and `K3D_NAMESPACE` default to
+`fred-app`, `fred` and `fred`. The local rollout timeout is 20 minutes.
+
+After a successful build/import, the standard Helmfile commands are usable directly:
+
+```bash
+export FRED_DIR="/absolute/path/to/fred"
+export FRED_IMAGE_VALUES="$FRED_DIR/.cache/k3d/images.json"
+helmfile --skip-deps lint --args '--skip-schema-validation'
+helmfile --skip-deps template > /dev/null
+helmfile --skip-deps sync
+```
+
+Direct Helmfile commands do not build/import images, recover a failed release, update
+the model key or install dashboards; use `make k3d-app` for the complete local loop.
+Build logs and generated image values live in Fred's ignored `.cache/k3d/` directory.
+Model keys stay in the local environment or Fred `.env` and in `fred-secrets`; neither
+model keys nor bootstrap tokens are printed by the deployment command.
 
 ## What `docker-up` / `k3d-up` provisions
 

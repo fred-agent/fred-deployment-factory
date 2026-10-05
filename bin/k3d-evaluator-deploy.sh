@@ -3,7 +3,7 @@ set -Eeuo pipefail
 
 # Build the evaluation application's three images (API, worker, UI) from a
 # fred-agent-evaluator checkout and deploy its chart on the k3d instance, with
-# this repository's instance values. Fred must already run (`make k3d-fred`).
+# this repository's instance values. Fred must already run (`make k3d-app`).
 #
 #   bin/k3d-evaluator-deploy.sh       (run by `make k3d-evaluator`)
 #
@@ -37,7 +37,7 @@ read -r -a values_files <<<"${EVALUATOR_VALUES:-k3d-apps/fred-evaluator/values.y
 kubectl config use-context "k3d-$cluster" >/dev/null 2>&1 \
   || fail "no k3d cluster '$cluster': run 'make k3d-up' first"
 kubectl get deployment control-plane-backend -n "$ns" >/dev/null 2>&1 \
-  || fail "Fred is not deployed in namespace '$ns': run 'make k3d-fred' first"
+  || fail "Fred is not deployed in namespace '$ns': run 'make k3d-app' first"
 for f in "${values_files[@]}"; do
   [[ -f "$here/$f" ]] || fail "values file not found: $f"
 done

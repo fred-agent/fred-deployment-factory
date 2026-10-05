@@ -14,7 +14,7 @@ repository) queries them all.
 ## Preconditions
 
 `make k3d-up` ran (observability is in the base stack), and the apps were deployed with
-`make k3d-fred` / `make k3d-evaluator` (their overlays open the metrics endpoints and widen
+`make k3d-app` / `make k3d-evaluator` (their overlays open the metrics endpoints and widen
 the console so one log line stays one record). Run everything from this repository's root.
 
 ## The sources, and what each one answers

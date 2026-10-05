@@ -10,7 +10,7 @@ The **local deployment** of Fred and its applications, in two forms:
 - **Docker Compose** — the backing services on the host (`make docker-up`); the Fred apps run
   from a `fred` checkout (`make run` there).
 - **k3d** — everything in a local Kubernetes cluster: the infrastructure (`make k3d-up`, chart
-  `k3d/`), Fred (`make k3d-fred`) and the evaluation application (`make k3d-evaluator`), with
+  `k3d/`), Fred (`make k3d-app`) and the evaluation application (`make k3d-evaluator`), with
   logs, events and metrics collected (`make k3d-health`).
 
 The GKE/GCP (fredlab) deployment left this repository on 2026-09-30; an archive clone is kept

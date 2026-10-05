@@ -1,0 +1,16 @@
+# Local Fred only. Build/import images before sync; no mutating template hooks.
+helmDefaults:
+  kubeContext: {{ printf "k3d-%s" (env "K3D_CLUSTER" | default "fred") | quote }}
+  wait: true
+  timeout: 1200
+  createNamespace: false
+
+releases:
+  - name: {{ env "FRED_RELEASE" | default "fred-app" | quote }}
+    namespace: {{ env "K3D_NAMESPACE" | default "fred" | quote }}
+    chart: {{ printf "%s/deploy/charts/fred" (requiredEnv "FRED_DIR") | quote }}
+    values:
+      - {{ env "FRED_VALUES" | default "k3d-apps/fred/values.yaml" | quote }}
+      {{- if env "FRED_IMAGE_VALUES" }}
+      - {{ env "FRED_IMAGE_VALUES" | quote }}
+      {{- end }}

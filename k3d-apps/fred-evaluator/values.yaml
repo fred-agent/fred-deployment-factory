@@ -31,7 +31,7 @@ extraEnvVars:
     valueFrom:
       secretKeyRef: { name: fred-secrets, key: KEYCLOAK_EVAL_WORKER_CLIENT_SECRET, optional: false }
   # The judge and analysis models are Mistral's: on k3d the model key Fred
-  # uses (OPENAI_API_KEY, written by `make k3d-fred`) is a Mistral key.
+  # uses (OPENAI_API_KEY, written by `make k3d-app`) is a Mistral key.
   - name: MISTRAL_API_KEY
     valueFrom:
       secretKeyRef: { name: fred-secrets, key: OPENAI_API_KEY, optional: false }

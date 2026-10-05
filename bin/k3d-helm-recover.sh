@@ -20,6 +20,10 @@ c_warn='\033[1;33m'; c_err='\033[1;31m'; c_reset='\033[0m'
 warn() { printf "%b[WARN]%b %s\n" "$c_warn" "$c_reset" "$1"; }
 fail() { printf "%b[FAIL]%b %s\n" "$c_err" "$c_reset" "$1" >&2; exit 1; }
 
+# Existing callers may keep their current context; Helmfile callers provide one.
+helm() { command helm ${KUBE_CONTEXT:+--kube-context "$KUBE_CONTEXT"} "$@"; }
+kubectl() { command kubectl ${KUBE_CONTEXT:+--context "$KUBE_CONTEXT"} "$@"; }
+
 release="${1:?release}"; ns="${2:?namespace}"; timeout="${3:-20m}"
 
 status="$(helm status "$release" -n "$ns" -o json 2>/dev/null \

@@ -1,6 +1,6 @@
 # =============================================================================
 # Fred on the local k3d instance: values for the official fred chart
-# (fred repository, deploy/charts/fred), deployed by `make k3d-fred`.
+# (fred repository, deploy/charts/fred), deployed by `make k3d-app`.
 #
 # Only what this instance decides lives here. Everything else is the chart's
 # default, so this file is also the list of every way k3d differs from a
@@ -20,7 +20,7 @@
 #   models   Mistral, through its OpenAI-compatible API
 #   sizing   one replica, one worker serving every role
 #
-# Image tags are not set here: `make k3d-fred` builds the images and passes
+# Image tags are not set here: `make k3d-app` builds the images and passes
 # each one's content tag on the command line.
 # =============================================================================
 
@@ -51,7 +51,7 @@ x-env-s3: &env-s3
   name: MINIO_SECRET_KEY
   valueFrom:
     secretKeyRef: { name: fred-secrets, key: SEAWEEDFS_ADMIN_PASSWORD, optional: false }
-# Set by `make k3d-fred` from the fred checkout's apps/fred-agents/config/.env.
+# Set by `make k3d-app` from the fred checkout's apps/fred-agents/config/.env.
 x-env-model-key: &env-model-key
   name: OPENAI_API_KEY
   valueFrom:
@@ -422,7 +422,7 @@ applications:
       - name: KEYCLOAK_CONTROL_PLANE_CLIENT_SECRET
         valueFrom:
           secretKeyRef: { name: fred-secrets, key: KEYCLOAK_CONTROL_PLANE_CLIENT_SECRET, optional: false }
-      # Root platform-admin bootstrap (AUTHZ-07), consumed by `make k3d-fred-bootstrap`.
+      # Root platform-admin bootstrap (AUTHZ-07), consumed by `the first-login bootstrap flow`.
       - name: FRED_BOOTSTRAP_TOKEN
         valueFrom:
           secretKeyRef: { name: fred-secrets, key: CONTROL_PLANE_BOOTSTRAP_TOKEN, optional: false }
