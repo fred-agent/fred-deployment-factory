@@ -89,7 +89,6 @@ x-kf-scheduler: &kf-scheduler
 
 x-kf-content-storage: &kf-content-storage  # choice: S3 (SeaweedFS), shared by API and worker
   type: minio
-  root_path: null
   endpoint: http://seaweedfs:8333          # address
   access_key: "admin"
   bucket_name: "app-content"
@@ -113,9 +112,9 @@ x-kf-storage: &kf-storage
     pool_pre_ping: true
   opensearch:
     host: https://opensearch:9200          # address
-  resource_store: { type: postgres, duckdb_path: null }   # choice
-  tag_store: { type: postgres, duckdb_path: null }        # choice
-  metadata_store: { type: postgres, duckdb_path: null }   # choice
+  resource_store: { type: postgres }       # choice
+  tag_store: { type: postgres }            # choice
+  metadata_store: { type: postgres }       # choice
   vector_store:                            # choice
     type: opensearch
     # The API and the worker must use the same index, or every RAG query
@@ -211,7 +210,6 @@ x-cp-storage: &cp-storage
   log_store: { type: opensearch, index: app-logs-index }  # choice
   content_storage:                         # choice: S3 (SeaweedFS)
     type: minio
-    root_path: null
     endpoint: http://seaweedfs:8333        # address
     access_key: "admin"
     bucket_name: "control-plane-content"
