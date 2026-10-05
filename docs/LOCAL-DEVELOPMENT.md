@@ -419,6 +419,98 @@ off at startup, the Prometheus targets down and the workflows running. Then
 `make k3d-up` and `make k3d-fred` are both safe to rerun: they converge. Optional Cilium
 (`K3D_USE_CILIUM=true`) is only needed for `CiliumNetworkPolicy` / air-gap flows.
 
+## k3d with ZITADEL Cloud
+
+`make k3d-zitadel-cloud` uses the `fred-lab` Cloud issuer
+`https://fred-lab-instance-qeuzio.ch1.zitadel.cloud`. It provisions a dedicated
+Fred project, browser SPA, three machine accounts and role-claim action using
+a service-account PAT. The profile deploys the usual PostgreSQL, OpenFGA,
+SeaweedFS, OpenSearch, Temporal, monitoring and Fred pods, with Keycloak
+disabled. Fred's `user_directory: local` stores profiles of people who have
+signed in in the Fred PostgreSQL database. ZITADEL owns accounts and passwords.
+
+The current browser URL is <http://localhost:5173>. ZITADEL accepts it as a
+development redirect URI. Each tester running k3d on their own machine opens
+their own `localhost:5173`. Access to someone else's k3d cluster needs a
+separate public HTTPS Fred URL and route to that cluster.
+
+In the `fred-lab` organization, create a service account and give it **Org
+Owner** for initial provisioning. On that account, create a Personal Access
+Token. ZITADEL issues PATs to service accounts, not human accounts. Enable
+**Register allowed** in that organization's Login Behavior settings, and make
+`fred-lab` the default organization for self-registration. The command checks
+the registration policy before creating project resources. See [ZITADEL's PAT
+guide](https://zitadel.com/docs/guides/integrate/service-accounts/personal-access-token)
+and [login settings](https://zitadel.com/docs/guides/manage/console/default-settings).
+
+On a fresh local cluster, from this repository:
+
+```bash
+read -rsp 'ZITADEL_PAT: ' ZITADEL_PAT; echo; export ZITADEL_PAT
+read -rsp 'OPENAI_API_KEY: ' OPENAI_API_KEY; echo; export OPENAI_API_KEY
+make k3d-zitadel-cloud FRED_DIR=../fred
+```
+
+The model key must be in the machine environment. The target refuses to start
+without it; it does not use the Fred checkout's `.env` as a fallback. The PAT
+is used only for provisioning and is not written to Git, Helm values, pods or
+the Fred UI. The provisioner keeps the generated machine credentials and
+resumable state in the ignored, owner-only `docker/zitadel/state/cloud.json`.
+The app values overlay is generated alongside it. Keep a secure backup of the
+state if the local cluster must be rebuilt; do not delete it while its Cloud
+project still exists. Rerunning the command reuses those Cloud resources.
+
+Testers need no PAT and no ZITADEL role. A checkout without local state uses the
+committed `docker/zitadel/fred-lab-bundle.json`: the issuer, Fred URL, project
+id, browser client id and the three service-account client ids and secrets,
+with no admin state and no PAT. `make k3d-zitadel-cloud` installs it as the
+local state, then deploys; `OPENAI_API_KEY` is the only parameter. The owner
+refreshes the file with `make k3d-zitadel-cloud-bundle` after any
+reprovisioning and commits it. `make k3d-zitadel-cloud-join ZITADEL_BUNDLE=<file>`
+deploys with another bundle instead.
+
+**These lab secrets are public by design**, an accepted exception to "secrets
+never enter git": every instance listens on `localhost`, so a token minted with
+them only reaches the machine it runs on. The exception holds only while that
+is true. Never expose port 5173 (tunnel, reverse proxy, `0.0.0.0` binding), and
+never use this profile for real data or production. Anyone can also mint tokens
+against `fred-lab` and spend its free-tier quota; rotate with
+`make k3d-zitadel-cloud-wipe ZITADEL_PURGE=1`, a new provisioning and a new
+bundle.
+
+`make k3d-zitadel-cloud-wipe` deletes the k3d cluster with **all its data**
+(accounts, documents, conversations) and keeps the Cloud provisioning, so the
+next `make k3d-zitadel-cloud` needs no PAT. With `ZITADEL_PURGE=1` and
+`ZITADEL_PAT`, it also deletes the Cloud project, its applications, the three
+service accounts and the claims Action, plus the local state and the lab bundle: provision anew with `ZITADEL_PAT`,
+then `make k3d-zitadel-cloud-bundle` and commit the new bundle.
+
+ZITADEL Cloud access tokens live 12 hours, more than Fred's default one-hour
+ceiling. The provisioner measures that lifetime and passes
+`FRED_JWT_MAX_LIFETIME_SECONDS` as a container variable: Fred reads it when its
+security module is imported, before any `.env` file. The SPA redirect URI is
+the same `localhost:5173` on each machine.
+
+The browser flow is: open <http://localhost:5173> → redirect to `fred-lab`
+ZITADEL Cloud → register or sign in → return to Fred → accept the terms.
+Every fresh local Fred installation has a separate PostgreSQL database and
+therefore a separate one-time bootstrap token. Its first intended
+administrator enters the token printed in that installation's deployment
+terminal (or retrieved there with `make k3d-bootstrap-token`). This grants
+`platform_admin` once. Keep the token with that installation's administrator:
+whoever uses it first becomes its root administrator. Later sign-ups on the
+same installation use their own ZITADEL accounts without a bootstrap token;
+their Fred profiles are recorded in that installation's PostgreSQL on first
+login. The administrator then assigns teams and enables capabilities/models
+in Fred. A ZITADEL organization role does not grant a Fred role by itself.
+
+The standalone Temporal UI is omitted in this profile because its existing
+OIDC client points to Keycloak. Temporal itself still runs and serves Fred's
+workflows. The normal `k3d-up` and `k3d-fred` targets retain the Keycloak
+profile. Switching an existing populated cluster between identity providers
+retains Fred's users and one-time bootstrap state; use a fresh test cluster for
+the first ZITADEL admin flow.
+
 ## What `docker-up` / `k3d-up` provisions
 
 One mode, no flags. Both backends provision the same thing: Keycloak with an **empty realm**

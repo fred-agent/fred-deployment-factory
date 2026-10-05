@@ -63,6 +63,38 @@ sleeps, data kept). To start over: `make k3d-wipe` — **it deletes every volume
 accounts, documents and runs.** All the details: [`docs/LOCAL-DEVELOPMENT.md` → "k3d: the
 full stack in Kubernetes"](docs/LOCAL-DEVELOPMENT.md#k3d-the-full-stack-in-kubernetes).
 
+### ZITADEL Cloud instead of Keycloak
+
+With a `fred` checkout next to this one, a single parameter deploys Fred on k3d
+with the `fred-lab` ZITADEL Cloud team as identity provider, without Keycloak:
+
+```bash
+read -rsp 'OPENAI_API_KEY: ' OPENAI_API_KEY; echo; export OPENAI_API_KEY
+make k3d-zitadel-cloud FRED_DIR=../fred
+```
+
+Open <http://localhost:5173>, create your account on the `fred-lab` page, sign
+in, then enter the one-time bootstrap token printed by `make` (or
+`make k3d-bootstrap-token`) to become this installation's first administrator.
+Each fresh installation has its own token; later users of the same installation
+need none. `make k3d-zitadel-cloud-wipe` deletes the cluster and all its data.
+
+> [!WARNING]
+> **Public lab credentials.** `docker/zitadel/fred-lab-bundle.json` holds the
+> secrets of the three `fred-lab` service accounts Fred's services authenticate
+> with. They are committed **on purpose** so that a tester needs nothing but a
+> model key, and are therefore public. They are only acceptable because every
+> instance listens on `localhost`: never expose port 5173 (tunnel, reverse proxy,
+> `0.0.0.0`), never use this profile for real data or production. Anyone can
+> request tokens from `fred-lab` with them; the team owner rotates them with
+> `make k3d-zitadel-cloud-wipe ZITADEL_PURGE=1`, a new provisioning and
+> `make k3d-zitadel-cloud-bundle`.
+
+The `fred-lab` owner provisions ZITADEL Cloud once with a PAT of a service
+account holding **Org Owner** (`ZITADEL_PAT`), then commits the refreshed bundle.
+Setup and limitations:
+[`docs/LOCAL-DEVELOPMENT.md` → "k3d with ZITADEL Cloud"](docs/LOCAL-DEVELOPMENT.md#k3d-with-zitadel-cloud).
+
 ---
 
 > **New here? Which local setup do you want?**

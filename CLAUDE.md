@@ -50,6 +50,9 @@ outside it. Do not reintroduce cloud-specific material here.
 - **Render before deploying:** `helm lint` and `helm template` with the instance values; the
   fred chart validates its values against a strict schema.
 - **Secrets never enter git.** Local defaults (`Azerty123_`...) are for this local stack only.
+  One deliberate exception: `docker/zitadel/fred-lab-bundle.json`, the public `fred-lab`
+  ZITADEL lab credentials (localhost-only instances; see the README warning). Never add
+  another, and never put the provisioning PAT or `docker/zitadel/state/` in git.
 - **Keep docs lean** and in two places: the README's quick start, and
   `docs/LOCAL-DEVELOPMENT.md` for the details.
 - **Commits:** `type(scope): what changed` (e.g. `fix(k3d): ...`), one logical change each, no
