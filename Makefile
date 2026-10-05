@@ -136,7 +136,8 @@ keycloak-post-install:
 
 postgres-up: network-create env-setup
 	@echo "Launching PostgreSQL..."
-	$(DOCKER_COMPOSE_BASE)postgres.yml -p postgres up -d --force-recreate
+	$(DOCKER_COMPOSE_BASE)postgres.yml -p postgres up -d postgres
+	$(DOCKER_COMPOSE_BASE)postgres.yml -p postgres up -d --no-deps --force-recreate postgres-post-install-job
 	@echo "Waiting for PostgreSQL post-install job..."
 	@set -euo pipefail; \
 		rc="$$(docker wait app-postgres-post-install-job)"; \
