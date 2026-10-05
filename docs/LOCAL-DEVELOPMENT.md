@@ -264,6 +264,10 @@ check the pytest suite in step 6 cannot do for you.
 
 ## Identity provider portability
 
+Example security overlays for all three Fred backends live in
+`examples/identity-providers/<backend>/`; they contain no credentials. The Fred
+config generator reads them from this sibling checkout.
+
 The default `make docker-up` path remains the Keycloak baseline. These opt-in
 local profiles accompany [Fred issue #2862](https://github.com/ThalesGroup/fred/issues/2862)
 and [draft PR #2863](https://github.com/ThalesGroup/fred/pull/2863). Follow the
@@ -292,9 +296,8 @@ provider identities, personal spaces or administrator bootstrap state.
    `fred/docs/swift/platform/IDENTITY-PROVIDERS.md`. Supply six public UUIDs,
    workload secrets through the environment and the configured token lifetime;
    then run the Fred validation report and UI self-test against that tenant.
-5. **ZITADEL:** run `make zitadel-configure SWIFT_SRC=../fred` or the matching
-   Fred VS Code launch task. The factory provisions clients and generates
-   configs and a private credentials file under `/tmp/fred-idp-tests/zitadel/`.
+5. **ZITADEL:** run `make zitadel-configure SWIFT_SRC=../fred` from this
+   repository. The factory provisions clients and generates configs and a private credentials file under `/tmp/fred-idp-tests/zitadel/`.
    Follow the ZITADEL procedure below for identity and delegation checks.
 
 Use `make checkpoint-restore NAME=kc-baseline` followed by `make docker-up` to
@@ -499,8 +502,9 @@ Existing backend `.env` files still supply database, storage and model settings.
 The new secrets use ZITADEL-specific environment names and do not replace the
 Keycloak secrets.
 
-With the matching Fred checkout, VS Code task **IDP zitadel — launch all** handles
-preparation and all six applications. Run **Fred — kill all** before switching.
+Run `make zitadel-configure SWIFT_SRC=../fred` for preparation, then launch
+the Fred services with the generated CONFIG_FILE values. Stop running Fred
+applications before switching providers.
 Visit http://localhost:8091/ui/console and log in as
 `fred-admin@zitadel.localhost` (the generated file records the exact login).
 The provisioner creates this console administrator separately because initial
