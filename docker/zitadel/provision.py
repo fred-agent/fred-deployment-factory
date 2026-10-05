@@ -241,6 +241,7 @@ def main():
         for name, values in services.items()
     }
     action = action.replace("FRED_SERVICE_CLIENTS", json.dumps(client_ids))
+    action = action.replace("FRED_SPA_CLIENT_ID", spa)
     action_id = ensure(
         "action",
         "/actions",
