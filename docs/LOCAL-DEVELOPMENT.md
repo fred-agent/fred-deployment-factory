@@ -264,6 +264,12 @@ check the pytest suite in step 6 cannot do for you.
 
 ## Identity provider portability
 
+Example security overlays for all three Fred backends live in
+`examples/identity-providers/<backend>/`; they contain no credentials. The generator in `bin/prepare-identity-provider-configs.py` reads them and
+the sibling Fred checkout. Run it with `/usr/bin/python3` when `pyyaml` and
+`jsonschema` are installed, or `uv run` to resolve them. Use `--fred-dir` if
+the checkouts are not siblings.
+
 The default `make docker-up` path remains the Keycloak baseline. These opt-in
 local profiles accompany [Fred issue #2862](https://github.com/ThalesGroup/fred/issues/2862)
 and [draft PR #2863](https://github.com/ThalesGroup/fred/pull/2863). Follow the
@@ -276,25 +282,27 @@ provider identities, personal spaces or administrator bootstrap state.
    Save it with `make checkpoint-save NAME=kc-baseline` before changing the realm.
 2. **Keycloak with generic OIDC claims:** run `make keycloak-generic-oidc STRICT=1`,
    generate the three Fred backend configs with
-   `scripts/prepare_identity_provider_configs.py --profile generic_oidc`, and restart
-   the Fred applications. Run `local-testing/demo/seed-keycloak-users.sh`, then
+   `/usr/bin/python3 bin/prepare-identity-provider-configs.py --profile generic_oidc`,
+   and restart the Fred applications. Run `local-testing/demo/seed-keycloak-users.sh`, then
    `local-testing/scripts/warm-local-directory.sh` before importing the demo
    bundle. The strict profile removes legacy role claims and Keycloak Admin API
    rights from the service accounts. Use `make keycloak-generic-oidc-revert` to
    restore the baseline realm settings.
 3. **Mock OIDC, without Keycloak:** run `make mock-oidc-up`, generate the
-   Fred configs with `scripts/prepare_identity_provider_configs.py --profile mock_oidc`,
+   Fred configs with `/usr/bin/python3 bin/prepare-identity-provider-configs.py --profile mock_oidc`,
    restart Fred, and stop
    Keycloak with `docker stop app-keycloak`. The mock issuer is
    `http://localhost:8090/fred`. After testing, run `make mock-oidc-down` and
    restore the Keycloak checkpoint.
 4. **Microsoft Entra ID:** follow the app registrations and generator command in
-   `fred/docs/swift/platform/IDENTITY-PROVIDERS.md`. Supply six public UUIDs,
+   `fred/docs/swift/platform/IDENTITY-PROVIDERS.md`. Generate the local profile with
+   `/usr/bin/python3 bin/prepare-identity-provider-configs.py --profile entra`
+   and adapt `examples/identity-providers/values-entra.example.yaml` for k3d.
+   Supply six public UUIDs,
    workload secrets through the environment and the configured token lifetime;
    then run the Fred validation report and UI self-test against that tenant.
-5. **ZITADEL:** run `make zitadel-configure SWIFT_SRC=../fred` or the matching
-   Fred VS Code launch task. The factory provisions clients and generates
-   configs and a private credentials file under `/tmp/fred-idp-tests/zitadel/`.
+5. **ZITADEL:** run `make zitadel-configure SWIFT_SRC=../fred` from this
+   repository. The factory provisions clients and generates configs and a private credentials file under `/tmp/fred-idp-tests/zitadel/`.
    Follow the ZITADEL procedure below for identity and delegation checks.
 
 Use `make checkpoint-restore NAME=kc-baseline` followed by `make docker-up` to
@@ -568,8 +576,9 @@ Existing backend `.env` files still supply database, storage and model settings.
 The new secrets use ZITADEL-specific environment names and do not replace the
 Keycloak secrets.
 
-With the matching Fred checkout, VS Code task **IDP zitadel — launch all** handles
-preparation and all six applications. Run **Fred — kill all** before switching.
+Run `make zitadel-configure SWIFT_SRC=../fred` for preparation, then launch
+the Fred services with the generated CONFIG_FILE values. Stop running Fred
+applications before switching providers.
 Visit http://localhost:8091/ui/console and log in as
 `fred-admin@zitadel.localhost` (the generated file records the exact login).
 The provisioner creates this console administrator separately because initial
