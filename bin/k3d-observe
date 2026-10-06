@@ -180,6 +180,8 @@ def cmd_health(args):
          "temporal", "workflow", "list", "--address", "temporal:7233",
          "--query", 'ExecutionStatus="Running"', "--limit", "20"],
         capture_output=True, text=True)
+    if result.returncode != 0:
+        fail(f"Temporal workflow list: {result.stderr.strip() or 'command failed'}")
     lines = [l for l in result.stdout.splitlines()[1:] if l.strip()]
     print(f"  {len(lines)} running" + ("" if not lines else ":"))
     for line in lines[:10]:
@@ -204,6 +206,8 @@ def cmd_trace(args):
          "temporal", "workflow", "list", "--address", "temporal:7233",
          "--query", f"WorkflowId STARTS_WITH '{args.id}' OR WorkflowId = 'run-eval-{args.id}'",
          "--limit", "5"], capture_output=True, text=True)
+    if result.returncode != 0:
+        fail(f"Temporal workflow list: {result.stderr.strip() or 'command failed'}")
     lines = [l for l in result.stdout.splitlines()[1:] if l.strip()]
     if lines:
         print("\n== Temporal workflows")
@@ -238,8 +242,10 @@ KPI_QUERIES = (
      "histogram_quantile(0.95, sum by (le, app) (rate(agent_tool_latency_ms_bucket[15m])))"),
     ("Tool failures, last 1h",
      "sum by (app) (increase(agent_tool_failed_total[1h])) > 0"),
-    ("Event loop lag p95 (ms) by app, last 15m: a blocked loop slows every request",
-     "histogram_quantile(0.95, sum by (le, app) (rate(event_loop_lag_ms_bucket[15m])))"),
+    ("Event loop lag now (ms), per app and pod (sampled gauge)",
+     "event_loop_lag_ms"),
+    ("Event loop lag maximum observed by Prometheus (ms), last 15m, per app and pod",
+     "max_over_time(event_loop_lag_ms[15m])"),
 )
 
 

@@ -61,6 +61,26 @@ Credentials are in the `fred-secrets` Secret; the script reads them itself.
 
 ## Limits
 
+- Before a manual ingestion, save a UTC start time and baseline request counters,
+  pod restart counts and Prometheus targets in a temporary session directory.
+  Verify that Knowledge Flow's API **and worker** are scraped, and that recent
+  worker logs reach OpenSearch. Record pre-existing errors separately.
+- `event_loop_lag_ms` is a sampled gauge, not a histogram. Use its current value
+  and `max_over_time(event_loop_lag_ms[15m])` per pod; a scrape can miss a short
+  spike. Discover actual metric names before concluding a phase is unmeasured.
+- `health` and `trace` are summaries, not exhaustive audit evidence: log queries
+  have result limits and displayed lines are truncated. For counts or complete
+  timelines, query OpenSearch with a fixed time range and aggregations or paging.
+  Temporal command failures must be reported, never interpreted as zero
+  workflows. `trace` only looks up workflows
+  whose IDs match its query; use the workflow ID found in the logs when needed.
+- For performance, correlate document/task/workflow IDs, activity durations and
+  attempts, request counts by route, and instrumented model calls. Separate
+  retries, UI polling and health probes from unexpected repeated work. A model
+  or tool KPI summary does not establish complete ingestion-stage coverage.
+- Collection continues between assistant turns; analysis does not. Compare the
+  final backend states with the user's observed UI before declaring success.
+
 - Log lines written before Fluent Bit first read a file are not collected.
 - `control-plane-worker` declares no `metrics` port: Prometheus does not see it.
 - The evaluation application exposes no metrics yet; its logs are collected.
