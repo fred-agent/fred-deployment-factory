@@ -1,0 +1,98 @@
+# Knowledge Flow de Fred (API et worker), image durcie.
+# Même modèle que images/control-plane-backend/Containerfile. En plus :
+# - LibreOffice, ffmpeg, libmagic et les bibliothèques graphiques des processeurs
+#   de documents ; soffice est un script shell, busybox est donc présent ;
+# - pandoc : celui que fournit pypandoc-binary, exposé dans le PATH (pas de paquet) ;
+# - pas d'inkscape : Fred laisse alors les images EMF des DOCX telles quelles
+#   (journalisé), au lieu de tirer toute la pile GTK dans l'image ;
+# - modèles, encodages et extension DuckDB préchargés au build, en lecture seule à
+#   l'exécution (fonctionnement hors ligne : HF_HUB_OFFLINE=1).
+ARG WOLFI=cgr.dev/chainguard/wolfi-base@sha256:824f77df45397eb954dfb963db255907ee8842e3446353ce93d688e5e862f51d
+
+# ----------------------------------------------------------------- rootfs
+FROM ${WOLFI} AS rootfs
+RUN apk add --no-cache --no-scripts --initdb --root /rootfs \
+        --keys-dir /etc/apk/keys --repositories-file /etc/apk/repositories \
+        wolfi-baselayout ca-certificates-bundle tzdata python-3.12 libstdc++ libgcc libgomp \
+        busybox libreoffice-25.2 fontconfig font-liberation font-crosextra-carlito font-crosextra-caladea \
+        ffmpeg libmagic mesa-gl glib libxcb \
+    && chroot /rootfs /usr/bin/ldconfig \
+    && chroot /rootfs /usr/bin/busybox --install -s \
+    && chroot /rootfs /usr/bin/fc-cache -f \
+    && echo 'nonroot:x:65532:65532:nonroot:/home/nonroot:/sbin/nologin' >> /rootfs/etc/passwd \
+    && echo 'nonroot:x:65532:' >> /rootfs/etc/group \
+    && rm -f /rootfs/sbin/apk /rootfs/usr/bin/apk
+
+# ------------------------------------------------------------------ build
+FROM ${WOLFI} AS build
+RUN apk add --no-cache python-3.12 python-3.12-dev uv build-base git
+ENV UV_PROJECT_ENVIRONMENT=/app/venv UV_PYTHON=/usr/bin/python3.12 UV_PYTHON_DOWNLOADS=never \
+    UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_NO_CACHE=1 \
+    PATH=/app/venv/bin:/usr/bin:/bin \
+    HOME=/home/nonroot \
+    TIKTOKEN_CACHE_DIR=/app/encodings \
+    PADDLE_MODELS_DIR=/app/models \
+    HF_HOME=/opt/hf \
+    RERANKER_MODEL=cross-encoder/ms-marco-MiniLM-L-12-v2 \
+    RERANKER_MODEL_CACHE=/opt/hf/hub \
+    HF_HUB_CACHE=/opt/hf/hub \
+    WHISPER_MODEL_SIZE=base
+WORKDIR /workspace/apps/knowledge-flow-backend
+COPY apps/knowledge-flow-backend/pyproject.toml apps/knowledge-flow-backend/uv.lock ./
+COPY libs/fred-pod /workspace/libs/fred-pod
+COPY libs/fred-core /workspace/libs/fred-core
+COPY scripts /workspace/scripts
+RUN uv sync --frozen --no-dev --no-install-project \
+    && ln -s "$(python -c 'import pypandoc; print(pypandoc.get_pandoc_path())')" /app/venv/bin/pandoc \
+    && pandoc --version | head -1 \
+    && python /workspace/scripts/patch_docling_rapidocr_openvino.py \
+    && mkdir -p $TIKTOKEN_CACHE_DIR \
+    && python /workspace/scripts/download_encodings.py https://openaipublic.blob.core.windows.net/encodings/cl100k_base.tiktoken
+# Caches préchargés (lus hors ligne à l'exécution).
+# Bibliothèques natives d'opencv, importé par paddlex au préchargement des modèles.
+RUN apk add --no-cache mesa-gl glib libxcb libgomp
+RUN python -c "import duckdb; c = duckdb.connect(); c.execute('INSTALL httpfs'); c.execute('LOAD httpfs')" \
+    && python -c "import os; from sentence_transformers import CrossEncoder; CrossEncoder(model_name_or_path=os.environ['RERANKER_MODEL'], cache_folder=os.environ['RERANKER_MODEL_CACHE'])" \
+    && python -c "import os; from faster_whisper import download_model; print(download_model(os.environ['WHISPER_MODEL_SIZE']))" \
+    && python /workspace/scripts/download_models.py --models-dir $PADDLE_MODELS_DIR
+COPY apps/knowledge-flow-backend /app
+COPY alembic.ini /app/alembic.ini
+RUN rm -rf /app/.venv /app/target /app/Makefile /app/dockerfiles \
+    && find /workspace /app -path /app/venv -prune -o -type d -name tests -prune -exec rm -rf {} + \
+    && rm -rf /workspace/scripts \
+    && python -m compileall -q /app/knowledge_flow_backend /app/alembic /workspace >/dev/null \
+    && chmod -R a+rX /app /opt/hf /home/nonroot
+
+# ------------------------------------------------------------------ final
+FROM scratch
+COPY --from=rootfs /rootfs /
+COPY --from=build /app /app
+COPY --from=build /workspace /workspace
+COPY --from=build /opt/hf /opt/hf
+# Extension DuckDB httpfs, installée dans $HOME/.duckdb au build.
+COPY --from=build /home/nonroot /home/nonroot
+ENV PATH=/app/venv/bin:/usr/bin:/bin:/usr/lib/libreoffice/program \
+    HOME=/home/nonroot \
+    PYTHONPATH=/app \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PRODUCTION_FASTAPI_DOCS_ENABLED=false \
+    TIKTOKEN_CACHE_DIR=/app/encodings \
+    PADDLE_MODELS_DIR=/app/models \
+    DUCKDB_EXTENSION_DIRECTORY=/home/nonroot/.duckdb/extensions \
+    HF_HOME=/opt/hf \
+    RERANKER_MODEL=cross-encoder/ms-marco-MiniLM-L-12-v2 \
+    RERANKER_MODEL_CACHE=/opt/hf/hub \
+    HF_HUB_CACHE=/opt/hf/hub \
+    HUGGINGFACE_HUB_CACHE=/opt/hf/hub \
+    SENTENCE_TRANSFORMERS_HOME=/opt/hf/hub \
+    TRANSFORMERS_CACHE=/opt/hf/hub \
+    WHISPER_MODEL_SIZE=base \
+    HF_HUB_OFFLINE=1 \
+    TRANSFORMERS_OFFLINE=1 \
+    HF_HUB_DISABLE_TELEMETRY=1
+WORKDIR /app
+USER 65532:65532
+EXPOSE 8111
+ENTRYPOINT ["uvicorn", "knowledge_flow_backend.main:create_app", "--factory"]
+CMD ["--port", "8111", "--host", "0.0.0.0", "--log-level", "info", "--loop", "asyncio"]

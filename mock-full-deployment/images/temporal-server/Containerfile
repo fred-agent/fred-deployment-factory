@@ -1,0 +1,18 @@
+# Serveur Temporal (planification des tâches de Fred), image durcie.
+# Binaire temporal-server seul, sans les scripts d'entrée (bash, dockerize) : la
+# configuration est un fichier monté (bundles/fred-app-01/etc/fred/temporal/temporal.yaml).
+# grpc-health-probe sert au healthcheck. Ni shell, ni gestionnaire de paquets ; 65532.
+ARG WOLFI=cgr.dev/chainguard/wolfi-base@sha256:824f77df45397eb954dfb963db255907ee8842e3446353ce93d688e5e862f51d
+
+FROM ${WOLFI} AS rootfs
+RUN apk add --no-cache --no-scripts --initdb --root /rootfs \
+        --keys-dir /etc/apk/keys --repositories-file /etc/apk/repositories \
+        wolfi-baselayout ca-certificates-bundle tzdata temporal-server grpc-health-probe \
+    && echo 'nonroot:x:65532:65532:nonroot:/home/nonroot:/sbin/nologin' >> /rootfs/etc/passwd \
+    && echo 'nonroot:x:65532:' >> /rootfs/etc/group
+
+FROM scratch
+COPY --from=rootfs /rootfs /
+USER 65532:65532
+EXPOSE 7233 7234 7235 7239 6933 6934 6935 6939
+ENTRYPOINT ["/usr/bin/temporal-server", "--config-file", "/etc/fred/temporal/temporal.yaml", "--allow-no-auth", "start"]

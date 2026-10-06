@@ -1,0 +1,54 @@
+# Control Plane de Fred, image durcie.
+# Contexte de build : le dépôt Fred (FRED_REPO). Voir scripts/build-images.sh.
+#
+# - Base Wolfi épinglée par digest ; image finale FROM scratch construite par
+#   "apk --root" : paquets d'exécution seulement, ni apk, ni shell, ni compilateur.
+# - Dépendances Python depuis uv.lock, sans les extras de développement.
+# - Fichiers applicatifs à root, lecture seule pour l'utilisateur 65532.
+# - La base apk (/lib/apk/db) est conservée : les scanners voient les paquets.
+ARG WOLFI=cgr.dev/chainguard/wolfi-base@sha256:824f77df45397eb954dfb963db255907ee8842e3446353ce93d688e5e862f51d
+
+# ----------------------------------------------------------------- rootfs
+FROM ${WOLFI} AS rootfs
+RUN apk add --no-cache --initdb --root /rootfs \
+        --keys-dir /etc/apk/keys --repositories-file /etc/apk/repositories \
+        wolfi-baselayout ca-certificates-bundle tzdata python-3.12 libstdc++ libgcc \
+    && echo 'nonroot:x:65532:65532:nonroot:/home/nonroot:/sbin/nologin' >> /rootfs/etc/passwd \
+    && echo 'nonroot:x:65532:' >> /rootfs/etc/group \
+    && install -d -o 65532 -g 65532 -m 0700 /rootfs/home/nonroot
+
+# ------------------------------------------------------------------ build
+FROM ${WOLFI} AS build
+RUN apk add --no-cache python-3.12 python-3.12-dev uv build-base
+ENV UV_PROJECT_ENVIRONMENT=/app/venv UV_PYTHON=/usr/bin/python3.12 UV_PYTHON_DOWNLOADS=never \
+    UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_NO_CACHE=1
+WORKDIR /workspace/apps/control-plane-backend
+COPY apps/control-plane-backend/pyproject.toml apps/control-plane-backend/uv.lock apps/control-plane-backend/README.md ./
+COPY apps/control-plane-backend/control_plane_backend ./control_plane_backend
+COPY libs/fred-pod /workspace/libs/fred-pod
+COPY libs/fred-core /workspace/libs/fred-core
+COPY libs/fred-sdk /workspace/libs/fred-sdk
+RUN uv sync --frozen --no-dev
+# Arborescence d'exécution, comme Dockerfile-prod (installs éditables sous /workspace),
+# sans les tests.
+COPY apps/control-plane-backend /app
+COPY alembic.ini /app/alembic.ini
+RUN rm -rf /app/.venv /app/target /app/Makefile \
+    && find /workspace /app -path /app/venv -prune -o -type d -name tests -prune -exec rm -rf {} + \
+    && python3.12 -m compileall -q /workspace /app/alembic >/dev/null
+
+# ------------------------------------------------------------------ final
+FROM scratch
+COPY --from=rootfs /rootfs /
+COPY --from=build /app /app
+COPY --from=build /workspace /workspace
+ENV PATH=/app/venv/bin:/usr/bin:/bin \
+    HOME=/home/nonroot \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PRODUCTION_FASTAPI_DOCS_ENABLED=false
+WORKDIR /app
+USER 65532:65532
+EXPOSE 8222
+ENTRYPOINT ["uvicorn", "control_plane_backend.main:create_app", "--factory"]
+CMD ["--port", "8222", "--host", "0.0.0.0", "--log-level", "info", "--loop", "asyncio"]

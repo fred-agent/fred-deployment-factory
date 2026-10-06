@@ -1,0 +1,14 @@
+# Catalogue des images servies par le registry local (registry.fred.lan:5000).
+# Colonnes séparées par des TABULATIONS :
+#   variable   source (image locale à pousser)   cible (chemin dans le registry, sans hôte)
+# Sources : images durcies construites par "make images" (images/<nom>/Containerfile).
+# Les VMs ne tirent QUE depuis registry.fred.lan:5000 (pas d'accès aux registries publics).
+POSTGRES_IMAGE	fred-hardened/postgres:latest	fred/postgres:17-hardened
+SEAWEEDFS_IMAGE	fred-hardened/seaweedfs:latest	fred/seaweedfs:hardened
+OPENFGA_IMAGE	fred-hardened/openfga:latest	fred/openfga:hardened
+TEMPORAL_IMAGE	fred-hardened/temporal-server:latest	fred/temporal-server:hardened
+TEMPORAL_ADMIN_IMAGE	fred-hardened/temporal-admin-tools:latest	fred/temporal-admin-tools:hardened
+CONTROL_PLANE_IMAGE	fred-hardened/control-plane-backend:latest	fred/control-plane-backend:hardened
+KNOWLEDGE_FLOW_IMAGE	fred-hardened/knowledge-flow-backend:latest	fred/knowledge-flow-backend:hardened
+FRED_AGENTS_IMAGE	fred-hardened/fred-agents:latest	fred/fred-agents:hardened
+FRONTEND_IMAGE	fred-hardened/frontend:latest	fred/frontend:hardened

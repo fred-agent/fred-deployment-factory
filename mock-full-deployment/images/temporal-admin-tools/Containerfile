@@ -1,0 +1,17 @@
+# Outils d'administration Temporal pour les jobs one-shot (schémas SQL, namespace),
+# image durcie : temporal-sql-tool, la CLI temporal et les schémas SQL, sans shell.
+# Les jobs passent leurs arguments directement (voir fred-jobs.sh). 65532.
+ARG WOLFI=cgr.dev/chainguard/wolfi-base@sha256:824f77df45397eb954dfb963db255907ee8842e3446353ce93d688e5e862f51d
+
+FROM ${WOLFI} AS rootfs
+RUN apk add --no-cache --no-scripts --initdb --root /rootfs \
+        --keys-dir /etc/apk/keys --repositories-file /etc/apk/repositories \
+        wolfi-baselayout ca-certificates-bundle temporal-sql-tool temporal temporal-server-schema \
+    && echo 'nonroot:x:65532:65532:nonroot:/home/nonroot:/sbin/nologin' >> /rootfs/etc/passwd \
+    && echo 'nonroot:x:65532:' >> /rootfs/etc/group
+
+FROM scratch
+COPY --from=rootfs /rootfs /
+WORKDIR /etc/temporal
+USER 65532:65532
+ENTRYPOINT ["/usr/bin/temporal-sql-tool"]

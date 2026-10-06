@@ -1,0 +1,18 @@
+# OpenFGA (autorisations ReBAC de Fred), image durcie.
+# Image FROM scratch construite par "apk --root" : binaires openfga et grpc-health-probe
+# (healthcheck), aucun shell ni gestionnaire de paquets, utilisateur 65532.
+ARG WOLFI=cgr.dev/chainguard/wolfi-base@sha256:824f77df45397eb954dfb963db255907ee8842e3446353ce93d688e5e862f51d
+
+FROM ${WOLFI} AS rootfs
+RUN apk add --no-cache --no-scripts --initdb --root /rootfs \
+        --keys-dir /etc/apk/keys --repositories-file /etc/apk/repositories \
+        wolfi-baselayout ca-certificates-bundle openfga grpc-health-probe \
+    && echo 'nonroot:x:65532:65532:nonroot:/home/nonroot:/sbin/nologin' >> /rootfs/etc/passwd \
+    && echo 'nonroot:x:65532:' >> /rootfs/etc/group
+
+FROM scratch
+COPY --from=rootfs /rootfs /
+USER 65532:65532
+EXPOSE 8080 8081
+ENTRYPOINT ["/usr/bin/openfga"]
+CMD ["run"]

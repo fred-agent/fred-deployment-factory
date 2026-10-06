@@ -1,0 +1,85 @@
+# Infrastructure simulée : ce que le client fournit, rien de Fred.
+#   - registry      : miroir d'images du client (seule source autorisée pour les VMs)
+#   - fred-sto-01   : VM RHEL 9 de stockage (Postgres, SeaweedFS)
+#   - fred-app-01   : VM RHEL 9 applicative (backends, workers, OpenFGA, Temporal, frontend)
+# Lancé par le Makefile avec --env-file ../config.env.
+name: fred-mock
+
+networks:
+  fred-lan:
+    name: fred-lan
+    ipam:
+      config:
+        - subnet: ${LAN_SUBNET}
+
+x-vm: &vm
+  build:
+    context: ./vm
+    dockerfile: Containerfile
+    args:
+      VM_BASE_IMAGE: ${VM_BASE_IMAGE}
+  image: fred-mock/rhel9-podman:latest
+  privileged: true
+  # Espace de noms cgroup privé, comme une vraie VM. Avec "host", le systemd de la VM
+  # voit l'arborescence du poste et podman ne retrouve pas les slices de ses pods
+  # ("unable to create pod cgroup ... was already loaded").
+  cgroup: private
+  tmpfs:
+    - /run
+    - /tmp
+  stop_signal: SIGRTMIN+3
+  restart: unless-stopped
+  extra_hosts:
+    - "registry.fred.lan:${REGISTRY_IP}"
+    - "${STO_FQDN}:${STO_IP}"
+    - "fred-sto-01:${STO_IP}"
+    - "${APP_FQDN}:${APP_IP}"
+    - "fred-app-01:${APP_IP}"
+
+services:
+  registry:
+    image: docker.io/library/registry:2
+    container_name: fred-mock-registry
+    hostname: registry
+    restart: unless-stopped
+    networks:
+      fred-lan:
+        ipv4_address: ${REGISTRY_IP}
+    ports:
+      # Côté poste : on pousse sur localhost:5000 (docker autorise le HTTP en local).
+      - "127.0.0.1:5000:5000"
+    volumes:
+      - registry-data:/var/lib/registry
+
+  fred-sto-01:
+    <<: *vm
+    container_name: fred-sto-01
+    hostname: ${STO_FQDN}
+    networks:
+      fred-lan:
+        ipv4_address: ${STO_IP}
+    volumes:
+      - sto-containers:/var/lib/containers   # stockage podman de la VM
+      - sto-data:/var/lib/fred                 # "disque de données" de la VM
+    # Aucun port publié vers le poste : seule fred-app-01 parle au stockage.
+
+  fred-app-01:
+    <<: *vm
+    container_name: fred-app-01
+    hostname: ${APP_FQDN}
+    networks:
+      fred-lan:
+        ipv4_address: ${APP_IP}
+    volumes:
+      - app-containers:/var/lib/containers
+      - app-data:/var/lib/fred
+    ports:
+      # Seule entrée utilisateur : le frontend (nginx) de fred-app-01.
+      - "127.0.0.1:${PUBLIC_PORT}:8080"
+
+volumes:
+  registry-data:
+  sto-containers:
+  sto-data:
+  app-containers:
+  app-data:

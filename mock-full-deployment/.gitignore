@@ -1,0 +1,5 @@
+# Secrets générés (mots de passe, PKI, clé LLM) et rendu qui les embarque.
+/secrets/
+/build/
+# Rapports Trivy produits par scripts/trivy-report.py.
+/reports/

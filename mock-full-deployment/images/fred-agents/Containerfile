@@ -1,0 +1,54 @@
+# Runtime d'agents de Fred (fred-agents), image durcie.
+# Même modèle que images/control-plane-backend/Containerfile. En plus : LibreOffice
+# (soffice, aperçu PDF du remplissage PowerPoint) et ses polices. soffice est un
+# script shell : busybox est donc présent dans cette image.
+ARG WOLFI=cgr.dev/chainguard/wolfi-base@sha256:824f77df45397eb954dfb963db255907ee8842e3446353ce93d688e5e862f51d
+
+# ----------------------------------------------------------------- rootfs
+FROM ${WOLFI} AS rootfs
+RUN apk add --no-cache --no-scripts --initdb --root /rootfs \
+        --keys-dir /etc/apk/keys --repositories-file /etc/apk/repositories \
+        wolfi-baselayout ca-certificates-bundle tzdata python-3.12 libstdc++ libgcc \
+        busybox libreoffice-25.2 fontconfig font-liberation font-crosextra-carlito font-crosextra-caladea \
+    && chroot /rootfs /usr/bin/ldconfig \
+    && chroot /rootfs /usr/bin/busybox --install -s \
+    && chroot /rootfs /usr/bin/fc-cache -f \
+    && echo 'nonroot:x:65532:65532:nonroot:/home/nonroot:/sbin/nologin' >> /rootfs/etc/passwd \
+    && echo 'nonroot:x:65532:' >> /rootfs/etc/group \
+    && install -d -o 65532 -g 65532 -m 0700 /rootfs/home/nonroot \
+    && rm -f /rootfs/sbin/apk /rootfs/usr/bin/apk
+
+# ------------------------------------------------------------------ build
+FROM ${WOLFI} AS build
+RUN apk add --no-cache python-3.12 python-3.12-dev uv build-base
+ENV UV_PROJECT_ENVIRONMENT=/app/venv UV_PYTHON=/usr/bin/python3.12 UV_PYTHON_DOWNLOADS=never \
+    UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_NO_CACHE=1
+WORKDIR /workspace/apps/fred-agents
+COPY apps/fred-agents/pyproject.toml apps/fred-agents/uv.lock apps/fred-agents/README.md ./
+COPY apps/fred-agents/fred_agents ./fred_agents
+COPY libs/fred-pod /workspace/libs/fred-pod
+COPY libs/fred-core /workspace/libs/fred-core
+COPY libs/fred-runtime /workspace/libs/fred-runtime
+COPY libs/fred-sdk /workspace/libs/fred-sdk
+COPY libs/capabilities /workspace/libs/capabilities
+RUN uv sync --frozen --no-dev
+# Comme Dockerfile-prod : alembic.ini à côté du pyproject de fred-runtime (migrations
+# de fred-runtime puis de chaque capability), catalogues par défaut dans /app/config.
+COPY alembic.ini /workspace/libs/fred-runtime/alembic.ini
+COPY apps/fred-agents/config/models_catalog.yaml apps/fred-agents/config/mcp_catalog.yaml apps/fred-agents/config/platform_prompt.json /app/config/
+RUN find /workspace -type d -name tests -prune -exec rm -rf {} + \
+    && python3.12 -m compileall -q /workspace >/dev/null
+
+# ------------------------------------------------------------------ final
+FROM scratch
+COPY --from=rootfs /rootfs /
+COPY --from=build /app /app
+COPY --from=build /workspace /workspace
+ENV PATH=/app/venv/bin:/usr/bin:/bin:/usr/lib/libreoffice/program \
+    HOME=/home/nonroot \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+WORKDIR /app
+USER 65532:65532
+EXPOSE 8000
+ENTRYPOINT ["python", "-m", "fred_agents"]

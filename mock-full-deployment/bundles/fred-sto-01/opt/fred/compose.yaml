@@ -1,0 +1,99 @@
+# fred-sto-01 : stockage de Fred (Postgres + SeaweedFS).
+# Seuls deux ports sortent de la VM, tous deux en TLS : 5432 (Postgres) et 8333 (S3).
+# Variables ${...} : /opt/fred/.env (images, IP). Secrets : /etc/fred/secrets/.
+#
+# Durcissement, pour chaque conteneur (x-hardening) : utilisateur non root fixé par
+# l'image (postgres 70, weed 65532), racine en lecture seule (seuls les tmpfs déclarés
+# et les données s'écrivent), aucune capability, no-new-privileges, limites mémoire et
+# nombre de processus.
+name: fred-sto
+
+x-hardening: &hardening
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges]
+
+services:
+  postgres:
+    <<: *hardening
+    image: ${POSTGRES_IMAGE}
+    container_name: postgres
+    restart: unless-stopped
+    command:
+      - postgres
+      - -c
+      - ssl=on
+      - -c
+      - ssl_min_protocol_version=TLSv1.2
+      - -c
+      - ssl_cert_file=/etc/fred/tls/server.crt
+      - -c
+      - ssl_key_file=/etc/fred/tls/server.key
+      - -c
+      - hba_file=/etc/fred/postgres/pg_hba.conf
+      - -c
+      - password_encryption=scram-sha-256
+      - -c
+      - max_connections=300
+    env_file:
+      - /etc/fred/secrets/postgres.env
+    environment:
+      POSTGRES_USER: postgres
+      PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - "${STO_IP}:5432:5432"
+    volumes:
+      - /var/lib/fred/postgres:/var/lib/postgresql/data:Z
+      - /etc/fred/tls/postgres:/etc/fred/tls:ro,Z
+      - /etc/fred/postgres/pg_hba.conf:/etc/fred/postgres/pg_hba.conf:ro,Z
+      # L'entrypoint de l'image (Wolfi) lit ses scripts d'init dans /var/lib/postgres/initdb/,
+      # pas dans /docker-entrypoint-initdb.d : le script y est monté seul, à côté des siens.
+      - /etc/fred/postgres/initdb/10-fred-databases.sh:/var/lib/postgres/initdb/10-fred-databases.sh:ro,Z
+    tmpfs:
+      - /var/run/postgresql:U,mode=2775,size=1m
+      - /tmp:size=64m
+    shm_size: 256m
+    mem_limit: 2g
+    pids_limit: 512
+    healthcheck:
+      # Socket Unix, en postgres (authentification peer) : en TCP, pg_hba rejetterait
+      # la sonde et le journal se remplirait de FATAL.
+      test: ["CMD", "pg_isready", "-q"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # Pas de healthcheck : weed n'a pas de sonde non interactive, et l'image n'a ni shell
+  # ni client HTTP. make verify contrôle S3 (HTTPS) depuis fred-app-01.
+  seaweedfs:
+    <<: *hardening
+    image: ${SEAWEEDFS_IMAGE}
+    container_name: seaweedfs
+    hostname: seaweedfs
+    restart: unless-stopped
+    command:
+      - server
+      - -dir=/data
+      - -ip=seaweedfs
+      - -ip.bind=0.0.0.0
+      - -master.port=9333
+      - -volume.port=8080
+      - -volume.max=100
+      - -filer
+      - -filer.port=8888
+      - -s3
+      - -s3.port=8333
+      - -s3.config=/etc/fred/seaweedfs/s3.json
+      - -s3.cert.file=/etc/fred/tls/server.crt
+      - -s3.key.file=/etc/fred/tls/server.key
+    ports:
+      # Master, volume et filer restent internes à la VM : seul S3 (HTTPS) sort.
+      - "${STO_IP}:8333:8333"
+    volumes:
+      - /var/lib/fred/seaweedfs:/data:Z
+      - /etc/fred/tls/seaweedfs:/etc/fred/tls:ro,Z
+      - /etc/fred/seaweedfs/s3.json:/etc/fred/seaweedfs/s3.json:ro,Z
+    tmpfs:
+      - /tmp:size=64m
+    mem_limit: 1g
+    pids_limit: 512

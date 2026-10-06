@@ -1,0 +1,29 @@
+# Postgres 17 + pgvector (stockage de Fred sur fred-sto-01), image durcie.
+# Image FROM scratch construite par "apk --root". L'entrypoint compatible Docker
+# (docker-entrypoint.sh, initialisation et scripts initdb) est un script bash :
+# bash et busybox sont présents, pas de gestionnaire de paquets.
+# Tourne directement en postgres (uid 70, PG_UID dans config.env), jamais en root.
+ARG WOLFI=cgr.dev/chainguard/wolfi-base@sha256:824f77df45397eb954dfb963db255907ee8842e3446353ce93d688e5e862f51d
+
+FROM ${WOLFI} AS rootfs
+RUN apk add --no-cache --no-scripts --initdb --root /rootfs \
+        --keys-dir /etc/apk/keys --repositories-file /etc/apk/repositories \
+        wolfi-baselayout ca-certificates-bundle tzdata bash busybox \
+        postgresql-17 postgresql-17-client postgresql-17-contrib postgresql-17-oci-entrypoint pgvector-17 \
+    && chroot /rootfs /usr/bin/ldconfig \
+    && chroot /rootfs /usr/bin/busybox --install -s \
+    && echo 'postgres:x:70:70:postgres:/var/lib/postgresql:/sbin/nologin' >> /rootfs/etc/passwd \
+    && echo 'postgres:x:70:' >> /rootfs/etc/group \
+    && rm -f /rootfs/sbin/apk /rootfs/usr/bin/apk \
+    && install -d -o 70 -g 70 -m 0700 /rootfs/var/lib/postgresql/data \
+    && install -d -o 70 -g 70 -m 2775 /rootfs/var/run/postgresql
+
+FROM scratch
+COPY --from=rootfs /rootfs /
+ENV PGDATA=/var/lib/postgresql/data \
+    LANG=C.UTF-8
+USER 70:70
+EXPOSE 5432
+STOPSIGNAL SIGINT
+ENTRYPOINT ["/usr/bin/docker-entrypoint.sh"]
+CMD ["postgres"]

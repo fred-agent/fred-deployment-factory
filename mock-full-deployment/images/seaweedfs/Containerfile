@@ -1,0 +1,18 @@
+# SeaweedFS (stockage objet S3 de Fred sur fred-sto-01), image durcie.
+# Binaire weed seulement (pas de healthcheck : weed n'a pas de sonde non interactive) :
+# ni shell, ni gestionnaire de paquets. Utilisateur 65532 (SEAWEED_UID dans config.env).
+ARG WOLFI=cgr.dev/chainguard/wolfi-base@sha256:824f77df45397eb954dfb963db255907ee8842e3446353ce93d688e5e862f51d
+
+FROM ${WOLFI} AS rootfs
+RUN apk add --no-cache --no-scripts --initdb --root /rootfs \
+        --keys-dir /etc/apk/keys --repositories-file /etc/apk/repositories \
+        wolfi-baselayout ca-certificates-bundle seaweedfs \
+    && echo 'nonroot:x:65532:65532:nonroot:/home/nonroot:/sbin/nologin' >> /rootfs/etc/passwd \
+    && echo 'nonroot:x:65532:' >> /rootfs/etc/group \
+    && rm -f /rootfs/sbin/apk /rootfs/usr/bin/apk
+
+FROM scratch
+COPY --from=rootfs /rootfs /
+USER 65532:65532
+EXPOSE 8333
+ENTRYPOINT ["/usr/bin/weed"]

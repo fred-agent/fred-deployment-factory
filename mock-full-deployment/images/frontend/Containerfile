@@ -1,0 +1,42 @@
+# Frontend de Fred (fichiers statiques + passerelle nginx vers les backends), image durcie.
+# - Compilation : étape Node d'upstream, absente de l'image finale.
+# - Image finale FROM scratch : nginx, busybox et jq (l'entrypoint de Fred est un
+#   script shell qui génère le bloc server), sans curl ni unzip : le thème
+#   téléchargé (FRONTEND_THEME_URL) n'est pas pris en charge par cette image.
+# - nginx tourne en 65532, racine en lecture seule, écritures dans /tmp (tmpfs).
+ARG WOLFI=cgr.dev/chainguard/wolfi-base@sha256:824f77df45397eb954dfb963db255907ee8842e3446353ce93d688e5e862f51d
+ARG NODE=mirror.gcr.io/node:22.13.0
+
+# ----------------------------------------------------------------- rootfs
+FROM ${WOLFI} AS rootfs
+# Contenu de images/frontend/nginx.conf, passé par scripts/build-images.sh (le
+# contexte de build est le dépôt Fred, qui ne contient pas ce fichier).
+ARG NGINX_CONF
+RUN test -n "$NGINX_CONF" && apk add --no-cache --initdb --root /rootfs \
+        --keys-dir /etc/apk/keys --repositories-file /etc/apk/repositories \
+        wolfi-baselayout ca-certificates-bundle nginx-mainline busybox jq \
+    && echo 'nonroot:x:65532:65532:nonroot:/home/nonroot:/sbin/nologin' >> /rootfs/etc/passwd \
+    && echo 'nonroot:x:65532:' >> /rootfs/etc/group \
+    && rm -f /rootfs/sbin/apk /rootfs/usr/bin/apk \
+    && mkdir -p /rootfs/var/lib/fred/theme /rootfs/var/lib/nginx/logs \
+    && ln -sf /dev/stderr /rootfs/var/lib/nginx/logs/error.log \
+    && printf '%s\n' "$NGINX_CONF" > /rootfs/etc/nginx/nginx.conf
+
+# ------------------------------------------------------------------ build
+FROM ${NODE} AS build
+WORKDIR /workspace/apps/frontend
+COPY apps/frontend/ /workspace/apps/frontend/
+COPY scripts/ /workspace/scripts/
+COPY validation/fixtures/oidc_uid_vector.json /workspace/validation/fixtures/oidc_uid_vector.json
+ENV NODE_OPTIONS=--max-old-space-size=4096
+RUN make build
+
+# ------------------------------------------------------------------ final
+FROM scratch
+COPY --from=rootfs /rootfs /
+COPY --from=build /workspace/apps/frontend/dist /usr/share/nginx/html
+COPY apps/frontend/dockerfiles/docker-entrypoint.sh /usr/local/bin/fred-frontend-entrypoint.sh
+ENV FRONTEND_NGINX_CONFIG=/tmp/fred.conf
+USER 65532:65532
+EXPOSE 8080
+ENTRYPOINT ["/bin/sh", "/usr/local/bin/fred-frontend-entrypoint.sh"]
