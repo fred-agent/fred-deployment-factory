@@ -1,0 +1,13 @@
+0644 root:root /opt/fred/.env
+0600 root:root /etc/fred/secrets/postgres.env
+0600 65532:65532 /etc/fred/seaweedfs/s3.json
+0644 root:root /etc/fred/tls/ca.crt
+0644 70:70 /etc/fred/tls/postgres/server.crt
+0600 70:70 /etc/fred/tls/postgres/server.key
+0644 65532:65532 /etc/fred/tls/seaweedfs/server.crt
+0600 65532:65532 /etc/fred/tls/seaweedfs/server.key
+0755 root:root /opt/fred/bin/fred-deploy.sh
+0755 root:root /etc/fred/postgres/initdb/10-fred-databases.sh
+0700 70:70 /var/lib/fred/postgres
+0700 65532:65532 /var/lib/fred/seaweedfs
+0700 root:root /etc/fred/secrets

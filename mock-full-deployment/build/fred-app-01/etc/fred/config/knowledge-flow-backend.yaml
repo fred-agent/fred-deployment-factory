@@ -1,0 +1,347 @@
+app:
+  gcu_version: v1
+  name: Knowledge Flow Backend
+  base_url: /knowledge-flow/v1
+  address: 0.0.0.0
+  port: 8111
+  log_level: info
+  reload: false
+  reload_dir: .
+  default_team_max_resources_storage_size: 5368709120
+  personal_max_resources_storage_size: 5368709120
+  pdf_render_ttl_days: 30
+observability:
+  kpi:
+    prometheus:
+      address: 0.0.0.0
+      port: 9111
+processing:
+  path_base_model: .
+  default_profile: fast
+  profiles:
+    fast:
+      use_gpu: false
+      generate_summary: false
+      input_activity_timeout: 90m
+      activity_heartbeat_timeout: 5m
+      retry_initial_interval: 5s
+      retry_backoff_coefficient: 2.0
+      retry_maximum_interval: 20s
+      retry_maximum_attempts: 3
+      retry_non_retryable_error_types: []
+      process_images: false
+      text_splitter:
+        chunk_size: 1500
+        chunk_overlap: 150
+        preserve_tables: true
+      pdf:
+        do_ocr: false
+      input_processors:
+      - suffix: .pdf
+        class_path: knowledge_flow_backend.core.processors.input.lightweight_markdown_processor.lite_pdf_to_md_processor.LitePdfMarkdownProcessor
+      - suffix: .docx
+        class_path: knowledge_flow_backend.core.processors.input.docx_markdown_processor.docx_markdown_processor.DocxMarkdownProcessor
+      - suffix: .doc
+        class_path: knowledge_flow_backend.core.processors.input.doc_markdown_processor.doc_markdown_processor.DocMarkdownProcessor
+      - suffix: .odt
+        class_path: knowledge_flow_backend.core.processors.input.odt_markdown_processor.odt_markdown_processor.OdtMarkdownProcessor
+      - suffix: .pptx
+        class_path: knowledge_flow_backend.core.processors.input.pptx_markdown_processor.pptx_markdown_processor.PptxMarkdownProcessor
+      - suffix: .ppt
+        class_path: knowledge_flow_backend.core.processors.input.ppt_markdown_processor.ppt_markdown_processor.PptMarkdownProcessor
+      - suffix: .csv
+        class_path: knowledge_flow_backend.core.processors.input.csv_tabular_processor.csv_tabular_processor.CsvTabularProcessor
+      - suffix: .xlsx
+        class_path: knowledge_flow_backend.core.processors.input.excel_processor.excel_processor.ExcelProcessor
+      - suffix: .xls
+        class_path: knowledge_flow_backend.core.processors.input.excel_processor.excel_processor.ExcelProcessor
+      - suffix: .xlsm
+        class_path: knowledge_flow_backend.core.processors.input.excel_processor.excel_processor.ExcelProcessor
+      - suffix: .txt
+        class_path: knowledge_flow_backend.core.processors.input.text_markdown_processor.text_markdown_processor.TextMarkdownProcessor
+      - suffix: .md
+        class_path: knowledge_flow_backend.core.processors.input.markdown_markdown_processor.markdown_markdown_processor.MarkdownMarkdownProcessor
+      - suffix: .jsonl
+        class_path: knowledge_flow_backend.core.processors.input.jsonl.jsonl_markdown_processor.JsonlMarkdownProcessor
+      - suffix: .png
+        class_path: knowledge_flow_backend.core.processors.input.image_processor.image_processor.ImageProcessor
+      - suffix: .jpg
+        class_path: knowledge_flow_backend.core.processors.input.image_processor.image_processor.ImageProcessor
+      - suffix: .jpeg
+        class_path: knowledge_flow_backend.core.processors.input.image_processor.image_processor.ImageProcessor
+      - suffix: .gif
+        class_path: knowledge_flow_backend.core.processors.input.image_processor.image_processor.ImageProcessor
+      - suffix: .bmp
+        class_path: knowledge_flow_backend.core.processors.input.image_processor.image_processor.ImageProcessor
+      - suffix: .svg
+        class_path: knowledge_flow_backend.core.processors.input.image_processor.image_processor.ImageProcessor
+      - suffix: .webp
+        class_path: knowledge_flow_backend.core.processors.input.image_processor.image_processor.ImageProcessor
+      - suffix: .ico
+        class_path: knowledge_flow_backend.core.processors.input.image_processor.image_processor.ImageProcessor
+    medium:
+      use_gpu: false
+      generate_summary: false
+      input_activity_timeout: 2h
+      activity_heartbeat_timeout: 5m
+      retry_initial_interval: 20s
+      retry_backoff_coefficient: 2.0
+      retry_maximum_interval: 2m
+      retry_maximum_attempts: 5
+      retry_non_retryable_error_types: []
+      process_images: false
+      text_splitter:
+        chunk_size: 1500
+        chunk_overlap: 150
+        preserve_tables: true
+      pdf:
+        extractor: docling
+        do_ocr: true
+        docling_num_threads: 2
+      input_processors:
+      - suffix: .pdf
+        class_path: knowledge_flow_backend.core.processors.input.pdf_markdown_processor.pdf_markdown_processor.PdfMarkdownProcessor
+      - suffix: .docx
+        class_path: knowledge_flow_backend.core.processors.input.docx_markdown_processor.docx_markdown_processor.DocxMarkdownProcessor
+      - suffix: .doc
+        class_path: knowledge_flow_backend.core.processors.input.doc_markdown_processor.doc_markdown_processor.DocMarkdownProcessor
+      - suffix: .odt
+        class_path: knowledge_flow_backend.core.processors.input.odt_markdown_processor.odt_markdown_processor.OdtMarkdownProcessor
+      - suffix: .pptx
+        class_path: knowledge_flow_backend.core.processors.input.pptx_markdown_processor.pptx_markdown_processor.PptxMarkdownProcessor
+      - suffix: .ppt
+        class_path: knowledge_flow_backend.core.processors.input.ppt_markdown_processor.ppt_markdown_processor.PptMarkdownProcessor
+      - suffix: .csv
+        class_path: knowledge_flow_backend.core.processors.input.csv_tabular_processor.csv_tabular_processor.CsvTabularProcessor
+      - suffix: .xlsx
+        class_path: knowledge_flow_backend.core.processors.input.excel_processor.excel_processor.ExcelProcessor
+      - suffix: .xls
+        class_path: knowledge_flow_backend.core.processors.input.excel_processor.excel_processor.ExcelProcessor
+      - suffix: .xlsm
+        class_path: knowledge_flow_backend.core.processors.input.excel_processor.excel_processor.ExcelProcessor
+      - suffix: .txt
+        class_path: knowledge_flow_backend.core.processors.input.text_markdown_processor.text_markdown_processor.TextMarkdownProcessor
+      - suffix: .md
+        class_path: knowledge_flow_backend.core.processors.input.markdown_markdown_processor.markdown_markdown_processor.MarkdownMarkdownProcessor
+      - suffix: .jsonl
+        class_path: knowledge_flow_backend.core.processors.input.jsonl.jsonl_markdown_processor.JsonlMarkdownProcessor
+      - suffix: .png
+        class_path: knowledge_flow_backend.core.processors.input.image_processor.image_processor.ImageProcessor
+      - suffix: .jpg
+        class_path: knowledge_flow_backend.core.processors.input.image_processor.image_processor.ImageProcessor
+      - suffix: .jpeg
+        class_path: knowledge_flow_backend.core.processors.input.image_processor.image_processor.ImageProcessor
+      - suffix: .gif
+        class_path: knowledge_flow_backend.core.processors.input.image_processor.image_processor.ImageProcessor
+      - suffix: .bmp
+        class_path: knowledge_flow_backend.core.processors.input.image_processor.image_processor.ImageProcessor
+      - suffix: .svg
+        class_path: knowledge_flow_backend.core.processors.input.image_processor.image_processor.ImageProcessor
+      - suffix: .webp
+        class_path: knowledge_flow_backend.core.processors.input.image_processor.image_processor.ImageProcessor
+      - suffix: .ico
+        class_path: knowledge_flow_backend.core.processors.input.image_processor.image_processor.ImageProcessor
+    rich:
+      use_gpu: false
+      generate_summary: false
+      input_activity_timeout: 2h
+      activity_heartbeat_timeout: 5m
+      retry_initial_interval: 30s
+      retry_backoff_coefficient: 2.0
+      retry_maximum_interval: 5m
+      retry_maximum_attempts: 7
+      retry_non_retryable_error_types: []
+      process_images: true
+      text_splitter:
+        chunk_size: 1500
+        chunk_overlap: 150
+        preserve_tables: true
+      pdf:
+        extractor: docling
+        do_ocr: true
+        docling_num_threads: 2
+      input_processors:
+      - suffix: .pdf
+        class_path: knowledge_flow_backend.core.processors.input.pdf_markdown_processor.pdf_markdown_processor.PdfMarkdownProcessor
+      - suffix: .docx
+        class_path: knowledge_flow_backend.core.processors.input.docx_markdown_processor.docx_markdown_processor.DocxMarkdownProcessor
+      - suffix: .doc
+        class_path: knowledge_flow_backend.core.processors.input.doc_markdown_processor.doc_markdown_processor.DocMarkdownProcessor
+      - suffix: .odt
+        class_path: knowledge_flow_backend.core.processors.input.odt_markdown_processor.odt_markdown_processor.OdtMarkdownProcessor
+      - suffix: .pptx
+        class_path: knowledge_flow_backend.core.processors.input.pptx_markdown_processor.pptx_markdown_processor.PptxMarkdownProcessor
+      - suffix: .ppt
+        class_path: knowledge_flow_backend.core.processors.input.ppt_markdown_processor.ppt_markdown_processor.PptMarkdownProcessor
+      - suffix: .csv
+        class_path: knowledge_flow_backend.core.processors.input.csv_tabular_processor.csv_tabular_processor.CsvTabularProcessor
+      - suffix: .xlsx
+        class_path: knowledge_flow_backend.core.processors.input.excel_processor.excel_processor.ExcelProcessor
+      - suffix: .xls
+        class_path: knowledge_flow_backend.core.processors.input.excel_processor.excel_processor.ExcelProcessor
+      - suffix: .xlsm
+        class_path: knowledge_flow_backend.core.processors.input.excel_processor.excel_processor.ExcelProcessor
+      - suffix: .txt
+        class_path: knowledge_flow_backend.core.processors.input.text_markdown_processor.text_markdown_processor.TextMarkdownProcessor
+      - suffix: .md
+        class_path: knowledge_flow_backend.core.processors.input.markdown_markdown_processor.markdown_markdown_processor.MarkdownMarkdownProcessor
+      - suffix: .jsonl
+        class_path: knowledge_flow_backend.core.processors.input.jsonl.jsonl_markdown_processor.JsonlMarkdownProcessor
+      - suffix: .png
+        class_path: knowledge_flow_backend.core.processors.input.image_processor.image_processor.ImageProcessor
+      - suffix: .jpg
+        class_path: knowledge_flow_backend.core.processors.input.image_processor.image_processor.ImageProcessor
+      - suffix: .jpeg
+        class_path: knowledge_flow_backend.core.processors.input.image_processor.image_processor.ImageProcessor
+      - suffix: .gif
+        class_path: knowledge_flow_backend.core.processors.input.image_processor.image_processor.ImageProcessor
+      - suffix: .bmp
+        class_path: knowledge_flow_backend.core.processors.input.image_processor.image_processor.ImageProcessor
+      - suffix: .svg
+        class_path: knowledge_flow_backend.core.processors.input.image_processor.image_processor.ImageProcessor
+      - suffix: .webp
+        class_path: knowledge_flow_backend.core.processors.input.image_processor.image_processor.ImageProcessor
+      - suffix: .ico
+        class_path: knowledge_flow_backend.core.processors.input.image_processor.image_processor.ImageProcessor
+security:
+  profile: c3
+  m2m:
+    enabled: true
+    provider: oidc
+    realm_url: https://login.microsoftonline.com/adfe1ef7-449f-4ada-84fd-be92759b1c4e/v2.0
+    client_id: 627f3d9c-ca38-4c7f-b98d-68b61d5b2238
+    scope: api://fred-api/.default
+    secret_env_var: KEYCLOAK_KNOWLEDGE_FLOW_CLIENT_SECRET
+  user:
+    enabled: true
+    provider: oidc
+    realm_url: https://login.microsoftonline.com/adfe1ef7-449f-4ada-84fd-be92759b1c4e/v2.0
+    client_id: 0f9bc927-d45f-4093-bcdd-22c84f32fa7b
+    audience: 715b1300-ae21-485b-bead-aea704dede06
+    scope: api://fred-api/access_as_user
+    roles_claim:
+    - roles
+    claims:
+      uid: oid
+  authorized_origins:
+  - http://localhost:5173
+  rebac:
+    enabled: true
+    type: openfga
+    api_url: http://openfga:8080
+  delegation:
+    act_for_people: false
+    accept_delegated_calls: true
+    caller_roles_claim:
+    - roles
+    audience: 715b1300-ae21-485b-bead-aea704dede06
+    service_accounts_only: false
+  user_directory: local
+scheduler:
+  enabled: true
+  backend: temporal
+  temporal:
+    host: temporal:7233
+    namespace: default
+    task_queue: ingestion
+    workflow_id_prefix: pipeline
+    connect_timeout_seconds: 5
+    ingestion_workflow_parallelism: 3
+    ingestion_max_concurrent_workflow_tasks: 3
+    ingestion_max_concurrent_activities: 3
+content_storage:
+  type: minio
+  endpoint: https://fred-sto-01.fred.lan:8333
+  access_key: fred-app
+  bucket_name: knowledge-flow-content
+  secure: true
+document_sources:
+  fred:
+    type: push
+    description: Documents manually uploaded by users
+chat_model:
+  provider: openai
+  name: mistral-medium-2508
+  settings:
+    base_url: https://api.mistral.ai/v1
+embedding_model:
+  provider: openai
+  name: mistral-embed
+  settings:
+    base_url: https://api.mistral.ai/v1
+    check_embedding_ctx_length: false
+vision_model:
+  provider: openai
+  name: pixtral-12b-2409
+  settings:
+    base_url: https://api.mistral.ai/v1
+crossencoder_model:
+  name: cross-encoder/ms-marco-MiniLM-L-12-v2
+  settings:
+    online: false
+    local_path: /home/fred-user/.cache/huggingface/hub
+    max_retries: 0
+    timeout:
+      connect: 10.0
+      read: 120.0
+    http_client_limits:
+      max_connections: 500
+      max_keepalive_connections: 0
+      keepalive_expiry_seconds: 10
+storage:
+  postgres:
+    host: fred-sto-01.fred.lan
+    port: 5432
+    database: fred
+    username: fred
+    pool_size: 2
+    max_overflow: 0
+    pool_timeout: 30
+    pool_recycle: 1800
+    pool_pre_ping: true
+  resource_store:
+    type: postgres
+  tag_store:
+    type: postgres
+  metadata_store:
+    type: postgres
+  tabular_store:
+    artifacts_prefix: tabular/datasets
+    format: parquet
+    compression: snappy
+    pointer_chunks_enabled: false
+    query:
+      engine: duckdb
+      access_mode: presigned_url
+      internal_presigned_ttl_seconds: 3600
+      default_max_rows: 200
+      max_rows: 1000
+      max_concurrent_queries: 2
+      max_queued_queries: 4
+      query_timeout_seconds: 30.0
+      duckdb_threads: 1
+      duckdb_memory_limit: 256MB
+      max_selected_datasets: 50
+  vector_store:
+    type: pgvector
+  log_store:
+    type: in_memory
+mcp:
+  reports_enabled: true
+  tabular_enabled: true
+  text_enabled: true
+  templates_enabled: true
+  resources_enabled: true
+  opensearch_ops_enabled: false
+  prometheus_ops_enabled: false
+  filesystem_enabled: true
+  filesystem_read_default_limit: 100
+  filesystem_read_max_limit: 500
+  filesystem_read_default_max_chars: 20000
+  filesystem_read_absolute_max_chars: 50000
+filesystem:
+  type: minio
+  endpoint: https://fred-sto-01.fred.lan:8333
+  access_key: fred-app
+  bucket_name: filesystem
+  secure: true

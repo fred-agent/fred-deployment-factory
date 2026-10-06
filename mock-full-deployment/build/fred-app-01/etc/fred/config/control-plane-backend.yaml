@@ -1,0 +1,88 @@
+app:
+  gcu_version: v1
+  name: Control Plane Backend
+  base_url: /control-plane/v1
+  address: 0.0.0.0
+  port: 8222
+  log_level: info
+  default_team_max_resources_storage_size: 5368709120
+  personal_max_resources_storage_size: 5368709120
+  bootstrap_token_env_var: FRED_BOOTSTRAP_TOKEN
+scheduler:
+  enabled: true
+  backend: temporal
+  temporal:
+    host: temporal:7233
+    namespace: default
+    task_queue: control-plane-lifecycle
+    workflow_id_prefix: control-plane
+    connect_timeout_seconds: 5
+observability:
+  kpi:
+    prometheus:
+      address: 0.0.0.0
+      port: 9222
+security:
+  profile: c3
+  m2m:
+    enabled: true
+    provider: oidc
+    realm_url: https://login.microsoftonline.com/adfe1ef7-449f-4ada-84fd-be92759b1c4e/v2.0
+    client_id: 5fb3bd5a-f582-467a-bd80-2f3e3e6846a8
+    scope: api://fred-api/.default
+    secret_env_var: KEYCLOAK_CONTROL_PLANE_CLIENT_SECRET
+  user:
+    enabled: true
+    provider: oidc
+    realm_url: https://login.microsoftonline.com/adfe1ef7-449f-4ada-84fd-be92759b1c4e/v2.0
+    client_id: 0f9bc927-d45f-4093-bcdd-22c84f32fa7b
+    audience: 715b1300-ae21-485b-bead-aea704dede06
+    scope: api://fred-api/access_as_user
+    roles_claim:
+    - roles
+    claims:
+      uid: oid
+  authorized_origins:
+  - http://localhost:5173
+  rebac:
+    enabled: true
+    type: openfga
+    api_url: http://openfga:8080
+  delegation:
+    act_for_people: false
+    accept_delegated_calls: true
+    caller_roles_claim:
+    - roles
+    audience: 715b1300-ae21-485b-bead-aea704dede06
+    service_accounts_only: false
+  user_directory: local
+storage:
+  postgres:
+    host: fred-sto-01.fred.lan
+    port: 5432
+    database: fred
+    username: fred
+  content_storage:
+    type: minio
+    endpoint: https://fred-sto-01.fred.lan:8333
+    access_key: fred-app
+    bucket_name: control-plane-content
+    secure: true
+  log_store:
+    type: in_memory
+knowledge_bases:
+  run_max_attempts: 2
+policies:
+  purge_catalog_path: /etc/fred/config/conversation_policy_catalog.yaml
+platform:
+  frontend:
+    feature_flags:
+      enableInformationSystems: false
+      enableApplications: false
+  knowledge_flow_base_url: http://knowledge-flow-backend:8111/knowledge-flow/v1
+  runtime_catalog_sources:
+  - runtime_id: fred-agents
+    base_url: http://fred-agents:8000/fred/agents/v2
+    enabled: true
+    ingress_prefix: /fred/agents/v2
+  application_sources: []

@@ -1,0 +1,368 @@
+# fred-app-01 : Temporal, OpenFGA, backends Fred, workers et frontend.
+# Sortants : fred-sto-01 (Postgres 5432 + S3 8333, en TLS vérifié), Entra ID et
+# l'API LLM (HTTPS). Entrant : le frontend sur 8080, seule porte vers le navigateur.
+# Variables ${...} : /opt/fred/.env (images, nom du serveur de stockage, réseau interne).
+# Secrets : /etc/fred/secrets/*.env, un fichier par consommateur.
+# Jobs one-shot (profil "jobs") : lancés dans l'ordre par /opt/fred/bin/fred-jobs.sh,
+# jamais par "up". Les depends_on ne relient que des services permanents.
+#
+# Durcissement, pour chaque conteneur (x-hardening) : utilisateur non root fixé par
+# l'image, racine en lecture seule (seuls les tmpfs déclarés s'écrivent, en noexec),
+# aucune capability, no-new-privileges, limites mémoire et nombre de processus.
+name: fred-app
+
+x-hardening: &hardening
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges]
+
+# CA interne (vérification de fred-sto-01) et bundle système qui la contient
+# aussi (Entra, LLM, S3), installé par fred-deploy.sh.
+x-tls-volumes: &tls-volumes
+  - /etc/fred/tls/ca.crt:/etc/fred/tls/ca.crt:ro
+  - /etc/pki/tls/certs/ca-bundle.crt:/etc/fred/tls/ca-bundle.pem:ro
+
+x-fred-volumes: &fred-volumes
+  - /etc/fred/config:/etc/fred/config:ro,z
+  - /etc/fred/tls/ca.crt:/etc/fred/tls/ca.crt:ro
+  - /etc/pki/tls/certs/ca-bundle.crt:/etc/fred/tls/ca-bundle.pem:ro
+  # Même bundle à la place du magasin système de l'image :
+  # DuckDB httpfs (requêtes tabulaires de Knowledge Flow, URL présignées vers S3)
+  # embarque curl, qui ignore SSL_CERT_FILE et CURL_CA_BUNDLE et ne lit que ce magasin.
+  - /etc/pki/tls/certs/ca-bundle.crt:/etc/ssl/certs/ca-certificates.crt:ro
+
+x-fred-env: &fred-env
+  # Postgres : libpq (psycopg) et asyncpg lisent tous deux ces variables, ce qui
+  # chiffre et authentifie le serveur sans modifier Fred.
+  PGSSLMODE: verify-full
+  PGSSLROOTCERT: /etc/fred/tls/ca.crt
+  # S3 (client minio), httpx/requests : bundle système + CA interne.
+  SSL_CERT_FILE: /etc/fred/tls/ca-bundle.pem
+  REQUESTS_CA_BUNDLE: /etc/fred/tls/ca-bundle.pem
+  # Plafond adapté aux jetons Entra (voir GUIDE-ENTRA-ID.md §7.1).
+  FRED_JWT_MAX_LIFETIME_SECONDS: "6000"
+  NO_PROXY: localhost,127.0.0.1,openfga,temporal,control-plane-backend,knowledge-flow-backend,fred-agents,${STO_FQDN}
+  PYTHONUNBUFFERED: "1"
+
+# Réseau interne de la pile, à sous-réseau fixe : Temporal y a une IP stable, qu'il
+# annonce à ses propres services (temporal.yaml) sans découverte par shell.
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: ${APP_PODMAN_SUBNET}
+
+services:
+  # ---------------------------------------------------------------- Temporal
+  # Jobs sans shell : fred-jobs.sh passe les arguments ("--database temporal
+  # setup-schema ...", "operator namespace ..."), tout le reste vient de l'environnement.
+  temporal-sql:
+    <<: *hardening
+    image: ${TEMPORAL_ADMIN_IMAGE}
+    restart: "no"
+    profiles: [jobs]
+    env_file:
+      - /etc/fred/secrets/temporal.env
+    environment:
+      SQL_PLUGIN: postgres12
+      SQL_HOST: ${STO_FQDN}
+      SQL_PORT: "5432"
+      SQL_USER: temporal
+      SQL_TLS: "true"
+      SQL_TLS_CA_FILE: /etc/fred/tls/ca.crt
+      SQL_TLS_SERVER_NAME: ${STO_FQDN}
+    volumes: *tls-volumes
+    mem_limit: 256m
+    pids_limit: 128
+
+  temporal-cli:
+    <<: *hardening
+    image: ${TEMPORAL_ADMIN_IMAGE}
+    restart: "no"
+    profiles: [jobs]
+    entrypoint: ["/usr/bin/temporal"]
+    environment:
+      TEMPORAL_ADDRESS: temporal:7233
+    tmpfs:
+      - /home/nonroot:U,mode=0700,size=16m
+    mem_limit: 256m
+    pids_limit: 128
+
+  temporal:
+    <<: *hardening
+    image: ${TEMPORAL_IMAGE}
+    container_name: temporal
+    restart: unless-stopped
+    networks:
+      default:
+        ipv4_address: ${TEMPORAL_IP}
+    env_file:
+      - /etc/fred/secrets/temporal.env
+    volumes:
+      - /etc/fred/tls/ca.crt:/etc/fred/tls/ca.crt:ro
+      - /etc/fred/temporal/temporal.yaml:/etc/fred/temporal/temporal.yaml:ro,z
+    tmpfs:
+      - /tmp:size=64m
+    mem_limit: 1g
+    pids_limit: 512
+    healthcheck:
+      test: ["CMD", "/usr/bin/grpc-health-probe", "-addr=127.0.0.1:7233",
+             "-service=temporal.api.workflowservice.v1.WorkflowService"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  # ----------------------------------------------------------------- OpenFGA
+  openfga-migrate:
+    <<: *hardening
+    image: ${OPENFGA_IMAGE}
+    container_name: openfga-migrate
+    restart: "no"
+    profiles: [jobs]
+    command: ["migrate"]
+    env_file:
+      - /etc/fred/secrets/openfga.env
+    environment:
+      OPENFGA_DATASTORE_ENGINE: postgres
+    volumes: *tls-volumes
+    mem_limit: 256m
+    pids_limit: 128
+
+  openfga:
+    <<: *hardening
+    image: ${OPENFGA_IMAGE}
+    container_name: openfga
+    restart: unless-stopped
+    command: ["run"]
+    env_file:
+      - /etc/fred/secrets/openfga.env
+    environment:
+      OPENFGA_DATASTORE_ENGINE: postgres
+      OPENFGA_AUTHN_METHOD: preshared
+      OPENFGA_HTTP_ADDR: 0.0.0.0:8080
+      OPENFGA_GRPC_ADDR: 0.0.0.0:8081
+      OPENFGA_PLAYGROUND_ENABLED: "false"
+      OPENFGA_LOG_FORMAT: json
+      OPENFGA_METRICS_ENABLED: "true"
+    volumes: *tls-volumes
+    mem_limit: 512m
+    pids_limit: 256
+    healthcheck:
+      test: ["CMD", "/usr/bin/grpc-health-probe", "-addr=127.0.0.1:8081"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # ------------------------------------------------- Migrations Alembic de Fred
+  # Ordre (tenu par fred-jobs.sh) : control-plane possède les tables que
+  # knowledge-flow lit au boot.
+  control-plane-migrate:
+    <<: *hardening
+    image: ${CONTROL_PLANE_IMAGE}
+    container_name: control-plane-migrate
+    restart: "no"
+    profiles: [jobs]
+    entrypoint: ["alembic"]
+    command: ["upgrade", "head"]
+    env_file:
+      - /etc/fred/secrets/common.env
+      - /etc/fred/secrets/control-plane.env
+    environment:
+      <<: *fred-env
+      CONFIG_FILE: /etc/fred/config/control-plane-backend.yaml
+    volumes: *fred-volumes
+    tmpfs:
+      - /tmp:size=64m
+    mem_limit: 512m
+    pids_limit: 128
+
+  knowledge-flow-migrate:
+    <<: *hardening
+    image: ${KNOWLEDGE_FLOW_IMAGE}
+    container_name: knowledge-flow-migrate
+    restart: "no"
+    profiles: [jobs]
+    entrypoint: ["alembic"]
+    command: ["upgrade", "head"]
+    env_file:
+      - /etc/fred/secrets/common.env
+      - /etc/fred/secrets/knowledge-flow.env
+    environment:
+      <<: *fred-env
+      CONFIG_FILE: /etc/fred/config/knowledge-flow-backend.yaml
+    volumes: *fred-volumes
+    tmpfs:
+      - /tmp:size=64m
+    mem_limit: 1g
+    pids_limit: 128
+
+  fred-agents-migrate:
+    <<: *hardening
+    image: ${FRED_AGENTS_IMAGE}
+    container_name: fred-agents-migrate
+    restart: "no"
+    profiles: [jobs]
+    entrypoint: ["python"]
+    command: ["-m", "fred_runtime", "migrate"]
+    env_file:
+      - /etc/fred/secrets/common.env
+      - /etc/fred/secrets/fred-agents.env
+    environment:
+      <<: *fred-env
+      CONFIG_FILE: /etc/fred/config/fred-agents.yaml
+    volumes: *fred-volumes
+    tmpfs:
+      - /tmp:size=64m
+    mem_limit: 512m
+    pids_limit: 128
+
+  # --------------------------------------------------------------- Backends
+  control-plane-backend:
+    <<: *hardening
+    image: ${CONTROL_PLANE_IMAGE}
+    container_name: control-plane-backend
+    restart: unless-stopped
+    env_file:
+      - /etc/fred/secrets/common.env
+      - /etc/fred/secrets/control-plane.env
+    environment:
+      <<: *fred-env
+      CONFIG_FILE: /etc/fred/config/control-plane-backend.yaml
+    volumes: *fred-volumes
+    tmpfs:
+      - /tmp:size=256m
+      - /home/nonroot:U,mode=0700,size=64m
+    mem_limit: 2g
+    pids_limit: 512
+    depends_on:
+      openfga:
+        condition: service_healthy
+      temporal:
+        condition: service_healthy
+
+  control-plane-worker:
+    <<: *hardening
+    image: ${CONTROL_PLANE_IMAGE}
+    container_name: control-plane-worker
+    restart: unless-stopped
+    # command remplace le CMD de l'image (--port 8222 ...), propre à l'API.
+    entrypoint: ["python"]
+    command: ["-m", "control_plane_backend.main_worker"]
+    env_file:
+      - /etc/fred/secrets/common.env
+      - /etc/fred/secrets/control-plane.env
+    environment:
+      <<: *fred-env
+      CONFIG_FILE: /etc/fred/config/control-plane-backend.yaml
+    volumes: *fred-volumes
+    tmpfs:
+      - /tmp:size=256m
+      - /home/nonroot:U,mode=0700,size=64m
+    mem_limit: 1g
+    pids_limit: 512
+    depends_on:
+      control-plane-backend:
+        condition: service_started
+
+  # Knowledge Flow : $HOME contient l'extension DuckDB préchargée (lecture seule) ;
+  # seuls ses sous-répertoires de travail (profil LibreOffice, caches) s'écrivent.
+  knowledge-flow-backend:
+    <<: *hardening
+    image: ${KNOWLEDGE_FLOW_IMAGE}
+    container_name: knowledge-flow-backend
+    restart: unless-stopped
+    env_file:
+      - /etc/fred/secrets/common.env
+      - /etc/fred/secrets/knowledge-flow.env
+    environment:
+      <<: *fred-env
+      CONFIG_FILE: /etc/fred/config/knowledge-flow-backend.yaml
+    volumes: *fred-volumes
+    tmpfs: &kf-tmpfs
+      - /tmp:size=2g
+      - /home/nonroot/.config:U,mode=0700,size=64m
+      - /home/nonroot/.cache:U,mode=0700,size=256m
+      - /home/nonroot/.fred:U,mode=0700,size=256m
+      # Verrous, fichiers temporaires et cache de paddlex (modèles : /app/models, lecture seule).
+      - /home/nonroot/.paddlex:U,mode=0700,size=256m
+    mem_limit: 6g
+    pids_limit: 1024
+    depends_on:
+      openfga:
+        condition: service_healthy
+      temporal:
+        condition: service_healthy
+      control-plane-backend:
+        condition: service_started
+
+  knowledge-flow-worker:
+    <<: *hardening
+    image: ${KNOWLEDGE_FLOW_IMAGE}
+    container_name: knowledge-flow-worker
+    restart: unless-stopped
+    entrypoint: ["python"]
+    command: ["-m", "knowledge_flow_backend.main_worker"]
+    env_file:
+      - /etc/fred/secrets/common.env
+      - /etc/fred/secrets/knowledge-flow.env
+    environment:
+      <<: *fred-env
+      CONFIG_FILE: /etc/fred/config/knowledge-flow-backend.yaml
+    volumes: *fred-volumes
+    tmpfs: *kf-tmpfs
+    mem_limit: 6g
+    pids_limit: 1024
+    depends_on:
+      knowledge-flow-backend:
+        condition: service_started
+
+  fred-agents:
+    <<: *hardening
+    image: ${FRED_AGENTS_IMAGE}
+    container_name: fred-agents
+    restart: unless-stopped
+    env_file:
+      - /etc/fred/secrets/common.env
+      - /etc/fred/secrets/fred-agents.env
+    environment:
+      <<: *fred-env
+      CONFIG_FILE: /etc/fred/config/fred-agents.yaml
+      FRED_MODELS_CATALOG_FILE: /etc/fred/config/models_catalog.yaml
+      FRED_MCP_CATALOG_FILE: /etc/fred/config/mcp_catalog.yaml
+    volumes: *fred-volumes
+    tmpfs:
+      - /tmp:size=1g
+      - /home/nonroot:U,mode=0700,size=256m
+    mem_limit: 3g
+    pids_limit: 1024
+    depends_on:
+      control-plane-backend:
+        condition: service_started
+      knowledge-flow-backend:
+        condition: service_started
+
+  # --------------------------------------------------------------- Frontend
+  frontend:
+    <<: *hardening
+    image: ${FRONTEND_IMAGE}
+    container_name: frontend
+    restart: unless-stopped
+    environment:
+      FRONTEND_AGENTIC_UPSTREAM: http://fred-agents:8000
+      FRONTEND_KNOWLEDGE_FLOW_UPSTREAM: http://knowledge-flow-backend:8111
+      FRONTEND_CONTROL_PLANE_UPSTREAM: http://control-plane-backend:8222
+      FRONTEND_ENABLE_APPLICATIONS: "false"
+    ports:
+      - "${APP_IP}:8080:8080"
+    tmpfs:
+      - /tmp:size=64m
+      - /var/lib/fred/theme:U,mode=0700,size=1m
+    mem_limit: 256m
+    pids_limit: 256
+    depends_on:
+      fred-agents:
+        condition: service_started
+      knowledge-flow-backend:
+        condition: service_started
+      control-plane-backend:
+        condition: service_started

@@ -180,7 +180,7 @@ sinon `podman restart postgres seaweedfs`). La CA ne change pas, rien à faire c
 | `scripts/registry-push.sh` | remplit le registry |
 | `scripts/verify.sh` | contrôle conteneurs, chiffrement, refus du clair, OIDC servi |
 
-`secrets/` et `build/` ne sont jamais versionnés.
+`secrets/` et `build/` sont versionnés pour cette maquette de test (clé LLM et secrets Entra remplacés par `CHANGE_ME`).
 
 ---
 

@@ -1,0 +1,20 @@
+{
+  "identities": [
+    {
+      "name": "fred-app",
+      "credentials": [
+        {
+          "accessKey": "fred-app",
+          "secretKey": "1b86501168afd2ee6082e5656334a95937361265bf9002d4"
+        }
+      ],
+      "actions": [
+        "Admin",
+        "Read",
+        "Write",
+        "List",
+        "Tagging"
+      ]
+    }
+  ]
+}

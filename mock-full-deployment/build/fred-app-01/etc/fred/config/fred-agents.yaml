@@ -1,0 +1,79 @@
+app:
+  gcu_version: v1
+  runtime_id: fred-agents
+  name: Fred default agents
+  base_url: /fred/agents/v2
+  host: 0.0.0.0
+  port: 8000
+  log_level: info
+  limit_concurrency: null
+  max_chat_input_chars: 5000
+  openai_compat: false
+security:
+  profile: c3
+  m2m:
+    enabled: true
+    provider: oidc
+    realm_url: https://login.microsoftonline.com/adfe1ef7-449f-4ada-84fd-be92759b1c4e/v2.0
+    client_id: 4fa367c1-bba4-46b9-8a5a-3acecb53feba
+    scope: api://fred-api/.default
+    secret_env_var: KEYCLOAK_AGENTIC_CLIENT_SECRET
+  user:
+    enabled: true
+    provider: oidc
+    realm_url: https://login.microsoftonline.com/adfe1ef7-449f-4ada-84fd-be92759b1c4e/v2.0
+    client_id: 0f9bc927-d45f-4093-bcdd-22c84f32fa7b
+    audience: 715b1300-ae21-485b-bead-aea704dede06
+    scope: api://fred-api/access_as_user
+    roles_claim:
+    - roles
+    claims:
+      uid: oid
+  authorized_origins:
+  - http://localhost:5173
+  rebac:
+    enabled: true
+    type: openfga
+    api_url: http://openfga:8080
+  delegation:
+    act_for_people: true
+    accept_delegated_calls: false
+    caller_roles_claim:
+    - roles
+    audience: 715b1300-ae21-485b-bead-aea704dede06
+    service_accounts_only: false
+  user_directory: local
+ai:
+  knowledge_flow_url: http://knowledge-flow-backend:8111/knowledge-flow/v1
+  timeout:
+    connect: 20
+    read: 60
+observability:
+  kpi:
+    prometheus:
+      address: 0.0.0.0
+      port: 9000
+  tracer: logging
+  langfuse:
+    host: http://localhost:3001
+    capture_content: false
+    max_content_chars: 100000
+storage:
+  postgres:
+    host: fred-sto-01.fred.lan
+    port: 5432
+    database: fred
+    username: fred
+    pool_size: 20
+    max_overflow: 20
+  log_store:
+    type: in_memory
+  object_store:
+    type: minio
+    endpoint: https://fred-sto-01.fred.lan:8333
+    access_key: fred-app
+    secure: true
+scheduler:
+  enabled: false
+platform:
+  control_plane_url: http://control-plane-backend:8222/control-plane/v1

@@ -1,0 +1,17 @@
+0644 root:root /opt/fred/.env
+0644 root:root /etc/fred/config/control-plane-backend.yaml
+0644 root:root /etc/fred/config/knowledge-flow-backend.yaml
+0644 root:root /etc/fred/config/fred-agents.yaml
+0644 root:root /etc/fred/config/conversation_policy_catalog.yaml
+0644 root:root /etc/fred/config/models_catalog.yaml
+0644 root:root /etc/fred/config/mcp_catalog.yaml
+0644 root:root /etc/fred/tls/ca.crt
+0600 root:root /etc/fred/secrets/common.env
+0600 root:root /etc/fred/secrets/control-plane.env
+0600 root:root /etc/fred/secrets/knowledge-flow.env
+0600 root:root /etc/fred/secrets/fred-agents.env
+0600 root:root /etc/fred/secrets/openfga.env
+0600 root:root /etc/fred/secrets/temporal.env
+0755 root:root /opt/fred/bin/fred-deploy.sh
+0755 root:root /opt/fred/bin/fred-jobs.sh
+0700 root:root /etc/fred/secrets

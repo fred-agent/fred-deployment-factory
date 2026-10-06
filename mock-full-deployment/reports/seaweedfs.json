@@ -1,0 +1,1688 @@
+{
+  "SchemaVersion": 2,
+  "Trivy": {
+    "Version": "0.75.0"
+  },
+  "ReportID": "01a0fd03-9e39-7817-870d-03848df6df83",
+  "CreatedAt": "2026-10-02T14:27:47.897533168Z",
+  "ArtifactID": "sha256:513020eb9b80efcf290f98e629476117f2829e09d7b2e5e9dbcc0e540a6a8082",
+  "ArtifactName": "fred-hardened/seaweedfs:latest",
+  "ArtifactType": "container_image",
+  "Metadata": {
+    "Size": 177533952,
+    "OS": {
+      "Family": "wolfi",
+      "Name": "20230201"
+    },
+    "ImageID": "sha256:b7c4c8d886476a11ac2ad20358a9ce9d0d89c3784cbbd4710ee8c54813a252c8",
+    "DiffIDs": [
+      "sha256:8534cb8f50f9abfe8e881e65d0e051dc83a9625da77bcbd49e05439f6ac1de72"
+    ],
+    "RepoTags": [
+      "fred-hardened/seaweedfs:dev",
+      "fred-hardened/seaweedfs:latest",
+      "localhost:5000/fred/seaweedfs:hardened"
+    ],
+    "RepoDigests": [
+      "fred-hardened/seaweedfs@sha256:b7c4c8d886476a11ac2ad20358a9ce9d0d89c3784cbbd4710ee8c54813a252c8",
+      "localhost:5000/fred/seaweedfs@sha256:b7c4c8d886476a11ac2ad20358a9ce9d0d89c3784cbbd4710ee8c54813a252c8"
+    ],
+    "Reference": "fred-hardened/seaweedfs:latest",
+    "ImageConfig": {
+      "architecture": "amd64",
+      "created": "2026-10-02T14:30:40.601028361+02:00",
+      "history": [
+        {
+          "created": "2026-10-02T12:30:36Z",
+          "created_by": "/bin/sh -c #(nop) COPY dir:a49ae80611b701698839cd4665d7bc731f99d2d420088139f8a4966b11381b3b in / "
+        },
+        {
+          "created": "2026-10-02T12:30:39Z",
+          "created_by": "/bin/sh -c #(nop)  USER 65532:65532",
+          "empty_layer": true
+        },
+        {
+          "created": "2026-10-02T12:30:40Z",
+          "created_by": "/bin/sh -c #(nop)  EXPOSE 8333",
+          "empty_layer": true
+        },
+        {
+          "created": "2026-10-02T12:30:40Z",
+          "created_by": "/bin/sh -c #(nop)  ENTRYPOINT [\"/usr/bin/weed\"]",
+          "empty_layer": true
+        }
+      ],
+      "os": "linux",
+      "rootfs": {
+        "type": "layers",
+        "diff_ids": [
+          "sha256:8534cb8f50f9abfe8e881e65d0e051dc83a9625da77bcbd49e05439f6ac1de72"
+        ]
+      },
+      "config": {
+        "Entrypoint": [
+          "/usr/bin/weed"
+        ],
+        "Env": [
+          "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+        ],
+        "User": "65532:65532",
+        "ExposedPorts": {
+          "8333/tcp": {}
+        }
+      }
+    },
+    "Layers": [
+      {
+        "Size": 177533952,
+        "Digest": "sha256:259f5266f39ed50468edb89e8508bc70bb032d88a8ad1194329ff0dc9103d8bf",
+        "DiffID": "sha256:8534cb8f50f9abfe8e881e65d0e051dc83a9625da77bcbd49e05439f6ac1de72"
+      }
+    ]
+  },
+  "Results": [
+    {
+      "Target": "fred-hardened/seaweedfs:latest (wolfi 20230201)",
+      "Class": "os-pkgs",
+      "Type": "wolfi",
+      "Packages": [
+        {
+          "ID": "ca-certificates-bundle@20260909-r2",
+          "Name": "ca-certificates-bundle",
+          "Identifier": {
+            "PURL": "pkg:apk/wolfi/ca-certificates-bundle@20260909-r2?arch=x86_64\u0026distro=20230201",
+            "UID": "6a1c9d6ce22a0131"
+          },
+          "Version": "20260909-r2",
+          "Arch": "x86_64",
+          "SrcName": "ca-certificates",
+          "SrcVersion": "20260909-r2",
+          "Licenses": [
+            "MPL-2.0",
+            "MIT"
+          ],
+          "Maintainer": "wolfi",
+          "DependsOn": [
+            "wolfi-baselayout@20230201-r30"
+          ],
+          "Layer": {
+            "Digest": "sha256:259f5266f39ed50468edb89e8508bc70bb032d88a8ad1194329ff0dc9103d8bf",
+            "DiffID": "sha256:8534cb8f50f9abfe8e881e65d0e051dc83a9625da77bcbd49e05439f6ac1de72"
+          },
+          "Digest": "sha1:cdbb31b944f2686b23aa355d9f68134437d9b3af",
+          "InstalledFiles": [
+            "etc/pki/tls/certs/ca-bundle.crt",
+            "etc/ssl/cert.pem",
+            "etc/ssl/certs/ca-bundle.crt",
+            "etc/ssl/certs/ca-certificates.crt",
+            "var/lib/db/sbom/ca-certificates-bundle-20260909-r2.spdx.json"
+          ],
+          "AnalyzedBy": "apk"
+        },
+        {
+          "ID": "fuse2@2.9.9-r56",
+          "Name": "fuse2",
+          "Identifier": {
+            "PURL": "pkg:apk/wolfi/fuse2@2.9.9-r56?arch=x86_64\u0026distro=20230201",
+            "UID": "3d406b0d0d5619ea"
+          },
+          "Version": "2.9.9-r56",
+          "Arch": "x86_64",
+          "SrcName": "fuse2",
+          "SrcVersion": "2.9.9-r56",
+          "Licenses": [
+            "GPL-2.0-only",
+            "LGPL-2.1-only"
+          ],
+          "Maintainer": "wolfi",
+          "DependsOn": [
+            "glibc-2.44@2.44-r7",
+            "ld-linux-2.44@2.44-r7",
+            "wolfi-baselayout@20230201-r30"
+          ],
+          "Layer": {
+            "Digest": "sha256:259f5266f39ed50468edb89e8508bc70bb032d88a8ad1194329ff0dc9103d8bf",
+            "DiffID": "sha256:8534cb8f50f9abfe8e881e65d0e051dc83a9625da77bcbd49e05439f6ac1de72"
+          },
+          "Digest": "sha1:5a255c51405a4dadb7ba4e916e185fba0314ebb9",
+          "InstalledFiles": [
+            "usr/bin/fusermount",
+            "usr/bin/mount.fuse",
+            "usr/bin/ulockmgr_server",
+            "usr/lib/libfuse.so.2",
+            "usr/lib/libfuse.so.2.9.9",
+            "usr/lib/libulockmgr.so.1",
+            "usr/lib/libulockmgr.so.1.0.1",
+            "usr/lib/udev/rules.d/99-fuse.rules",
+            "var/lib/db/sbom/fuse2-2.9.9-r56.spdx.json"
+          ],
+          "AnalyzedBy": "apk"
+        },
+        {
+          "ID": "glibc-2.44@2.44-r7",
+          "Name": "glibc-2.44",
+          "Identifier": {
+            "PURL": "pkg:apk/wolfi/glibc-2.44@2.44-r7?arch=x86_64\u0026distro=20230201",
+            "UID": "9cc9ab92bdea534c"
+          },
+          "Version": "2.44-r7",
+          "Arch": "x86_64",
+          "SrcName": "glibc-2.44",
+          "SrcVersion": "2.44-r7",
+          "Licenses": [
+            "LGPL-2.1-or-later"
+          ],
+          "Maintainer": "wolfi",
+          "DependsOn": [
+            "glibc-2.44-locale-posix@2.44-r7",
+            "ld-linux-2.44@2.44-r7",
+            "libgcc@16.2.0-r1",
+            "wolfi-baselayout@20230201-r30"
+          ],
+          "Layer": {
+            "Digest": "sha256:259f5266f39ed50468edb89e8508bc70bb032d88a8ad1194329ff0dc9103d8bf",
+            "DiffID": "sha256:8534cb8f50f9abfe8e881e65d0e051dc83a9625da77bcbd49e05439f6ac1de72"
+          },
+          "Digest": "sha1:33031570df60b44244b68ad742bc9daf706938dc",
+          "InstalledFiles": [
+            "etc/rpc",
+            "etc/apk/commit_hooks.d/ldconfig-commit.sh",
+            "usr/bin/ld.so",
+            "usr/bin/ldconfig",
+            "usr/lib/libBrokenLocale.so.1",
+            "usr/lib/libanl.so.1",
+            "usr/lib/libc.so.6",
+            "usr/lib/libc_malloc_debug.so.0",
+            "usr/lib/libdl.so.2",
+            "usr/lib/libm.so.6",
+            "usr/lib/libmemusage.so",
+            "usr/lib/libmvec.so.1",
+            "usr/lib/libnsl.so.1",
+            "usr/lib/libnss_compat.so.2",
+            "usr/lib/libnss_dns.so.2",
+            "usr/lib/libnss_files.so.2",
+            "usr/lib/libpthread.so.0",
+            "usr/lib/libresolv.so.2",
+            "usr/lib/librt.so.1",
+            "usr/lib/libthread_db.so.1",
+            "usr/lib/libutil.so.1",
+            "var/lib/db/sbom/glibc-2.44-2.44-r7.spdx.json"
+          ],
+          "AnalyzedBy": "apk"
+        },
+        {
+          "ID": "glibc-2.44-locale-posix@2.44-r7",
+          "Name": "glibc-2.44-locale-posix",
+          "Identifier": {
+            "PURL": "pkg:apk/wolfi/glibc-2.44-locale-posix@2.44-r7?arch=x86_64\u0026distro=20230201",
+            "UID": "1428046d212dec3c"
+          },
+          "Version": "2.44-r7",
+          "Arch": "x86_64",
+          "SrcName": "glibc-2.44",
+          "SrcVersion": "2.44-r7",
+          "Licenses": [
+            "LGPL-2.1-or-later"
+          ],
+          "Maintainer": "wolfi",
+          "DependsOn": [
+            "wolfi-baselayout@20230201-r30"
+          ],
+          "Layer": {
+            "Digest": "sha256:259f5266f39ed50468edb89e8508bc70bb032d88a8ad1194329ff0dc9103d8bf",
+            "DiffID": "sha256:8534cb8f50f9abfe8e881e65d0e051dc83a9625da77bcbd49e05439f6ac1de72"
+          },
+          "Digest": "sha1:d6684749a7ae0401c2660625c2184d4aa703e37d",
+          "InstalledFiles": [
+            "usr/lib/locale/C.utf8/LC_ADDRESS",
+            "usr/lib/locale/C.utf8/LC_COLLATE",
+            "usr/lib/locale/C.utf8/LC_CTYPE",
+            "usr/lib/locale/C.utf8/LC_IDENTIFICATION",
+            "usr/lib/locale/C.utf8/LC_MEASUREMENT",
+            "usr/lib/locale/C.utf8/LC_MONETARY",
+            "usr/lib/locale/C.utf8/LC_NAME",
+            "usr/lib/locale/C.utf8/LC_NUMERIC",
+            "usr/lib/locale/C.utf8/LC_PAPER",
+            "usr/lib/locale/C.utf8/LC_TELEPHONE",
+            "usr/lib/locale/C.utf8/LC_TIME",
+            "usr/lib/locale/C.utf8/LC_MESSAGES/SYS_LC_MESSAGES",
+            "var/lib/db/sbom/glibc-2.44-locale-posix-2.44-r7.spdx.json"
+          ],
+          "AnalyzedBy": "apk"
+        },
+        {
+          "ID": "ld-linux-2.44@2.44-r7",
+          "Name": "ld-linux-2.44",
+          "Identifier": {
+            "PURL": "pkg:apk/wolfi/ld-linux-2.44@2.44-r7?arch=x86_64\u0026distro=20230201",
+            "UID": "453c2e546f8a1c83"
+          },
+          "Version": "2.44-r7",
+          "Arch": "x86_64",
+          "SrcName": "glibc-2.44",
+          "SrcVersion": "2.44-r7",
+          "Licenses": [
+            "LGPL-2.1-or-later"
+          ],
+          "Maintainer": "wolfi",
+          "DependsOn": [
+            "glibc-2.44@2.44-r7",
+            "wolfi-baselayout@20230201-r30"
+          ],
+          "Layer": {
+            "Digest": "sha256:259f5266f39ed50468edb89e8508bc70bb032d88a8ad1194329ff0dc9103d8bf",
+            "DiffID": "sha256:8534cb8f50f9abfe8e881e65d0e051dc83a9625da77bcbd49e05439f6ac1de72"
+          },
+          "Digest": "sha1:25a75ed5ea1a809eb7f6aa97aae9400102f0ea48",
+          "InstalledFiles": [
+            "etc/ld.so.conf",
+            "etc/ld.so.conf.d/libc.conf",
+            "usr/lib/ld-linux-x86-64.so.2",
+            "var/lib/db/sbom/ld-linux-2.44-2.44-r7.spdx.json"
+          ],
+          "AnalyzedBy": "apk"
+        },
+        {
+          "ID": "libgcc@16.2.0-r1",
+          "Name": "libgcc",
+          "Identifier": {
+            "PURL": "pkg:apk/wolfi/libgcc@16.2.0-r1?arch=x86_64\u0026distro=20230201",
+            "UID": "3179db6cae6e2a30"
+          },
+          "Version": "16.2.0-r1",
+          "Arch": "x86_64",
+          "SrcName": "gcc",
+          "SrcVersion": "16.2.0-r1",
+          "Licenses": [
+            "GPL-3.0-or-later WITH GCC-exception-3.1"
+          ],
+          "Maintainer": "wolfi",
+          "DependsOn": [
+            "glibc-2.44@2.44-r7",
+            "ld-linux-2.44@2.44-r7"
+          ],
+          "Layer": {
+            "Digest": "sha256:259f5266f39ed50468edb89e8508bc70bb032d88a8ad1194329ff0dc9103d8bf",
+            "DiffID": "sha256:8534cb8f50f9abfe8e881e65d0e051dc83a9625da77bcbd49e05439f6ac1de72"
+          },
+          "Digest": "sha1:92b17e208263f2393ee03daf76ed3283debc4098",
+          "InstalledFiles": [
+            "usr/lib/libgcc_s.so.1",
+            "usr/lib/libgcc_s_asneeded.so",
+            "var/lib/db/sbom/libgcc-16.2.0-r1.spdx.json"
+          ],
+          "AnalyzedBy": "apk"
+        },
+        {
+          "ID": "seaweedfs@4.32-r0",
+          "Name": "seaweedfs",
+          "Identifier": {
+            "PURL": "pkg:apk/wolfi/seaweedfs@4.32-r0?arch=x86_64\u0026distro=20230201",
+            "UID": "43eb823990aebb36"
+          },
+          "Version": "4.32-r0",
+          "Arch": "x86_64",
+          "SrcName": "seaweedfs",
+          "SrcVersion": "4.32-r0",
+          "Licenses": [
+            "Apache-2.0"
+          ],
+          "Maintainer": "wolfi",
+          "DependsOn": [
+            "fuse2@2.9.9-r56"
+          ],
+          "Layer": {
+            "Digest": "sha256:259f5266f39ed50468edb89e8508bc70bb032d88a8ad1194329ff0dc9103d8bf",
+            "DiffID": "sha256:8534cb8f50f9abfe8e881e65d0e051dc83a9625da77bcbd49e05439f6ac1de72"
+          },
+          "Digest": "sha1:40446b026e4313af0196894cabbadce25ed8bcac",
+          "InstalledFiles": [
+            "etc/seaweedfs/filer.toml",
+            "usr/bin/weed",
+            "var/lib/db/sbom/seaweedfs-4.32-r0.spdx.json"
+          ],
+          "AnalyzedBy": "apk"
+        },
+        {
+          "ID": "wolfi-baselayout@20230201-r30",
+          "Name": "wolfi-baselayout",
+          "Identifier": {
+            "PURL": "pkg:apk/wolfi/wolfi-baselayout@20230201-r30?arch=x86_64\u0026distro=20230201",
+            "UID": "a3228ab8374783f1"
+          },
+          "Version": "20230201-r30",
+          "Arch": "x86_64",
+          "SrcName": "wolfi-baselayout",
+          "SrcVersion": "20230201-r30",
+          "Licenses": [
+            "MIT"
+          ],
+          "Maintainer": "wolfi",
+          "DependsOn": [
+            "ca-certificates-bundle@20260909-r2"
+          ],
+          "Layer": {
+            "Digest": "sha256:259f5266f39ed50468edb89e8508bc70bb032d88a8ad1194329ff0dc9103d8bf",
+            "DiffID": "sha256:8534cb8f50f9abfe8e881e65d0e051dc83a9625da77bcbd49e05439f6ac1de72"
+          },
+          "Digest": "sha1:ab2155d0d6404009da1e8185851c14425ce8402d",
+          "InstalledFiles": [
+            "bin",
+            "lib",
+            "lib64",
+            "sbin",
+            "etc/group",
+            "etc/host.conf",
+            "etc/hosts",
+            "etc/mtab",
+            "etc/nsswitch.conf",
+            "etc/os-release",
+            "etc/passwd",
+            "etc/profile",
+            "etc/protocols",
+            "etc/services",
+            "etc/shadow",
+            "etc/shells",
+            "etc/profile.d/locale.sh",
+            "etc/secfixes.d/wolfi",
+            "usr/lib64",
+            "usr/sbin",
+            "usr/tmp",
+            "usr/local/lib64",
+            "var/lock",
+            "var/run",
+            "var/lib/db/sbom/wolfi-baselayout-20230201-r30.spdx.json",
+            "var/spool/mail"
+          ],
+          "AnalyzedBy": "apk"
+        }
+      ],
+      "Vulnerabilities": [
+        {
+          "VulnerabilityID": "CVE-2026-33818",
+          "PkgID": "seaweedfs@4.32-r0",
+          "PkgName": "seaweedfs",
+          "PkgIdentifier": {
+            "PURL": "pkg:apk/wolfi/seaweedfs@4.32-r0?arch=x86_64\u0026distro=20230201",
+            "UID": "43eb823990aebb36"
+          },
+          "InstalledVersion": "4.32-r0",
+          "FixedVersion": "4.41-r1",
+          "Status": "fixed",
+          "Layer": {
+            "Digest": "sha256:259f5266f39ed50468edb89e8508bc70bb032d88a8ad1194329ff0dc9103d8bf",
+            "DiffID": "sha256:8534cb8f50f9abfe8e881e65d0e051dc83a9625da77bcbd49e05439f6ac1de72"
+          },
+          "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2026-33818",
+          "DataSource": {
+            "ID": "wolfi",
+            "Name": "Wolfi Secdb",
+            "URL": "https://packages.wolfi.dev/os/security.json"
+          },
+          "Fingerprint": "sha256:be39c7a566e99005526513a1406f1bfa490777976fd4253f8a601971b7ab96c5",
+          "Title": "encoding/asn1: golang: Go encoding/asn1: Denial of Service via excessive recursion in Unmarshal",
+          "Description": "Enforce a recursion limit in Unmarshal to prevent stack exhaustion when parsing deeply-nested, recursive structures.",
+          "Severity": "HIGH",
+          "CweIDs": [
+            "CWE-400"
+          ],
+          "VendorSeverity": {
+            "alma": 3,
+            "amazon": 3,
+            "bitnami": 3,
+            "oracle-oval": 3,
+            "photon": 3,
+            "redhat": 3,
+            "rocky": 3
+          },
+          "CVSS": {
+            "bitnami": {
+              "V3Vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H",
+              "V3Score": 7.5
+            },
+            "redhat": {
+              "V3Vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H",
+              "V3Score": 7.5
+            }
+          },
+          "References": [
+            "https://access.redhat.com/errata/RHSA-2026:70641",
+            "https://access.redhat.com/security/cve/CVE-2026-33818",
+            "https://bugzilla.redhat.com/2515815",
+            "https://bugzilla.redhat.com/2515820",
+            "https://bugzilla.redhat.com/2515827",
+            "https://bugzilla.redhat.com/2515838",
+            "https://bugzilla.redhat.com/2515839",
+            "https://bugzilla.redhat.com/show_bug.cgi?id=2402034",
+            "https://bugzilla.redhat.com/show_bug.cgi?id=2515815",
+            "https://bugzilla.redhat.com/show_bug.cgi?id=2515820",
+            "https://bugzilla.redhat.com/show_bug.cgi?id=2515827",
+            "https://bugzilla.redhat.com/show_bug.cgi?id=2515838",
+            "https://bugzilla.redhat.com/show_bug.cgi?id=2515839",
+            "https://creativecommons.org/licenses/by/4.0/",
+            "https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2025-11395",
+            "https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2026-33818",
+            "https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2026-56853",
+            "https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2026-56858",
+            "https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2026-56860",
+            "https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2026-56862",
+            "https://errata.almalinux.org/9/ALSA-2026-70641.html",
+            "https://errata.rockylinux.org/RLSA-2026:70641",
+            "https://go.dev/cl/814980",
+            "https://go.dev/issue/80405",
+            "https://groups.google.com/g/golang-announce/c/94pEornpRlI",
+            "https://linux.oracle.com/cve/CVE-2026-33818.html",
+            "https://linux.oracle.com/errata/ELSA-2026-70641.html",
+            "https://nvd.nist.gov/vuln/detail/CVE-2026-33818",
+            "https://pkg.go.dev/vuln/GO-2026-5972",
+            "https://www.cve.org/CVERecord?id=CVE-2026-33818"
+          ],
+          "PublishedDate": "2026-08-13T22:17:19.84Z",
+          "LastModifiedDate": "2026-09-03T16:37:52.17Z"
+        },
+        {
+          "VulnerabilityID": "CVE-2026-41178",
+          "PkgID": "seaweedfs@4.32-r0",
+          "PkgName": "seaweedfs",
+          "PkgIdentifier": {
+            "PURL": "pkg:apk/wolfi/seaweedfs@4.32-r0?arch=x86_64\u0026distro=20230201",
+            "UID": "43eb823990aebb36"
+          },
+          "InstalledVersion": "4.32-r0",
+          "FixedVersion": "4.38-r1",
+          "Status": "fixed",
+          "Layer": {
+            "Digest": "sha256:259f5266f39ed50468edb89e8508bc70bb032d88a8ad1194329ff0dc9103d8bf",
+            "DiffID": "sha256:8534cb8f50f9abfe8e881e65d0e051dc83a9625da77bcbd49e05439f6ac1de72"
+          },
+          "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2026-41178",
+          "DataSource": {
+            "ID": "wolfi",
+            "Name": "Wolfi Secdb",
+            "URL": "https://packages.wolfi.dev/os/security.json"
+          },
+          "Fingerprint": "sha256:7d6e5812d560527cff3cff4012b1fbabdcb650ca027b9fb99e605e26b1476f92",
+          "Title": "github.com/open-telemetry/opentelemetry-go: go.opentelemetry.io/otel/baggage: go.opentelemetry.io/otel/propagation: OpenTelemetry-Go: Denial of Service via oversized baggage headers",
+          "Description": "OpenTelemetry-Go is the Go implementation of OpenTelemetry. Versions 1.41.0 and 1.43.0 removed raw-length rejection and it causes `Parse` to process arbitrarily large/invalid baggage headers and log errors, enabling DoS via oversized inputs. Versions 1.42.0 and 1.44.0 fix the issue.",
+          "Severity": "HIGH",
+          "CweIDs": [
+            "CWE-789"
+          ],
+          "VendorSeverity": {
+            "alma": 3,
+            "ghsa": 2,
+            "oracle-oval": 3,
+            "redhat": 3,
+            "rocky": 3
+          },
+          "CVSS": {
+            "ghsa": {
+              "V3Vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:L",
+              "V3Score": 5.3
+            },
+            "redhat": {
+              "V3Vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H",
+              "V3Score": 7.5
+            }
+          },
+          "References": [
+            "https://access.redhat.com/errata/RHSA-2026:65117",
+            "https://access.redhat.com/errata/RHSA-2026:69293",
+            "https://access.redhat.com/security/cve/CVE-2026-41178",
+            "https://bugzilla.redhat.com/2467809",
+            "https://bugzilla.redhat.com/2467820",
+            "https://bugzilla.redhat.com/2484204",
+            "https://bugzilla.redhat.com/2484830",
+            "https://bugzilla.redhat.com/2515815",
+            "https://bugzilla.redhat.com/2515820",
+            "https://bugzilla.redhat.com/2515827",
+            "https://bugzilla.redhat.com/2515838",
+            "https://bugzilla.redhat.com/2515839",
+            "https://bugzilla.redhat.com/2515840",
+            "https://bugzilla.redhat.com/show_bug.cgi?id=2480757",
+            "https://bugzilla.redhat.com/show_bug.cgi?id=2480761",
+            "https://bugzilla.redhat.com/show_bug.cgi?id=2480762",
+            "https://bugzilla.redhat.com/show_bug.cgi?id=2484830",
+            "https://bugzilla.redhat.com/show_bug.cgi?id=2493622",
+            "https://creativecommons.org/licenses/by/4.0/",
+            "https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2026-25681",
+            "https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2026-27136",
+            "https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2026-41178",
+            "https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2026-42502",
+            "https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2026-55677",
+            "https://errata.almalinux.org/9/ALSA-2026-65117.html",
+            "https://errata.rockylinux.org/RLSA-2026:69293",
+            "https://github.com/open-telemetry/opentelemetry-go",
+            "https://github.com/open-telemetry/opentelemetry-go/pull/7880",
+            "https://github.com/open-telemetry/opentelemetry-go/security/advisories/GHSA-5wrp-cwcj-q835",
+            "https://linux.oracle.com/cve/CVE-2026-41178.html",
+            "https://linux.oracle.com/errata/ELSA-2026-67148-0.html",
+            "https://nvd.nist.gov/vuln/detail/CVE-2026-41178",
+            "https://www.cve.org/CVERecord?id=CVE-2026-41178"
+          ],
+          "PublishedDate": "2026-06-04T16:16:37.297Z",
+          "LastModifiedDate": "2026-07-22T20:10:00.127Z"
+        },
+        {
+          "VulnerabilityID": "CVE-2026-43871",
+          "PkgID": "seaweedfs@4.32-r0",
+          "PkgName": "seaweedfs",
+          "PkgIdentifier": {
+            "PURL": "pkg:apk/wolfi/seaweedfs@4.32-r0?arch=x86_64\u0026distro=20230201",
+            "UID": "43eb823990aebb36"
+          },
+          "InstalledVersion": "4.32-r0",
+          "FixedVersion": "4.45-r3",
+          "Status": "fixed",
+          "Layer": {
+            "Digest": "sha256:259f5266f39ed50468edb89e8508bc70bb032d88a8ad1194329ff0dc9103d8bf",
+            "DiffID": "sha256:8534cb8f50f9abfe8e881e65d0e051dc83a9625da77bcbd49e05439f6ac1de72"
+          },
+          "SeveritySource": "nvd",
+          "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2026-43871",
+          "DataSource": {
+            "ID": "wolfi",
+            "Name": "Wolfi Secdb",
+            "URL": "https://packages.wolfi.dev/os/security.json"
+          },
+          "Fingerprint": "sha256:f4e25da2f7eaab2ff4b26dbb15cbbe2c09d1eb581d6efb2e2b6fa5a49d197c54",
+          "Title": "thrift: Apache Thrift: Denial of Service via infinite loop",
+          "Description": "Loop with Unreachable Exit Condition ('Infinite Loop') vulnerability in Apache Thrift Python, Go, PHP and Java bindings.This issue affects Apache Thrift: before 0.24.0.\n\nUsers are recommended to upgrade to version 0.24.0, which fixes the issue.",
+          "Severity": "HIGH",
+          "CweIDs": [
+            "CWE-835"
+          ],
+          "VendorSeverity": {
+            "azure": 3,
+            "bitnami": 3,
+            "ghsa": 3,
+            "nvd": 3,
+            "redhat": 3
+          },
+          "CVSS": {
+            "bitnami": {
+              "V40Vector": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:N/VI:N/VA:H/SC:N/SI:N/SA:N",
+              "V40Score": 8.7
+            },
+            "ghsa": {
+              "V3Vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H",
+              "V40Vector": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:N/VI:N/VA:H/SC:N/SI:N/SA:N",
+              "V3Score": 7.5,
+              "V40Score": 8.7
+            },
+            "nvd": {
+              "V3Vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H",
+              "V3Score": 7.5
+            },
+            "redhat": {
+              "V3Vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H",
+              "V3Score": 7.5
+            }
+          },
+          "References": [
+            "http://www.openwall.com/lists/oss-security/2026/07/24/33",
+            "https://access.redhat.com/security/cve/CVE-2026-43871",
+            "https://github.com/apache/thrift",
+            "https://lists.apache.org/thread/7v3jhgwfbmhx42424phydlnzb109g8b9",
+            "https://lists.apache.org/thread/l4dwf14zbyqsmkc28c99ojj3t3gg9qby",
+            "https://nvd.nist.gov/vuln/detail/CVE-2026-43871",
+            "https://www.cve.org/CVERecord?id=CVE-2026-43871"
+          ],
+          "PublishedDate": "2026-07-27T12:16:44.413Z",
+          "LastModifiedDate": "2026-07-27T19:51:36.197Z"
+        },
+        {
+          "VulnerabilityID": "CVE-2026-46600",
+          "PkgID": "seaweedfs@4.32-r0",
+          "PkgName": "seaweedfs",
+          "PkgIdentifier": {
+            "PURL": "pkg:apk/wolfi/seaweedfs@4.32-r0?arch=x86_64\u0026distro=20230201",
+            "UID": "43eb823990aebb36"
+          },
+          "InstalledVersion": "4.32-r0",
+          "FixedVersion": "4.41-r1",
+          "Status": "fixed",
+          "Layer": {
+            "Digest": "sha256:259f5266f39ed50468edb89e8508bc70bb032d88a8ad1194329ff0dc9103d8bf",
+            "DiffID": "sha256:8534cb8f50f9abfe8e881e65d0e051dc83a9625da77bcbd49e05439f6ac1de72"
+          },
+          "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2026-46600",
+          "DataSource": {
+            "ID": "wolfi",
+            "Name": "Wolfi Secdb",
+            "URL": "https://packages.wolfi.dev/os/security.json"
+          },
+          "Fingerprint": "sha256:c4730436b5f083084920a81af54892bed31fca1f99ea3a89b133bba657f65a15",
+          "Title": "golang.org/x/net/dns/dnsmessage: golang.org/x/net/dns/dnsmessage: Denial of Service via invalid DNS record parsing",
+          "Description": "Parsing an invalid SVCB or HTTPS RR can panic when the size of a parameter value overflows the message buffer.",
+          "Severity": "HIGH",
+          "CweIDs": [
+            "CWE-125"
+          ],
+          "VendorSeverity": {
+            "azure": 2,
+            "bitnami": 3,
+            "redhat": 3
+          },
+          "CVSS": {
+            "bitnami": {
+              "V3Vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H",
+              "V3Score": 7.5
+            },
+            "redhat": {
+              "V3Vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H",
+              "V3Score": 7.5
+            }
+          },
+          "References": [
+            "https://access.redhat.com/security/cve/CVE-2026-46600",
+            "https://go.dev/cl/786345",
+            "https://go.dev/issue/79795",
+            "https://groups.google.com/g/golang-announce/c/94pEornpRlI",
+            "https://nvd.nist.gov/vuln/detail/CVE-2026-46600",
+            "https://pkg.go.dev/vuln/GO-2026-5942",
+            "https://www.cve.org/CVERecord?id=CVE-2026-46600"
+          ],
+          "PublishedDate": "2026-07-21T20:17:01.213Z",
+          "LastModifiedDate": "2026-08-14T16:16:55.673Z"
+        },
+        {
+          "VulnerabilityID": "CVE-2026-46602",
+          "PkgID": "seaweedfs@4.32-r0",
+          "PkgName": "seaweedfs",
+          "PkgIdentifier": {
+            "PURL": "pkg:apk/wolfi/seaweedfs@4.32-r0?arch=x86_64\u0026distro=20230201",
+            "UID": "43eb823990aebb36"
+          },
+          "InstalledVersion": "4.32-r0",
+          "FixedVersion": "4.36-r2",
+          "Status": "fixed",
+          "Layer": {
+            "Digest": "sha256:259f5266f39ed50468edb89e8508bc70bb032d88a8ad1194329ff0dc9103d8bf",
+            "DiffID": "sha256:8534cb8f50f9abfe8e881e65d0e051dc83a9625da77bcbd49e05439f6ac1de72"
+          },
+          "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2026-46602",
+          "DataSource": {
+            "ID": "wolfi",
+            "Name": "Wolfi Secdb",
+            "URL": "https://packages.wolfi.dev/os/security.json"
+          },
+          "Fingerprint": "sha256:4230404dec1638653e5c39cb6f9e6e02ffdb31db295598a6a35976aa97510c13",
+          "Title": "The TIFF decoder does not set a limit on the size of tiles in tiled im ...",
+          "Description": "The TIFF decoder does not set a limit on the size of tiles in tiled images, permitting a malicious or corrupt image containing a very large tile to cause unbounded memory consumption.",
+          "Severity": "HIGH",
+          "VendorSeverity": {
+            "amazon": 3
+          },
+          "References": [
+            "https://go.dev/cl/788422",
+            "https://go.dev/issue/79905",
+            "https://pkg.go.dev/vuln/GO-2026-5062"
+          ],
+          "PublishedDate": "2026-06-25T20:17:12.553Z",
+          "LastModifiedDate": "2026-06-26T17:16:33.68Z"
+        },
+        {
+          "VulnerabilityID": "CVE-2026-46603",
+          "PkgID": "seaweedfs@4.32-r0",
+          "PkgName": "seaweedfs",
+          "PkgIdentifier": {
+            "PURL": "pkg:apk/wolfi/seaweedfs@4.32-r0?arch=x86_64\u0026distro=20230201",
+            "UID": "43eb823990aebb36"
+          },
+          "InstalledVersion": "4.32-r0",
+          "FixedVersion": "4.41-r2",
+          "Status": "fixed",
+          "Layer": {
+            "Digest": "sha256:259f5266f39ed50468edb89e8508bc70bb032d88a8ad1194329ff0dc9103d8bf",
+            "DiffID": "sha256:8534cb8f50f9abfe8e881e65d0e051dc83a9625da77bcbd49e05439f6ac1de72"
+          },
+          "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2026-46603",
+          "DataSource": {
+            "ID": "wolfi",
+            "Name": "Wolfi Secdb",
+            "URL": "https://packages.wolfi.dev/os/security.json"
+          },
+          "Fingerprint": "sha256:5f520d7ad5cb6137ebd105fbc0e6740411564b2d37e33f375875a1b878a7b6f5",
+          "Title": "golang.org/x/image/vp8l: golang.org/x/image/vp8l: Denial of Service via excessive memory allocation",
+          "Description": "VP8L decoding in golang.org/x/image/vp8l can allocate an excessive amount of memory when processing a crafted VP8L image containing many unused Huffman tree groups. This allows a remote attacker to cause a denial of service via memory exhaustion.",
+          "Severity": "HIGH",
+          "CweIDs": [
+            "CWE-789"
+          ],
+          "VendorSeverity": {
+            "amazon": 3,
+            "redhat": 3
+          },
+          "CVSS": {
+            "redhat": {
+              "V3Vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H",
+              "V3Score": 7.5
+            }
+          },
+          "References": [
+            "https://access.redhat.com/security/cve/CVE-2026-46603",
+            "https://go.dev/cl/793460",
+            "https://go.dev/issue/80069",
+            "https://nvd.nist.gov/vuln/detail/CVE-2026-46603",
+            "https://pkg.go.dev/vuln/GO-2026-6222",
+            "https://www.cve.org/CVERecord?id=CVE-2026-46603"
+          ],
+          "PublishedDate": "2026-08-14T17:18:15.307Z",
+          "LastModifiedDate": "2026-09-03T16:37:52.17Z"
+        },
+        {
+          "VulnerabilityID": "CVE-2026-56853",
+          "PkgID": "seaweedfs@4.32-r0",
+          "PkgName": "seaweedfs",
+          "PkgIdentifier": {
+            "PURL": "pkg:apk/wolfi/seaweedfs@4.32-r0?arch=x86_64\u0026distro=20230201",
+            "UID": "43eb823990aebb36"
+          },
+          "InstalledVersion": "4.32-r0",
+          "FixedVersion": "4.41-r1",
+          "Status": "fixed",
+          "Layer": {
+            "Digest": "sha256:259f5266f39ed50468edb89e8508bc70bb032d88a8ad1194329ff0dc9103d8bf",
+            "DiffID": "sha256:8534cb8f50f9abfe8e881e65d0e051dc83a9625da77bcbd49e05439f6ac1de72"
+          },
+          "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2026-56853",
+          "DataSource": {
+            "ID": "wolfi",
+            "Name": "Wolfi Secdb",
+            "URL": "https://packages.wolfi.dev/os/security.json"
+          },
+          "Fingerprint": "sha256:a8663f305fc9bc9434bf69e408fb7d5dd828b4d0d621512560a3ccb09b59172a",
+          "Title": "net/http: golang: Go net/http: Unencrypted HTTP/2 connections vulnerable to Denial of Service",
+          "Description": "When a server is configured to support unencrypted HTTP/2, it reads a few bytes from each new connection to see if they contain the HTTP/2 client preface. ReadHeaderTimeout is unexpectedly not being applied when doing this.",
+          "Severity": "HIGH",
+          "CweIDs": [
+            "CWE-770"
+          ],
+          "VendorSeverity": {
+            "alma": 3,
+            "amazon": 3,
+            "bitnami": 3,
+            "oracle-oval": 3,
+            "photon": 3,
+            "redhat": 3,
+            "rocky": 3
+          },
+          "CVSS": {
+            "bitnami": {
+              "V3Vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H",
+              "V3Score": 7.5
+            },
+            "redhat": {
+              "V3Vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H",
+              "V3Score": 7.5
+            }
+          },
+          "References": [
+            "https://access.redhat.com/errata/RHSA-2026:70641",
+            "https://access.redhat.com/security/cve/CVE-2026-56853",
+            "https://bugzilla.redhat.com/2515815",
+            "https://bugzilla.redhat.com/2515820",
+            "https://bugzilla.redhat.com/2515827",
+            "https://bugzilla.redhat.com/2515838",
+            "https://bugzilla.redhat.com/2515839",
+            "https://bugzilla.redhat.com/show_bug.cgi?id=2402034",
+            "https://bugzilla.redhat.com/show_bug.cgi?id=2515815",
+            "https://bugzilla.redhat.com/show_bug.cgi?id=2515820",
+            "https://bugzilla.redhat.com/show_bug.cgi?id=2515827",
+            "https://bugzilla.redhat.com/show_bug.cgi?id=2515838",
+            "https://bugzilla.redhat.com/show_bug.cgi?id=2515839",
+            "https://creativecommons.org/licenses/by/4.0/",
+            "https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2025-11395",
+            "https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2026-33818",
+            "https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2026-56853",
+            "https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2026-56858",
+            "https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2026-56860",
+            "https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2026-56862",
+            "https://errata.almalinux.org/9/ALSA-2026-70641.html",
+            "https://errata.rockylinux.org/RLSA-2026:70641",
+            "https://go.dev/cl/795540",
+            "https://go.dev/issue/80205",
+            "https://groups.google.com/g/golang-announce/c/94pEornpRlI",
+            "https://linux.oracle.com/cve/CVE-2026-56853.html",
+            "https://linux.oracle.com/errata/ELSA-2026-70641.html",
+            "https://nvd.nist.gov/vuln/detail/CVE-2026-56853",
+            "https://pkg.go.dev/vuln/GO-2026-6089",
+            "https://www.cve.org/CVERecord?id=CVE-2026-56853"
+          ],
+          "PublishedDate": "2026-08-13T22:17:22.093Z",
+          "LastModifiedDate": "2026-09-03T16:37:52.17Z"
+        },
+        {
+          "VulnerabilityID": "CVE-2026-56858",
+          "PkgID": "seaweedfs@4.32-r0",
+          "PkgName": "seaweedfs",
+          "PkgIdentifier": {
+            "PURL": "pkg:apk/wolfi/seaweedfs@4.32-r0?arch=x86_64\u0026distro=20230201",
+            "UID": "43eb823990aebb36"
+          },
+          "InstalledVersion": "4.32-r0",
+          "FixedVersion": "4.41-r1",
+          "Status": "fixed",
+          "Layer": {
+            "Digest": "sha256:259f5266f39ed50468edb89e8508bc70bb032d88a8ad1194329ff0dc9103d8bf",
+            "DiffID": "sha256:8534cb8f50f9abfe8e881e65d0e051dc83a9625da77bcbd49e05439f6ac1de72"
+          },
+          "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2026-56858",
+          "DataSource": {
+            "ID": "wolfi",
+            "Name": "Wolfi Secdb",
+            "URL": "https://packages.wolfi.dev/os/security.json"
+          },
+          "Fingerprint": "sha256:2f6597333aff658a629cd83600aa01a886e050533360d2d6dab3da1bcd018645",
+          "Title": "html/template: golang: Go html/template: Cross-Site Scripting via pathological input",
+          "Description": "Previously, pathological inputs could close an unescaped '/' early, allowing for attack-controlled data to inject arbitrary content, potentially leading to XSS.",
+          "Severity": "HIGH",
+          "CweIDs": [
+            "CWE-79"
+          ],
+          "VendorSeverity": {
+            "alma": 3,
+            "amazon": 3,
+            "bitnami": 2,
+            "oracle-oval": 3,
+            "photon": 2,
+            "redhat": 3,
+            "rocky": 3
+          },
+          "CVSS": {
+            "bitnami": {
+              "V3Vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:C/C:L/I:L/A:N",
+              "V3Score": 6.1
+            },
+            "redhat": {
+              "V3Vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:U/C:H/I:H/A:N",
+              "V3Score": 8.1
+            }
+          },
+          "References": [
+            "https://access.redhat.com/errata/RHSA-2026:70641",
+            "https://access.redhat.com/security/cve/CVE-2026-56858",
+            "https://bugzilla.redhat.com/2515815",
+            "https://bugzilla.redhat.com/2515820",
+            "https://bugzilla.redhat.com/2515827",
+            "https://bugzilla.redhat.com/2515838",
+            "https://bugzilla.redhat.com/2515839",
+            "https://bugzilla.redhat.com/show_bug.cgi?id=2402034",
+            "https://bugzilla.redhat.com/show_bug.cgi?id=2515815",
+            "https://bugzilla.redhat.com/show_bug.cgi?id=2515820",
+            "https://bugzilla.redhat.com/show_bug.cgi?id=2515827",
+            "https://bugzilla.redhat.com/show_bug.cgi?id=2515838",
+            "https://bugzilla.redhat.com/show_bug.cgi?id=2515839",
+            "https://creativecommons.org/licenses/by/4.0/",
+            "https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2025-11395",
+            "https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2026-33818",
+            "https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2026-56853",
+            "https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2026-56858",
+            "https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2026-56860",
+            "https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2026-56862",
+            "https://errata.almalinux.org/9/ALSA-2026-70641.html",
+            "https://errata.rockylinux.org/RLSA-2026:70641",
+            "https://go.dev/cl/807100",
+            "https://go.dev/issue/80435",
+            "https://groups.google.com/g/golang-announce/c/94pEornpRlI",
+            "https://linux.oracle.com/cve/CVE-2026-56858.html",
+            "https://linux.oracle.com/errata/ELSA-2026-70641.html",
+            "https://nvd.nist.gov/vuln/detail/CVE-2026-56858",
+            "https://pkg.go.dev/vuln/GO-2026-6091",
+            "https://www.cve.org/CVERecord?id=CVE-2026-56858"
+          ],
+          "PublishedDate": "2026-08-13T22:17:22.207Z",
+          "LastModifiedDate": "2026-09-03T16:37:52.17Z"
+        },
+        {
+          "VulnerabilityID": "CVE-2026-56859",
+          "PkgID": "seaweedfs@4.32-r0",
+          "PkgName": "seaweedfs",
+          "PkgIdentifier": {
+            "PURL": "pkg:apk/wolfi/seaweedfs@4.32-r0?arch=x86_64\u0026distro=20230201",
+            "UID": "43eb823990aebb36"
+          },
+          "InstalledVersion": "4.32-r0",
+          "FixedVersion": "4.41-r1",
+          "Status": "fixed",
+          "Layer": {
+            "Digest": "sha256:259f5266f39ed50468edb89e8508bc70bb032d88a8ad1194329ff0dc9103d8bf",
+            "DiffID": "sha256:8534cb8f50f9abfe8e881e65d0e051dc83a9625da77bcbd49e05439f6ac1de72"
+          },
+          "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2026-56859",
+          "DataSource": {
+            "ID": "wolfi",
+            "Name": "Wolfi Secdb",
+            "URL": "https://packages.wolfi.dev/os/security.json"
+          },
+          "Fingerprint": "sha256:8810cdc4d4786aa5907e949023d6de6967edd5fa24f22f187ab9757165e9edab",
+          "Title": "encoding/xml: golang: Go: Denial of Service via XML decoding recursion depth issue",
+          "Description": "Previously, DecodeElement would reset the depth counter causing it to never fire; this could lead to stack exhaustion.",
+          "Severity": "HIGH",
+          "CweIDs": [
+            "CWE-770"
+          ],
+          "VendorSeverity": {
+            "alma": 3,
+            "amazon": 3,
+            "bitnami": 3,
+            "oracle-oval": 3,
+            "photon": 3,
+            "redhat": 3,
+            "rocky": 3
+          },
+          "CVSS": {
+            "bitnami": {
+              "V3Vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H",
+              "V3Score": 7.5
+            },
+            "redhat": {
+              "V3Vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H",
+              "V3Score": 7.5
+            }
+          },
+          "References": [
+            "https://access.redhat.com/errata/RHSA-2026:69961",
+            "https://access.redhat.com/security/cve/CVE-2026-56859",
+            "https://bugzilla.redhat.com/2480684",
+            "https://bugzilla.redhat.com/2508234",
+            "https://bugzilla.redhat.com/2515815",
+            "https://bugzilla.redhat.com/2515820",
+            "https://bugzilla.redhat.com/2515827",
+            "https://bugzilla.redhat.com/2515838",
+            "https://bugzilla.redhat.com/2515839",
+            "https://bugzilla.redhat.com/2515840",
+            "https://bugzilla.redhat.com/show_bug.cgi?id=2480684",
+            "https://bugzilla.redhat.com/show_bug.cgi?id=2508234",
+            "https://bugzilla.redhat.com/show_bug.cgi?id=2515815",
+            "https://bugzilla.redhat.com/show_bug.cgi?id=2515820",
+            "https://bugzilla.redhat.com/show_bug.cgi?id=2515827",
+            "https://bugzilla.redhat.com/show_bug.cgi?id=2515838",
+            "https://bugzilla.redhat.com/show_bug.cgi?id=2515839",
+            "https://bugzilla.redhat.com/show_bug.cgi?id=2515840",
+            "https://bugzilla.redhat.com/show_bug.cgi?id=2518147",
+            "https://creativecommons.org/licenses/by/4.0/",
+            "https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2026-17106",
+            "https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2026-19730",
+            "https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2026-33818",
+            "https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2026-39830",
+            "https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2026-56853",
+            "https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2026-56858",
+            "https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2026-56859",
+            "https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2026-56860",
+            "https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2026-56862",
+            "https://errata.almalinux.org/9/ALSA-2026-69961.html",
+            "https://errata.rockylinux.org/RLSA-2026:69961",
+            "https://go.dev/cl/803320",
+            "https://go.dev/issue/80481",
+            "https://groups.google.com/g/golang-announce/c/94pEornpRlI",
+            "https://linux.oracle.com/cve/CVE-2026-56859.html",
+            "https://linux.oracle.com/errata/ELSA-2026-70201.html",
+            "https://nvd.nist.gov/vuln/detail/CVE-2026-56859",
+            "https://pkg.go.dev/vuln/GO-2026-6088",
+            "https://www.cve.org/CVERecord?id=CVE-2026-56859"
+          ],
+          "PublishedDate": "2026-08-13T22:17:22.32Z",
+          "LastModifiedDate": "2026-09-03T16:37:52.17Z"
+        },
+        {
+          "VulnerabilityID": "CVE-2026-56860",
+          "PkgID": "seaweedfs@4.32-r0",
+          "PkgName": "seaweedfs",
+          "PkgIdentifier": {
+            "PURL": "pkg:apk/wolfi/seaweedfs@4.32-r0?arch=x86_64\u0026distro=20230201",
+            "UID": "43eb823990aebb36"
+          },
+          "InstalledVersion": "4.32-r0",
+          "FixedVersion": "4.41-r1",
+          "Status": "fixed",
+          "Layer": {
+            "Digest": "sha256:259f5266f39ed50468edb89e8508bc70bb032d88a8ad1194329ff0dc9103d8bf",
+            "DiffID": "sha256:8534cb8f50f9abfe8e881e65d0e051dc83a9625da77bcbd49e05439f6ac1de72"
+          },
+          "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2026-56860",
+          "DataSource": {
+            "ID": "wolfi",
+            "Name": "Wolfi Secdb",
+            "URL": "https://packages.wolfi.dev/os/security.json"
+          },
+          "Fingerprint": "sha256:825b20158d6d1dd33eebdce9e5b4fb413f63275226db4081245f26499f09eca2",
+          "Title": "net/url: golang: golang net/url: Denial of Service from quadratic complexity in path resolution",
+          "Description": "Previously, resolving relative paths containing parent directory ('..') segments performed string conversions and buffer rewrites on each step, resulting in quadratic time complexity and high memory allocation overhead. Now, path resolution operates on a byte buffer using index-based backtracking for '..' segments, eliminating the quadratic time complexity and significantly reducing memory allocations.",
+          "Severity": "HIGH",
+          "CweIDs": [
+            "CWE-407"
+          ],
+          "VendorSeverity": {
+            "alma": 3,
+            "amazon": 3,
+            "bitnami": 2,
+            "oracle-oval": 3,
+            "photon": 2,
+            "redhat": 3,
+            "rocky": 3
+          },
+          "CVSS": {
+            "bitnami": {
+              "V3Vector": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:N/I:N/A:H",
+              "V3Score": 5.9
+            },
+            "redhat": {
+              "V3Vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H",
+              "V3Score": 7.5
+            }
+          },
+          "References": [
+            "https://access.redhat.com/errata/RHSA-2026:70641",
+            "https://access.redhat.com/security/cve/CVE-2026-56860",
+            "https://bugzilla.redhat.com/2515815",
+            "https://bugzilla.redhat.com/2515820",
+            "https://bugzilla.redhat.com/2515827",
+            "https://bugzilla.redhat.com/2515838",
+            "https://bugzilla.redhat.com/2515839",
+            "https://bugzilla.redhat.com/show_bug.cgi?id=2402034",
+            "https://bugzilla.redhat.com/show_bug.cgi?id=2515815",
+            "https://bugzilla.redhat.com/show_bug.cgi?id=2515820",
+            "https://bugzilla.redhat.com/show_bug.cgi?id=2515827",
+            "https://bugzilla.redhat.com/show_bug.cgi?id=2515838",
+            "https://bugzilla.redhat.com/show_bug.cgi?id=2515839",
+            "https://creativecommons.org/licenses/by/4.0/",
+            "https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2025-11395",
+            "https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2026-33818",
+            "https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2026-56853",
+            "https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2026-56858",
+            "https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2026-56860",
+            "https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2026-56862",
+            "https://errata.almalinux.org/9/ALSA-2026-70641.html",
+            "https://errata.rockylinux.org/RLSA-2026:70641",
+            "https://go.dev/cl/803681",
+            "https://go.dev/issue/80494",
+            "https://groups.google.com/g/golang-announce/c/94pEornpRlI",
+            "https://linux.oracle.com/cve/CVE-2026-56860.html",
+            "https://linux.oracle.com/errata/ELSA-2026-70641.html",
+            "https://nvd.nist.gov/vuln/detail/CVE-2026-56860",
+            "https://pkg.go.dev/vuln/GO-2026-6218",
+            "https://www.cve.org/CVERecord?id=CVE-2026-56860"
+          ],
+          "PublishedDate": "2026-08-13T22:17:22.44Z",
+          "LastModifiedDate": "2026-09-03T16:37:52.17Z"
+        },
+        {
+          "VulnerabilityID": "CVE-2026-56862",
+          "PkgID": "seaweedfs@4.32-r0",
+          "PkgName": "seaweedfs",
+          "PkgIdentifier": {
+            "PURL": "pkg:apk/wolfi/seaweedfs@4.32-r0?arch=x86_64\u0026distro=20230201",
+            "UID": "43eb823990aebb36"
+          },
+          "InstalledVersion": "4.32-r0",
+          "FixedVersion": "4.41-r1",
+          "Status": "fixed",
+          "Layer": {
+            "Digest": "sha256:259f5266f39ed50468edb89e8508bc70bb032d88a8ad1194329ff0dc9103d8bf",
+            "DiffID": "sha256:8534cb8f50f9abfe8e881e65d0e051dc83a9625da77bcbd49e05439f6ac1de72"
+          },
+          "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2026-56862",
+          "DataSource": {
+            "ID": "wolfi",
+            "Name": "Wolfi Secdb",
+            "URL": "https://packages.wolfi.dev/os/security.json"
+          },
+          "Fingerprint": "sha256:4069ee5d7b0669808caae0b0aea1146357a7521277c2e4b4bbc218b38e17061a",
+          "Title": "crypto/tls: golang: Golang crypto/tls: Denial of Service via indefinite KeyUpdate messages",
+          "Description": "Handshake messages, such as KeyUpdate, are always considered as state-advancing, regardless of whether a handshake has been completed or not. As a result, a malicious client can keep sending KeyUpdate messages to force the server to keep performing key derivation operations indefinitely.",
+          "Severity": "HIGH",
+          "CweIDs": [
+            "CWE-770"
+          ],
+          "VendorSeverity": {
+            "alma": 3,
+            "amazon": 3,
+            "bitnami": 3,
+            "oracle-oval": 3,
+            "photon": 3,
+            "redhat": 3,
+            "rocky": 3
+          },
+          "CVSS": {
+            "bitnami": {
+              "V3Vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H",
+              "V3Score": 7.5
+            },
+            "redhat": {
+              "V3Vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H",
+              "V3Score": 7.5
+            }
+          },
+          "References": [
+            "https://access.redhat.com/errata/RHSA-2026:70641",
+            "https://access.redhat.com/security/cve/CVE-2026-56862",
+            "https://bugzilla.redhat.com/2515815",
+            "https://bugzilla.redhat.com/2515820",
+            "https://bugzilla.redhat.com/2515827",
+            "https://bugzilla.redhat.com/2515838",
+            "https://bugzilla.redhat.com/2515839",
+            "https://bugzilla.redhat.com/show_bug.cgi?id=2402034",
+            "https://bugzilla.redhat.com/show_bug.cgi?id=2515815",
+            "https://bugzilla.redhat.com/show_bug.cgi?id=2515820",
+            "https://bugzilla.redhat.com/show_bug.cgi?id=2515827",
+            "https://bugzilla.redhat.com/show_bug.cgi?id=2515838",
+            "https://bugzilla.redhat.com/show_bug.cgi?id=2515839",
+            "https://creativecommons.org/licenses/by/4.0/",
+            "https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2025-11395",
+            "https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2026-33818",
+            "https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2026-56853",
+            "https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2026-56858",
+            "https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2026-56860",
+            "https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2026-56862",
+            "https://errata.almalinux.org/9/ALSA-2026-70641.html",
+            "https://errata.rockylinux.org/RLSA-2026:70641",
+            "https://go.dev/cl/804261",
+            "https://go.dev/issue/80528",
+            "https://groups.google.com/g/golang-announce/c/94pEornpRlI",
+            "https://linux.oracle.com/cve/CVE-2026-56862.html",
+            "https://linux.oracle.com/errata/ELSA-2026-70641.html",
+            "https://nvd.nist.gov/vuln/detail/CVE-2026-56862",
+            "https://pkg.go.dev/vuln/GO-2026-6090",
+            "https://www.cve.org/CVERecord?id=CVE-2026-56862"
+          ],
+          "PublishedDate": "2026-08-13T22:17:22.55Z",
+          "LastModifiedDate": "2026-09-03T16:37:52.17Z"
+        },
+        {
+          "VulnerabilityID": "CVE-2026-84445",
+          "PkgID": "seaweedfs@4.32-r0",
+          "PkgName": "seaweedfs",
+          "PkgIdentifier": {
+            "PURL": "pkg:apk/wolfi/seaweedfs@4.32-r0?arch=x86_64\u0026distro=20230201",
+            "UID": "43eb823990aebb36"
+          },
+          "InstalledVersion": "4.32-r0",
+          "FixedVersion": "4.46-r1",
+          "Status": "fixed",
+          "Layer": {
+            "Digest": "sha256:259f5266f39ed50468edb89e8508bc70bb032d88a8ad1194329ff0dc9103d8bf",
+            "DiffID": "sha256:8534cb8f50f9abfe8e881e65d0e051dc83a9625da77bcbd49e05439f6ac1de72"
+          },
+          "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2026-84445",
+          "DataSource": {
+            "ID": "wolfi",
+            "Name": "Wolfi Secdb",
+            "URL": "https://packages.wolfi.dev/os/security.json"
+          },
+          "Fingerprint": "sha256:3b6fa94c78fbd92911bc9bf8720f26e6fdf17cb429ec7c58b2c053123a9a4c3d",
+          "Title": "google.golang.org/grpc: gRPC-Go: Denial of Service via malformed RPC requests",
+          "Description": "gRPC-Go is the Go language implementation of gRPC. Prior to 1.82.2 and 1.83.2, servers created with xds.NewGRPCServer() allow internal/transport/http2_server.go to accept an RPC containing neither the :authority header nor the Host header, while RouteAndProcess in internal/xds/server/routing.go assumes that an authority value exists and indexes the empty slice. A remote client that can complete transport connection establishment can trigger an index-out-of-bounds panic that is not recovered by the per-RPC goroutine and terminates the entire server process. In insecure or ordinary TLS deployments the request can be unauthenticated, while strict mTLS or ALTS deployments require valid transport credentials before the malformed RPC can reach the interceptor. This issue is fixed in versions 1.82.2 and 1.83.2.",
+          "Severity": "HIGH",
+          "CweIDs": [
+            "CWE-129",
+            "CWE-248"
+          ],
+          "VendorSeverity": {
+            "azure": 3,
+            "ghsa": 3,
+            "redhat": 3
+          },
+          "CVSS": {
+            "ghsa": {
+              "V40Vector": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:N/VI:N/VA:H/SC:N/SI:N/SA:N",
+              "V40Score": 8.7
+            },
+            "redhat": {
+              "V3Vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H",
+              "V3Score": 7.5
+            }
+          },
+          "References": [
+            "https://access.redhat.com/security/cve/CVE-2026-84445",
+            "https://github.com/grpc/grpc-go",
+            "https://github.com/grpc/grpc-go/commit/3822494d8ea03b992c089fd2a195f041762fffb7",
+            "https://github.com/grpc/grpc-go/commit/8668b69c167df908b6b3666dcbf40992b9e932a4",
+            "https://github.com/grpc/grpc-go/commit/93e31b48545e2a8aaeb6e06b47fb249f94e6297f",
+            "https://github.com/grpc/grpc-go/issues/9354",
+            "https://github.com/grpc/grpc-go/pull/9365",
+            "https://github.com/grpc/grpc-go/pull/9366",
+            "https://github.com/grpc/grpc-go/pull/9367",
+            "https://github.com/grpc/grpc-go/releases/tag/v1.82.2",
+            "https://github.com/grpc/grpc-go/releases/tag/v1.83.2",
+            "https://github.com/grpc/grpc-go/security/advisories/GHSA-2v4p-qf9q-27wj",
+            "https://nvd.nist.gov/vuln/detail/CVE-2026-84445",
+            "https://www.cve.org/CVERecord?id=CVE-2026-84445"
+          ],
+          "PublishedDate": "2026-09-14T17:17:51.743Z",
+          "LastModifiedDate": "2026-09-25T14:10:13.927Z"
+        },
+        {
+          "VulnerabilityID": "CVE-2026-33813",
+          "PkgID": "seaweedfs@4.32-r0",
+          "PkgName": "seaweedfs",
+          "PkgIdentifier": {
+            "PURL": "pkg:apk/wolfi/seaweedfs@4.32-r0?arch=x86_64\u0026distro=20230201",
+            "UID": "43eb823990aebb36"
+          },
+          "InstalledVersion": "4.32-r0",
+          "FixedVersion": "4.36-r1",
+          "Status": "fixed",
+          "Layer": {
+            "Digest": "sha256:259f5266f39ed50468edb89e8508bc70bb032d88a8ad1194329ff0dc9103d8bf",
+            "DiffID": "sha256:8534cb8f50f9abfe8e881e65d0e051dc83a9625da77bcbd49e05439f6ac1de72"
+          },
+          "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2026-33813",
+          "DataSource": {
+            "ID": "wolfi",
+            "Name": "Wolfi Secdb",
+            "URL": "https://packages.wolfi.dev/os/security.json"
+          },
+          "Fingerprint": "sha256:5c2122cf8514d0754e39ca563df2e78355c55e98d913585f1bf05603c75b323f",
+          "Title": "golang.org/x/image: golang: golang.org/x/image: Denial of Service via malformed WEBP image parsing",
+          "Description": "Parsing a WEBP image with an invalid, large size panics on 32-bit platforms.",
+          "Severity": "MEDIUM",
+          "VendorSeverity": {
+            "redhat": 2
+          },
+          "CVSS": {
+            "redhat": {
+              "V3Vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:U/C:N/I:N/A:H",
+              "V3Score": 6.5
+            }
+          },
+          "References": [
+            "https://access.redhat.com/security/cve/CVE-2026-33813",
+            "https://go.dev/cl/759860",
+            "https://go.dev/cl/780860",
+            "https://go.dev/issue/78407",
+            "https://nvd.nist.gov/vuln/detail/CVE-2026-33813",
+            "https://pkg.go.dev/vuln/GO-2026-4961",
+            "https://www.cve.org/CVERecord?id=CVE-2026-33813"
+          ],
+          "PublishedDate": "2026-04-21T20:16:56.387Z",
+          "LastModifiedDate": "2026-06-25T20:17:10.897Z"
+        },
+        {
+          "VulnerabilityID": "CVE-2026-42500",
+          "PkgID": "seaweedfs@4.32-r0",
+          "PkgName": "seaweedfs",
+          "PkgIdentifier": {
+            "PURL": "pkg:apk/wolfi/seaweedfs@4.32-r0?arch=x86_64\u0026distro=20230201",
+            "UID": "43eb823990aebb36"
+          },
+          "InstalledVersion": "4.32-r0",
+          "FixedVersion": "4.34-r1",
+          "Status": "fixed",
+          "Layer": {
+            "Digest": "sha256:259f5266f39ed50468edb89e8508bc70bb032d88a8ad1194329ff0dc9103d8bf",
+            "DiffID": "sha256:8534cb8f50f9abfe8e881e65d0e051dc83a9625da77bcbd49e05439f6ac1de72"
+          },
+          "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2026-42500",
+          "DataSource": {
+            "ID": "wolfi",
+            "Name": "Wolfi Secdb",
+            "URL": "https://packages.wolfi.dev/os/security.json"
+          },
+          "Fingerprint": "sha256:f0af568f3903808e296772d1d942e47a1e4a2c88312c9f702eff3651282dc6ef",
+          "Title": "golang.org/x/image/bmp: golang: golang.org/x/image/bmp: Denial of Service via out-of-range palette index in BMP decoding",
+          "Description": "Decoding a paletted BMP file with an out-of-range palette index results in a panic when accessing pixels in the invalid image.",
+          "Severity": "MEDIUM",
+          "VendorSeverity": {
+            "redhat": 2
+          },
+          "CVSS": {
+            "redhat": {
+              "V3Vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:U/C:N/I:N/A:H",
+              "V3Score": 6.5
+            }
+          },
+          "References": [
+            "https://access.redhat.com/security/cve/CVE-2026-42500",
+            "https://go.dev/cl/781500",
+            "https://go.dev/issue/79576",
+            "https://groups.google.com/g/golang-announce/c/uhYX90BlBvI",
+            "https://nvd.nist.gov/vuln/detail/CVE-2026-42500",
+            "https://pkg.go.dev/vuln/GO-2026-5031",
+            "https://www.cve.org/CVERecord?id=CVE-2026-42500"
+          ],
+          "PublishedDate": "2026-05-29T20:16:23.627Z",
+          "LastModifiedDate": "2026-07-22T06:10:00.17Z"
+        },
+        {
+          "VulnerabilityID": "CVE-2026-42505",
+          "PkgID": "seaweedfs@4.32-r0",
+          "PkgName": "seaweedfs",
+          "PkgIdentifier": {
+            "PURL": "pkg:apk/wolfi/seaweedfs@4.32-r0?arch=x86_64\u0026distro=20230201",
+            "UID": "43eb823990aebb36"
+          },
+          "InstalledVersion": "4.32-r0",
+          "FixedVersion": "4.38-r2",
+          "Status": "fixed",
+          "Layer": {
+            "Digest": "sha256:259f5266f39ed50468edb89e8508bc70bb032d88a8ad1194329ff0dc9103d8bf",
+            "DiffID": "sha256:8534cb8f50f9abfe8e881e65d0e051dc83a9625da77bcbd49e05439f6ac1de72"
+          },
+          "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2026-42505",
+          "DataSource": {
+            "ID": "wolfi",
+            "Name": "Wolfi Secdb",
+            "URL": "https://packages.wolfi.dev/os/security.json"
+          },
+          "Fingerprint": "sha256:02c7190e164dbac750c9a1f065fa3d1bd884c149031d16dbc504bd76947a46c9",
+          "Title": "crypto/tls: golang: Go crypto/tls: Information disclosure in Encrypted Client Hello",
+          "Description": "Handshakes which used Encrypted Client Hello could be de-anonymized by a passive network observer due to a disclosure of pre-shared key identities in the unencrypted client hello.",
+          "Severity": "MEDIUM",
+          "CweIDs": [
+            "CWE-201"
+          ],
+          "VendorSeverity": {
+            "alma": 3,
+            "amazon": 3,
+            "azure": 2,
+            "bitnami": 2,
+            "photon": 2,
+            "redhat": 2
+          },
+          "CVSS": {
+            "bitnami": {
+              "V3Vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N",
+              "V3Score": 5.3
+            },
+            "redhat": {
+              "V3Vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N",
+              "V3Score": 5.3
+            }
+          },
+          "References": [
+            "https://access.redhat.com/errata/RHSA-2026:37435",
+            "https://access.redhat.com/security/cve/CVE-2026-42505",
+            "https://bugzilla.redhat.com/2480756",
+            "https://errata.almalinux.org/9/ALSA-2026-37435.html",
+            "https://go.dev/cl/775960",
+            "https://go.dev/issue/79282",
+            "https://groups.google.com/g/golang-announce/c/OrmQE_Yp5Sc",
+            "https://nvd.nist.gov/vuln/detail/CVE-2026-42505",
+            "https://pkg.go.dev/vuln/GO-2026-5856",
+            "https://www.cve.org/CVERecord?id=CVE-2026-42505"
+          ],
+          "PublishedDate": "2026-07-08T17:17:21.497Z",
+          "LastModifiedDate": "2026-09-16T20:14:44.473Z"
+        },
+        {
+          "VulnerabilityID": "CVE-2026-46599",
+          "PkgID": "seaweedfs@4.32-r0",
+          "PkgName": "seaweedfs",
+          "PkgIdentifier": {
+            "PURL": "pkg:apk/wolfi/seaweedfs@4.32-r0?arch=x86_64\u0026distro=20230201",
+            "UID": "43eb823990aebb36"
+          },
+          "InstalledVersion": "4.32-r0",
+          "FixedVersion": "4.34-r1",
+          "Status": "fixed",
+          "Layer": {
+            "Digest": "sha256:259f5266f39ed50468edb89e8508bc70bb032d88a8ad1194329ff0dc9103d8bf",
+            "DiffID": "sha256:8534cb8f50f9abfe8e881e65d0e051dc83a9625da77bcbd49e05439f6ac1de72"
+          },
+          "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2026-46599",
+          "DataSource": {
+            "ID": "wolfi",
+            "Name": "Wolfi Secdb",
+            "URL": "https://packages.wolfi.dev/os/security.json"
+          },
+          "Fingerprint": "sha256:d60df123f8f90023e67a55e18634d050f90ee1d7965f9c65ad3d1898636456f3",
+          "Title": "golang.org/x/image/tiff: golang.org/x/image/tiff: Denial of Service via crafted PackBits-compressed data",
+          "Description": "The TIFF decoder does not place a limit on the size of PackBits-compressed data. A maliciously-crafted image can exploit this to cause a small image (both in terms of pixel width/height and encoded size) to make the decoder decode large amounts of compressed data.",
+          "Severity": "MEDIUM",
+          "CweIDs": [
+            "CWE-770"
+          ],
+          "VendorSeverity": {
+            "redhat": 2
+          },
+          "CVSS": {
+            "redhat": {
+              "V3Vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:U/C:N/I:N/A:H",
+              "V3Score": 6.5
+            }
+          },
+          "References": [
+            "https://access.redhat.com/security/cve/CVE-2026-46599",
+            "https://go.dev/cl/759960",
+            "https://go.dev/issue/79577",
+            "https://groups.google.com/g/golang-announce/c/uhYX90BlBvI",
+            "https://nvd.nist.gov/vuln/detail/CVE-2026-46599",
+            "https://pkg.go.dev/vuln/GO-2026-5032",
+            "https://www.cve.org/CVERecord?id=CVE-2026-46599"
+          ],
+          "PublishedDate": "2026-05-29T20:16:28.28Z",
+          "LastModifiedDate": "2026-07-22T06:10:00.17Z"
+        },
+        {
+          "VulnerabilityID": "CVE-2026-46601",
+          "PkgID": "seaweedfs@4.32-r0",
+          "PkgName": "seaweedfs",
+          "PkgIdentifier": {
+            "PURL": "pkg:apk/wolfi/seaweedfs@4.32-r0?arch=x86_64\u0026distro=20230201",
+            "UID": "43eb823990aebb36"
+          },
+          "InstalledVersion": "4.32-r0",
+          "FixedVersion": "4.36-r2",
+          "Status": "fixed",
+          "Layer": {
+            "Digest": "sha256:259f5266f39ed50468edb89e8508bc70bb032d88a8ad1194329ff0dc9103d8bf",
+            "DiffID": "sha256:8534cb8f50f9abfe8e881e65d0e051dc83a9625da77bcbd49e05439f6ac1de72"
+          },
+          "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2026-46601",
+          "DataSource": {
+            "ID": "wolfi",
+            "Name": "Wolfi Secdb",
+            "URL": "https://packages.wolfi.dev/os/security.json"
+          },
+          "Fingerprint": "sha256:7ffdc2a25295b2dce8b45e09f9190d24dac8877c1b61c09304f3f241a5501f16",
+          "Title": "golang.org/x/image/webp: golang.org/x/image/webp: Denial of Service via malformed VP8 chunk in WebP images",
+          "Description": "The webp decoder can panic when processing a VP8 chunk with dimensions that do not match the canvas size.",
+          "Severity": "MEDIUM",
+          "VendorSeverity": {
+            "amazon": 3,
+            "redhat": 2
+          },
+          "CVSS": {
+            "redhat": {
+              "V3Vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:U/C:N/I:N/A:H",
+              "V3Score": 6.5
+            }
+          },
+          "References": [
+            "https://access.redhat.com/security/cve/CVE-2026-46601",
+            "https://go.dev/cl/787681",
+            "https://go.dev/issue/79869",
+            "https://nvd.nist.gov/vuln/detail/CVE-2026-46601",
+            "https://pkg.go.dev/vuln/GO-2026-5061",
+            "https://www.cve.org/CVERecord?id=CVE-2026-46601"
+          ],
+          "PublishedDate": "2026-06-25T20:17:12.447Z",
+          "LastModifiedDate": "2026-06-26T17:16:33.543Z"
+        },
+        {
+          "VulnerabilityID": "CVE-2026-46604",
+          "PkgID": "seaweedfs@4.32-r0",
+          "PkgName": "seaweedfs",
+          "PkgIdentifier": {
+            "PURL": "pkg:apk/wolfi/seaweedfs@4.32-r0?arch=x86_64\u0026distro=20230201",
+            "UID": "43eb823990aebb36"
+          },
+          "InstalledVersion": "4.32-r0",
+          "FixedVersion": "4.36-r2",
+          "Status": "fixed",
+          "Layer": {
+            "Digest": "sha256:259f5266f39ed50468edb89e8508bc70bb032d88a8ad1194329ff0dc9103d8bf",
+            "DiffID": "sha256:8534cb8f50f9abfe8e881e65d0e051dc83a9625da77bcbd49e05439f6ac1de72"
+          },
+          "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2026-46604",
+          "DataSource": {
+            "ID": "wolfi",
+            "Name": "Wolfi Secdb",
+            "URL": "https://packages.wolfi.dev/os/security.json"
+          },
+          "Fingerprint": "sha256:ba48e7dfb69fd5b1eec66eb29ef0683b784fbe5b018767dc59cf12079a31cc40",
+          "Title": "golang.org/x/image/tiff: golang.org/x/image/tiff: Denial of Service via invalid TIFF image",
+          "Description": "The TIFF decoder can panic when decoding an invalid image with an out-of-bounds strip offset.",
+          "Severity": "MEDIUM",
+          "CweIDs": [
+            "CWE-787"
+          ],
+          "VendorSeverity": {
+            "amazon": 3,
+            "redhat": 2
+          },
+          "CVSS": {
+            "redhat": {
+              "V3Vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:U/C:N/I:N/A:H",
+              "V3Score": 6.5
+            }
+          },
+          "References": [
+            "https://access.redhat.com/security/cve/CVE-2026-46604",
+            "https://go.dev/cl/788421",
+            "https://go.dev/issue/80122",
+            "https://nvd.nist.gov/vuln/detail/CVE-2026-46604",
+            "https://pkg.go.dev/vuln/GO-2026-5066",
+            "https://www.cve.org/CVERecord?id=CVE-2026-46604"
+          ],
+          "PublishedDate": "2026-06-26T21:16:33.807Z",
+          "LastModifiedDate": "2026-07-01T14:07:56.677Z"
+        },
+        {
+          "VulnerabilityID": "CVE-2026-56855",
+          "PkgID": "seaweedfs@4.32-r0",
+          "PkgName": "seaweedfs",
+          "PkgIdentifier": {
+            "PURL": "pkg:apk/wolfi/seaweedfs@4.32-r0?arch=x86_64\u0026distro=20230201",
+            "UID": "43eb823990aebb36"
+          },
+          "InstalledVersion": "4.32-r0",
+          "FixedVersion": "4.45-r2",
+          "Status": "fixed",
+          "Layer": {
+            "Digest": "sha256:259f5266f39ed50468edb89e8508bc70bb032d88a8ad1194329ff0dc9103d8bf",
+            "DiffID": "sha256:8534cb8f50f9abfe8e881e65d0e051dc83a9625da77bcbd49e05439f6ac1de72"
+          },
+          "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2026-56855",
+          "DataSource": {
+            "ID": "wolfi",
+            "Name": "Wolfi Secdb",
+            "URL": "https://packages.wolfi.dev/os/security.json"
+          },
+          "Fingerprint": "sha256:1d812f6072810d1f224e8aac134405b186594b503032b28812b1cb88addf1de6",
+          "Title": "golang.org/x/crypto/ssh: golang.org/x/crypto/ssh: Denial of Service via crafted messages",
+          "Description": "Previously, after a channel has been established, a malicious peer could send crafted messages that would deadlock the entire connection. Now, we handle all RFC 4254 channel messages; global requests are handled explicitly. Then, treat all other messages as a protocol error and tear the connection down instead of buffering and blocking.",
+          "Severity": "MEDIUM",
+          "CweIDs": [
+            "CWE-770"
+          ],
+          "VendorSeverity": {
+            "alma": 3,
+            "amazon": 3,
+            "azure": 2,
+            "oracle-oval": 3,
+            "redhat": 2,
+            "rocky": 3
+          },
+          "CVSS": {
+            "redhat": {
+              "V3Vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:L",
+              "V3Score": 5.3
+            }
+          },
+          "References": [
+            "https://access.redhat.com/errata/RHSA-2026:70640",
+            "https://access.redhat.com/security/cve/CVE-2026-56855",
+            "https://bugzilla.redhat.com/2515815",
+            "https://bugzilla.redhat.com/2515820",
+            "https://bugzilla.redhat.com/2515827",
+            "https://bugzilla.redhat.com/2515838",
+            "https://bugzilla.redhat.com/2515839",
+            "https://bugzilla.redhat.com/show_bug.cgi?id=2402034",
+            "https://bugzilla.redhat.com/show_bug.cgi?id=2503742",
+            "https://bugzilla.redhat.com/show_bug.cgi?id=2515815",
+            "https://bugzilla.redhat.com/show_bug.cgi?id=2515820",
+            "https://bugzilla.redhat.com/show_bug.cgi?id=2515827",
+            "https://bugzilla.redhat.com/show_bug.cgi?id=2515838",
+            "https://bugzilla.redhat.com/show_bug.cgi?id=2515839",
+            "https://bugzilla.redhat.com/show_bug.cgi?id=2528050",
+            "https://creativecommons.org/licenses/by/4.0/",
+            "https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2025-11395",
+            "https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2026-15789",
+            "https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2026-33818",
+            "https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2026-56853",
+            "https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2026-56855",
+            "https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2026-56858",
+            "https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2026-56860",
+            "https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2026-56862",
+            "https://errata.almalinux.org/9/ALSA-2026-70640.html",
+            "https://errata.rockylinux.org/RLSA-2026:70640",
+            "https://go.dev/cl/826524",
+            "https://go.dev/issue/81317",
+            "https://groups.google.com/g/golang-announce/c/1y3fb2np35U",
+            "https://linux.oracle.com/cve/CVE-2026-56855.html",
+            "https://linux.oracle.com/errata/ELSA-2026-70640.html",
+            "https://nvd.nist.gov/vuln/detail/CVE-2026-56855",
+            "https://pkg.go.dev/vuln/GO-2026-6355",
+            "https://www.cve.org/CVERecord?id=CVE-2026-56855"
+          ],
+          "PublishedDate": "2026-09-02T20:17:36.397Z",
+          "LastModifiedDate": "2026-09-04T16:34:56.823Z"
+        },
+        {
+          "VulnerabilityID": "CVE-2026-78662",
+          "PkgID": "seaweedfs@4.32-r0",
+          "PkgName": "seaweedfs",
+          "PkgIdentifier": {
+            "PURL": "pkg:apk/wolfi/seaweedfs@4.32-r0?arch=x86_64\u0026distro=20230201",
+            "UID": "43eb823990aebb36"
+          },
+          "InstalledVersion": "4.32-r0",
+          "FixedVersion": "4.45-r2",
+          "Status": "fixed",
+          "Layer": {
+            "Digest": "sha256:259f5266f39ed50468edb89e8508bc70bb032d88a8ad1194329ff0dc9103d8bf",
+            "DiffID": "sha256:8534cb8f50f9abfe8e881e65d0e051dc83a9625da77bcbd49e05439f6ac1de72"
+          },
+          "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2026-78662",
+          "DataSource": {
+            "ID": "wolfi",
+            "Name": "Wolfi Secdb",
+            "URL": "https://packages.wolfi.dev/os/security.json"
+          },
+          "Fingerprint": "sha256:97283626c2084cd1755053c4029af2b9d6f009f6e0052436dd6107863c0782f2",
+          "Title": "golang.org/x/crypto/ssh: golang.org/x/crypto/ssh: Denial of Service via channel request flooding",
+          "Description": "Previously, a channel registered in the mux's chanList is not usable until it is established. A malicious peer was able flood the channel's incomingRequests, deadlocking the entire connection. Now, we add an atomic established state, set when a channel becomes usable. Until such a time, handlePacket drops every packet other than the open confirmation/failure, without blocking and without tearing down the connection.",
+          "Severity": "MEDIUM",
+          "CweIDs": [
+            "CWE-770"
+          ],
+          "VendorSeverity": {
+            "amazon": 3,
+            "azure": 2,
+            "redhat": 2
+          },
+          "CVSS": {
+            "redhat": {
+              "V3Vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:L",
+              "V3Score": 5.3
+            }
+          },
+          "References": [
+            "https://access.redhat.com/security/cve/CVE-2026-78662",
+            "https://go.dev/cl/826504",
+            "https://go.dev/issue/81316",
+            "https://groups.google.com/g/golang-announce/c/1y3fb2np35U",
+            "https://nvd.nist.gov/vuln/detail/CVE-2026-78662",
+            "https://pkg.go.dev/vuln/GO-2026-6354",
+            "https://www.cve.org/CVERecord?id=CVE-2026-78662"
+          ],
+          "PublishedDate": "2026-09-02T20:17:37.167Z",
+          "LastModifiedDate": "2026-09-04T16:33:34.057Z"
+        }
+      ]
+    }
+  ]
+}

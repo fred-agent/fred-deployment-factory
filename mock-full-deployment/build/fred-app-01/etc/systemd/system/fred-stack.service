@@ -1,0 +1,15 @@
+[Unit]
+Description=Pile Fred (podman compose, /opt/fred/compose.yaml)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/opt/fred
+ExecStart=/usr/bin/podman compose -f /opt/fred/compose.yaml up -d
+ExecStop=/usr/bin/podman compose -f /opt/fred/compose.yaml down
+TimeoutStartSec=900
+
+[Install]
+WantedBy=multi-user.target

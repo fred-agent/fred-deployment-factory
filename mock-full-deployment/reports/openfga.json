@@ -1,0 +1,243 @@
+{
+  "SchemaVersion": 2,
+  "Trivy": {
+    "Version": "0.75.0"
+  },
+  "ReportID": "01a0fd03-f79b-794e-ad8b-1a6473bab5b9",
+  "CreatedAt": "2026-10-02T14:28:10.779611475Z",
+  "ArtifactID": "sha256:8170770bdce5951ec4bfd0a45a44295dced677905a217a98416c5f4450fb85ba",
+  "ArtifactName": "fred-hardened/openfga:latest",
+  "ArtifactType": "container_image",
+  "Metadata": {
+    "Size": 87481344,
+    "OS": {
+      "Family": "wolfi",
+      "Name": "20230201"
+    },
+    "ImageID": "sha256:fa7fe90e3319d6fc61c682f6f717c57525e4c988c612167af9e7df7e269b8966",
+    "DiffIDs": [
+      "sha256:65b53d266ad68276a165e602d3dfc9f27f15db6153ee4431994f15efa2a21bf4"
+    ],
+    "RepoTags": [
+      "fred-hardened/openfga:dev",
+      "fred-hardened/openfga:latest",
+      "localhost:5000/fred/openfga:hardened"
+    ],
+    "RepoDigests": [
+      "fred-hardened/openfga@sha256:fa7fe90e3319d6fc61c682f6f717c57525e4c988c612167af9e7df7e269b8966",
+      "localhost:5000/fred/openfga@sha256:fa7fe90e3319d6fc61c682f6f717c57525e4c988c612167af9e7df7e269b8966"
+    ],
+    "Reference": "fred-hardened/openfga:latest",
+    "ImageConfig": {
+      "architecture": "amd64",
+      "created": "2026-10-02T14:22:33.932682219+02:00",
+      "history": [
+        {
+          "created": "2026-10-02T12:22:30Z",
+          "created_by": "/bin/sh -c #(nop) COPY dir:34aad2baf672f0b93cb7dac5a6533ed804a17aeced15075a40c1e6868a81328b in / "
+        },
+        {
+          "created": "2026-10-02T12:22:32Z",
+          "created_by": "/bin/sh -c #(nop)  USER 65532:65532",
+          "empty_layer": true
+        },
+        {
+          "created": "2026-10-02T12:22:32Z",
+          "created_by": "/bin/sh -c #(nop)  EXPOSE 8080 8081",
+          "empty_layer": true
+        },
+        {
+          "created": "2026-10-02T12:22:33Z",
+          "created_by": "/bin/sh -c #(nop)  ENTRYPOINT [\"/usr/bin/openfga\"]",
+          "empty_layer": true
+        },
+        {
+          "created": "2026-10-02T12:22:33Z",
+          "created_by": "/bin/sh -c #(nop)  CMD [\"run\"]",
+          "empty_layer": true
+        }
+      ],
+      "os": "linux",
+      "rootfs": {
+        "type": "layers",
+        "diff_ids": [
+          "sha256:65b53d266ad68276a165e602d3dfc9f27f15db6153ee4431994f15efa2a21bf4"
+        ]
+      },
+      "config": {
+        "Cmd": [
+          "run"
+        ],
+        "Entrypoint": [
+          "/usr/bin/openfga"
+        ],
+        "Env": [
+          "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+        ],
+        "User": "65532:65532",
+        "ExposedPorts": {
+          "8080/tcp": {},
+          "8081/tcp": {}
+        }
+      }
+    },
+    "Layers": [
+      {
+        "Size": 87481344,
+        "Digest": "sha256:123a5ad3fcf71af659882745b555bb029ee3eccde4c1630ba1c400a4cfcb2434",
+        "DiffID": "sha256:65b53d266ad68276a165e602d3dfc9f27f15db6153ee4431994f15efa2a21bf4"
+      }
+    ]
+  },
+  "Results": [
+    {
+      "Target": "fred-hardened/openfga:latest (wolfi 20230201)",
+      "Class": "os-pkgs",
+      "Type": "wolfi",
+      "Packages": [
+        {
+          "ID": "ca-certificates-bundle@20260909-r2",
+          "Name": "ca-certificates-bundle",
+          "Identifier": {
+            "PURL": "pkg:apk/wolfi/ca-certificates-bundle@20260909-r2?arch=x86_64\u0026distro=20230201",
+            "UID": "6a1c9d6ce22a0131"
+          },
+          "Version": "20260909-r2",
+          "Arch": "x86_64",
+          "SrcName": "ca-certificates",
+          "SrcVersion": "20260909-r2",
+          "Licenses": [
+            "MPL-2.0",
+            "MIT"
+          ],
+          "Maintainer": "wolfi",
+          "DependsOn": [
+            "wolfi-baselayout@20230201-r30"
+          ],
+          "Layer": {
+            "Digest": "sha256:123a5ad3fcf71af659882745b555bb029ee3eccde4c1630ba1c400a4cfcb2434",
+            "DiffID": "sha256:65b53d266ad68276a165e602d3dfc9f27f15db6153ee4431994f15efa2a21bf4"
+          },
+          "Digest": "sha1:cdbb31b944f2686b23aa355d9f68134437d9b3af",
+          "InstalledFiles": [
+            "etc/pki/tls/certs/ca-bundle.crt",
+            "etc/ssl/cert.pem",
+            "etc/ssl/certs/ca-bundle.crt",
+            "etc/ssl/certs/ca-certificates.crt",
+            "var/lib/db/sbom/ca-certificates-bundle-20260909-r2.spdx.json"
+          ],
+          "AnalyzedBy": "apk"
+        },
+        {
+          "ID": "grpc-health-probe@0.4.57-r0",
+          "Name": "grpc-health-probe",
+          "Identifier": {
+            "PURL": "pkg:apk/wolfi/grpc-health-probe@0.4.57-r0?arch=x86_64\u0026distro=20230201",
+            "UID": "f171baa919f4e21"
+          },
+          "Version": "0.4.57-r0",
+          "Arch": "x86_64",
+          "SrcName": "grpc-health-probe",
+          "SrcVersion": "0.4.57-r0",
+          "Licenses": [
+            "Apache-2.0"
+          ],
+          "Maintainer": "wolfi",
+          "DependsOn": [
+            "wolfi-baselayout@20230201-r30"
+          ],
+          "Layer": {
+            "Digest": "sha256:123a5ad3fcf71af659882745b555bb029ee3eccde4c1630ba1c400a4cfcb2434",
+            "DiffID": "sha256:65b53d266ad68276a165e602d3dfc9f27f15db6153ee4431994f15efa2a21bf4"
+          },
+          "Digest": "sha1:3449fd6f1b692b92b09ac865dba074f1ecac0c1c",
+          "InstalledFiles": [
+            "usr/bin/grpc-health-probe",
+            "usr/bin/grpc_health_probe",
+            "var/lib/db/sbom/grpc-health-probe-0.4.57-r0.spdx.json"
+          ],
+          "AnalyzedBy": "apk"
+        },
+        {
+          "ID": "openfga@1.21.0-r0",
+          "Name": "openfga",
+          "Identifier": {
+            "PURL": "pkg:apk/wolfi/openfga@1.21.0-r0?arch=x86_64\u0026distro=20230201",
+            "UID": "6429e61764bd617b"
+          },
+          "Version": "1.21.0-r0",
+          "Arch": "x86_64",
+          "SrcName": "openfga",
+          "SrcVersion": "1.21.0-r0",
+          "Licenses": [
+            "Apache-2.0"
+          ],
+          "Maintainer": "wolfi",
+          "Layer": {
+            "Digest": "sha256:123a5ad3fcf71af659882745b555bb029ee3eccde4c1630ba1c400a4cfcb2434",
+            "DiffID": "sha256:65b53d266ad68276a165e602d3dfc9f27f15db6153ee4431994f15efa2a21bf4"
+          },
+          "Digest": "sha1:e5ca6798ce76096761f85a12726b79016833bcf3",
+          "InstalledFiles": [
+            "usr/bin/openfga",
+            "var/lib/db/sbom/openfga-1.21.0-r0.spdx.json"
+          ],
+          "AnalyzedBy": "apk"
+        },
+        {
+          "ID": "wolfi-baselayout@20230201-r30",
+          "Name": "wolfi-baselayout",
+          "Identifier": {
+            "PURL": "pkg:apk/wolfi/wolfi-baselayout@20230201-r30?arch=x86_64\u0026distro=20230201",
+            "UID": "a3228ab8374783f1"
+          },
+          "Version": "20230201-r30",
+          "Arch": "x86_64",
+          "SrcName": "wolfi-baselayout",
+          "SrcVersion": "20230201-r30",
+          "Licenses": [
+            "MIT"
+          ],
+          "Maintainer": "wolfi",
+          "DependsOn": [
+            "ca-certificates-bundle@20260909-r2"
+          ],
+          "Layer": {
+            "Digest": "sha256:123a5ad3fcf71af659882745b555bb029ee3eccde4c1630ba1c400a4cfcb2434",
+            "DiffID": "sha256:65b53d266ad68276a165e602d3dfc9f27f15db6153ee4431994f15efa2a21bf4"
+          },
+          "Digest": "sha1:ab2155d0d6404009da1e8185851c14425ce8402d",
+          "InstalledFiles": [
+            "bin",
+            "lib",
+            "lib64",
+            "sbin",
+            "etc/group",
+            "etc/host.conf",
+            "etc/hosts",
+            "etc/mtab",
+            "etc/nsswitch.conf",
+            "etc/os-release",
+            "etc/passwd",
+            "etc/profile",
+            "etc/protocols",
+            "etc/services",
+            "etc/shadow",
+            "etc/shells",
+            "etc/profile.d/locale.sh",
+            "etc/secfixes.d/wolfi",
+            "usr/lib64",
+            "usr/sbin",
+            "usr/tmp",
+            "usr/local/lib64",
+            "var/lock",
+            "var/run",
+            "var/lib/db/sbom/wolfi-baselayout-20230201-r30.spdx.json",
+            "var/spool/mail"
+          ],
+          "AnalyzedBy": "apk"
+        }
+      ]
+    }
+  ]
+}
