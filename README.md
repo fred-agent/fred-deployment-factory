@@ -94,7 +94,7 @@ Start with the guide that matches what you're trying to do:
 
 | I want to… | Guide |
 | --- | --- |
-| 🖥️ Run Fred's services locally, **and bootstrap a working platform** (Docker Compose) | [`docs/LOCAL-DEVELOPMENT.md`](docs/LOCAL-DEVELOPMENT.md) — fast path: `make setup-env` + `make run` + `make bootstrap-local` (see the callout above); manual steps: "Full bootstrap walkthrough" |
+| 🖥️ Run Fred's services locally, **and bootstrap a working platform** (Docker Compose) | [`docs/LOCAL-DEVELOPMENT.md`](docs/LOCAL-DEVELOPMENT.md) — fast path, in `fred`: `make setup-env` + `make run` + `make bootstrap-local` in `apps/control-plane-backend` (see the callout above); manual steps: "Full bootstrap walkthrough" |
 | ☸️ Run the whole stack in a local Kubernetes cluster (k3d) | [`docs/LOCAL-DEVELOPMENT.md` → "k3d: the full stack in Kubernetes"](docs/LOCAL-DEVELOPMENT.md#k3d-the-full-stack-in-kubernetes) |
 | 🧪 Load local test data — demo persona-per-role, or 3000-user/100-team OpenFGA bench | [`local-testing/README.md`](local-testing/README.md) |
 | 🔐 Run the auth / team-isolation validation (release gate) | now lives in the [`fred`](https://github.com/ThalesGroup/fred) monorepo's own `validation/README.md` — no longer part of this repo |
@@ -104,9 +104,9 @@ Start with the guide that matches what you're trying to do:
 
 ## For contributors
 
-[`CLAUDE.md`](CLAUDE.md): what the repository holds, the model (charts stay with their
-product, each instance's values here, one Foundation Secret) and the working rules — for
-contributors and AI assistants alike.
+[`CLAUDE.md`](CLAUDE.md): what the repository holds, the model (each application's chart,
+k3d values and identities stay in its own repository, one Foundation Secret) and the
+working rules — for contributors and AI assistants alike.
 
 **Related links:** Fred website <https://site.fredlab.dev> · Fred repository
 <https://github.com/ThalesGroup/fred>
