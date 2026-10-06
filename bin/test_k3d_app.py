@@ -49,8 +49,11 @@ class K3dAppTests(unittest.TestCase):
         self.root = Path(self.temp.name)
         self.factory = self.root / "factory checkout"
         (self.factory / "bin").mkdir(parents=True)
-        for name in ("k3d-app.sh", "k3d-helm-recover.sh"):
+        for name in ("k3d-app.sh", "k3d-helm-recover.sh", "k3d-identities"):
             shutil.copy(ROOT / "bin" / name, self.factory / "bin" / name)
+        realm = self.factory / "k3d/files/keycloak"
+        realm.mkdir(parents=True)
+        shutil.copy(ROOT / "k3d/files/keycloak/app-realm.json.template", realm)
         prefetch = self.factory / "bin/k3d-prefetch-images.sh"
         prefetch.write_text('#!/bin/bash\nprintf \'["import", "%s"]\\n\' "$2" >> "$CALLS"\n')
         prefetch.chmod(0o755)
@@ -159,6 +162,26 @@ class K3dAppTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("owns volumes", result.stderr)
         self.assertFalse(any("uninstall" in c or "sync" in c for c in calls))
+
+    def test_refused_identities_stop_before_any_command(self) -> None:
+        (self.app / "identities.yaml").write_text(
+            "clients:\n  - id: app\n    secret: APP_SECRET\n    grants: [realm-management/realm-admin]\n"
+        )
+        for mode in ("validate", "deploy"):
+            with self.subTest(mode=mode):
+                result, calls = self.run_app(mode)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("platform client", result.stderr)
+                self.assertIn("realm-management/realm-admin refused", result.stderr)
+                # At most the read-only check that fred-secrets exists.
+                self.assertTrue(all(c[0] == "kubectl" and "get" in c for c in calls), calls)
+
+    def test_valid_identities_pass_the_check(self) -> None:
+        (self.app / "identities.yaml").write_text(
+            "clients:\n  - id: my-worker\n    secret: MY_WORKER_SECRET\n    grants: [app/service_agent]\n"
+        )
+        result, _ = self.run_app("validate")
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_uninstall_refuses_a_release_owning_volumes(self) -> None:
         result, calls = self.run_app("uninstall")

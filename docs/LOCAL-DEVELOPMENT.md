@@ -431,6 +431,7 @@ They are the application's whole contract with this instance; nothing about it l
 | --- | --- | --- |
 | `helmfile.yaml.gotmpl` | yes | Its releases: its charts, its k3d values, then `K3D_IMAGE_VALUES` when set. Ordinary Helmfile: no hooks, no `exec` |
 | `values.yaml` | by convention | Its k3d values, every block labelled `address`, `secret`, `posture`, `choice`, `models` or `sizing` |
+| `identities.yaml` | no | Its service clients in Keycloak, the `fred-secrets` key of each one's secret, and the roles granted (below) |
 | `build` | no | Builds its images; writes `$K3D_APP_OUT/images.txt` (one reference per line, tagged by content) and `$K3D_APP_OUT/images.yaml` (the Helm values selecting them) |
 | `prepare` | no | Runs before the sync (Fred: the model key into `fred-secrets`; the evaluator: checks Fred runs) |
 | `finish` | no | Runs after the sync (Fred: its Grafana dashboards, how to log in) |
@@ -440,9 +441,9 @@ They are the application's whole contract with this instance; nothing about it l
 `K3D_HOST_PORT_GRAFANA`. A cluster call targets `--context "$KUBE_CONTEXT"`, never the
 current context.
 
-`make k3d-app` (`bin/k3d-app.sh`) renders first (a values mistake costs seconds, not a
-build), runs `build`, renders again with the new images, copies them into every node,
-runs `prepare`, recovers each release Helm would refuse (`bin/k3d-helm-recover.sh`),
+`make k3d-app` (`bin/k3d-app.sh`) checks and renders first (a mistake costs seconds, not
+a build), runs `build`, renders again with the new images, copies them into every node,
+provisions the identities, runs `prepare`, recovers each release Helm would refuse (`bin/k3d-helm-recover.sh`),
 syncs with `--wait`, then runs `finish`. The factory passes the kube context and the
 namespace (`K3D_NAMESPACE`, default `fred`); the current kubectl context is left unchanged.
 Build logs and image values stay in this repository's ignored `.cache/k3d-apps/`. Helm's
@@ -453,10 +454,33 @@ What an application can rely on, the **platform contract**: the namespace `fred`
 infrastructure services by name (`keycloak:8080` realm `app`, `postgres:5432`,
 `opensearch:9200`, `openfga:9080`, `temporal:7233`, `seaweedfs:8333`); and the credentials
 of `fred-secrets` (`k3d/templates/secret.yaml`), read by `secretKeyRef`, never copied into
-a values file. An application's own Keycloak client is provisioned by this repository
-(`k3d/files/scripts/keycloak-post-install-k8s.sh`, and `docker/keycloak/keycloak-post-install.sh`
-for Compose). Fred learns about an application through its own k3d values
+a values file. Fred learns about an application through its own k3d values
 (`application_sources`, `FRONTEND_APPLICATIONS_JSON`).
+
+**Identities.** The application says what it needs; this repository decides how:
+
+```yaml
+# deploy/k3d/identities.yaml
+clients:
+  - id: fred-evaluation-worker                 # a confidential client with a service account
+    secret: KEYCLOAK_EVAL_WORKER_CLIENT_SECRET # its key in fred-secrets
+    grants: [app/service_agent]                # <client>/<role> for its service account
+```
+
+`bin/k3d-identities` generates the secret once into `fred-secrets` when the key is absent
+(and never rewrites it), creates or fixes the client in the realm `app` with that secret,
+and adds each grant. It never deletes. The application's values read the secret by
+`secretKeyRef`; nothing in the application holds Keycloak's admin. Refused: a platform
+client id (those of `k3d/files/keycloak/app-realm.json.template`, and `fred-delegation`)
+and any `realm-management` role beyond `query-users`, `view-users`, `manage-users`.
+`fred-secrets` keeps every key its template does not manage, so `make k3d-up` never drops
+an application's secret. The platform's own identities (the realm, the `app` client and its
+roles, Fred's backend clients) stay in `k3d/files/scripts/keycloak-post-install-k8s.sh`,
+which shares its Keycloak functions with `bin/k3d-identities` (`keycloak-lib.sh`).
+
+Docker Compose does not read these files: it is the fast loop to debug an app, and
+`docker/keycloak/keycloak-post-install.sh` gives the apps fixed identities with local
+default secrets.
 
 Once built, the standard Helmfile commands work on their own:
 

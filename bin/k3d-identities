@@ -1,0 +1,115 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+# Give an application the service identities its deploy/k3d/identities.yaml
+# declares, on the k3d instance's Keycloak.
+#
+#   bin/k3d-identities [--check] <identities.yaml>     (run by bin/k3d-app.sh)
+#
+# The application says what it needs; this script decides how:
+#
+#   clients:
+#     - id: fred-evaluation-worker                 # a confidential client with a service account
+#       secret: KEYCLOAK_EVAL_WORKER_CLIENT_SECRET # its key in fred-secrets
+#       grants: [app/service_agent]                # <client>/<role> for its service account
+#
+# For each client: the secret is generated once into fred-secrets when the key
+# is absent, and never rewritten; the client is created or fixed in the realm
+# `app` with that secret; each grant is added. Nothing is ever deleted. The
+# application reads the secret by secretKeyRef; it never sees Keycloak's admin.
+#
+# Refused: an id the platform owns (a client of k3d/files/keycloak/app-realm.json.template,
+# or fred-delegation), and a realm-management role beyond the user-scoped ones.
+#
+# --check validates the file only: no cluster call.
+# Environment: KUBE_CONTEXT, K3D_NAMESPACE, K3D_HOST_PORT_KEYCLOAK (default 8080).
+
+here="$(cd "$(dirname "$0")/.." && pwd)"
+check=false
+[[ "${1:-}" == --check ]] && { check=true; shift; }
+file="${1:?usage: $0 [--check] <identities.yaml>}"
+
+# One line per client: "<id> <secret key> <grant>...", or a refusal on stderr.
+declarations="$(python3 - "$file" "$here/k3d/files/keycloak/app-realm.json.template" <<'EOF'
+import json, re, sys
+import yaml
+
+path, realm = sys.argv[1], sys.argv[2]
+reserved = {c["clientId"] for c in json.load(open(realm))["clients"]} | {"fred-delegation"}
+user_scoped = {"query-users", "view-users", "manage-users"}
+errors = []
+try:
+    document = yaml.safe_load(open(path)) or {}
+except yaml.YAMLError as error:
+    sys.exit(f"{path}: not YAML: {error}")
+if not isinstance(document, dict) or set(document) - {"clients"} or not isinstance(document.get("clients"), list):
+    sys.exit(f"{path}: expected one key, clients: a list")
+seen = set()
+for i, client in enumerate(document["clients"]):
+    where = f"{path}: clients[{i}]"
+    if not isinstance(client, dict) or set(client) - {"id", "secret", "grants"}:
+        errors.append(f"{where}: expected id, secret and grants only"); continue
+    cid, secret, grants = client.get("id"), client.get("secret"), client.get("grants", [])
+    if not isinstance(cid, str) or not re.fullmatch(r"[a-z0-9][a-z0-9._-]*", cid):
+        errors.append(f"{where}: id must be a lowercase client id"); continue
+    if cid in reserved:
+        errors.append(f"{where}: '{cid}' is a platform client, not the application's")
+    if cid in seen:
+        errors.append(f"{where}: '{cid}' declared twice")
+    seen.add(cid)
+    if not isinstance(secret, str) or not re.fullmatch(r"[A-Z][A-Z0-9_]*", secret):
+        errors.append(f"{where}: secret must be an UPPER_SNAKE key of fred-secrets")
+    if not isinstance(grants, list):
+        errors.append(f"{where}: grants must be a list"); continue
+    for grant in grants:
+        target, _, role = str(grant).partition("/")
+        if not target or not role:
+            errors.append(f"{where}: grant '{grant}' must be <client>/<role>")
+        elif target == "realm-management" and role not in user_scoped:
+            errors.append(f"{where}: realm-management/{role} refused; only {', '.join(sorted(user_scoped))}")
+    if not errors:
+        print(cid, secret, *grants)
+if errors:
+    sys.exit("\n".join(errors))
+EOF
+)" || exit 1
+$check && exit 0
+[[ -n "$declarations" ]] || exit 0
+
+: "${KUBE_CONTEXT:?KUBE_CONTEXT is required}"
+ns="${K3D_NAMESPACE:-fred}"
+kubectl() { command kubectl --context "$KUBE_CONTEXT" "$@"; }
+secret_value() {
+  kubectl get secret fred-secrets -n "$ns" -o json | jq -r --arg k "$1" '.data[$k] // empty | @base64d'
+}
+
+KC_LOG_PREFIX=k3d-identities
+# shellcheck source=../k3d/files/scripts/keycloak-lib.sh
+source "$here/k3d/files/scripts/keycloak-lib.sh"
+require_cmd jq
+require_cmd curl
+KEYCLOAK_SERVER_URL="http://localhost:${K3D_HOST_PORT_KEYCLOAK:-8080}"
+KEYCLOAK_REALM=app
+KC_BOOTSTRAP_ADMIN_USERNAME="$(secret_value KC_BOOTSTRAP_ADMIN_USERNAME)"
+KC_BOOTSTRAP_ADMIN_PASSWORD="$(secret_value KC_BOOTSTRAP_ADMIN_PASSWORD)"
+wait_for_keycloak 30 || die "Keycloak does not answer at $KEYCLOAK_SERVER_URL"
+KEYCLOAK_ADMIN_HTTP_TOKEN="$(kc_http_admin_token)"
+
+umask 077
+patch="$(mktemp)"
+trap 'rm -f "$patch"' EXIT
+while read -r id key grants; do
+  secret="$(secret_value "$key")"
+  if [[ -z "$secret" ]]; then
+    secret="$(head -c 32 /dev/urandom | base64 -w0 | tr -dc 'A-Za-z0-9' | head -c 32)"
+    jq -n --arg k "$key" --arg v "$(printf '%s' "$secret" | base64 -w0)" '{data: {($k): $v}}' >"$patch"
+    kubectl patch secret fred-secrets -n "$ns" --type merge --patch-file "$patch" >/dev/null
+    log "$key generated in fred-secrets"
+  fi
+  ensure_service_client_confidential "$id" "$secret" >/dev/null
+  account="$(wait_for_service_account_username "$id")"
+  for grant in $grants; do
+    ensure_user_client_role "$account" "${grant%%/*}" "${grant#*/}"
+  done
+  log "$id: ready (${grants:-no grant})"
+done <<<"$declarations"

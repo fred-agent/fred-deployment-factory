@@ -8,7 +8,8 @@ repository says how a local instance runs, in two ways:
   deployed with its official chart and the same posture as production, its applications
   (the evaluation application), and the logs, events and metrics to find what goes wrong.
 - **Docker Compose** — the backing services (Keycloak, Postgres, OpenFGA, OpenSearch,
-  Temporal, …) on the host, with the Fred apps run from a `fred` checkout.
+  Temporal, …) on the host, with the Fred apps run from their checkouts: the fast loop to
+  debug an app.
 
 Both keep the same split: an **infrastructure** layer (the stateful services) that changes
 rarely, and the **applications** you redeploy often.
@@ -35,6 +36,7 @@ grep -qw keycloak /etc/hosts || echo "127.0.0.1 keycloak" | sudo tee -a /etc/hos
 make k3d-up                                      # the infrastructure and the observability
 make k3d-app DIR=../fred                         # build and deploy Fred; rerun after any change
 make k3d-app DIR=../fred-agent-evaluator         # optional: the evaluation application
+make k3d-app DIR=../fred-samples/knowledge-bases/webdav   # optional: a WebDAV knowledge base
 make k3d-health                                  # what needs attention, on one screen
 ```
 

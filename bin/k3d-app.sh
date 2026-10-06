@@ -10,11 +10,12 @@ set -Eeuo pipefail
 # contract with this instance (docs/LOCAL-DEVELOPMENT.md → "The k3d application
 # contract"):
 #   helmfile.yaml.gotmpl  its releases: its charts and its k3d values, ordinary Helmfile
+#   identities.yaml       optional: its service identities in Keycloak (bin/k3d-identities)
 #   build                 optional: builds its images, writes $K3D_APP_OUT/images.txt
 #                         (one reference per line) and $K3D_APP_OUT/images.yaml (Helm values)
 #   prepare, finish       optional: run before and after its releases are synced
-# This script owns the cluster side: the context, the image import, release
-# recovery and the sync. It never changes the current kubectl context.
+# This script owns the cluster side: the context, the identities, the image
+# import, release recovery and the sync. It never changes the current kubectl context.
 #
 # Environment (defaults in the Makefile): DIR; VALUES, extra values files applied
 # last to every release (space-separated); K3D_CLUSTER, K3D_NAMESPACE, HELM_TIMEOUT,
@@ -87,8 +88,14 @@ releases() {
     '.[] | select(.enabled) | "\(.name) \(if .namespace == "" then $ns else .namespace end)"'
 }
 
+identities() {
+  [[ -f "$app/identities.yaml" ]] || return 0
+  "$here/bin/k3d-identities" "$@" "$app/identities.yaml" || fail "identities.yaml refused"
+}
+
 # ── Validate: no build, no cluster change ───────────────────────────────────
 if [[ "$mode" == validate ]]; then
+  identities --check
   render
   if [[ "$(cat "$K3D_IMAGE_VALUES")" == '{}' ]]; then
     ok "Lint and render passed, with the charts' default images (no build yet)"
@@ -116,7 +123,8 @@ if [[ "$mode" == uninstall ]]; then
 fi
 
 # ── Deploy ───────────────────────────────────────────────────────────────────
-# Render before building: a values mistake costs seconds, not a build.
+# Check and render before building: a mistake costs seconds, not a build.
+identities --check
 render
 if [[ -e "$app/build" ]]; then
   rm -f "$K3D_APP_OUT/images.txt" "$K3D_APP_OUT/images.yaml"
@@ -127,6 +135,10 @@ if [[ -e "$app/build" ]]; then
   mapfile -t images < <(grep -v '^[[:space:]]*$' "$K3D_APP_OUT/images.txt")
   step "Copy the images into the cluster"
   "$here/bin/k3d-prefetch-images.sh" "$K3D_CLUSTER" "${images[@]}"
+fi
+if [[ -f "$app/identities.yaml" ]]; then
+  step "Provision the service identities (identities.yaml)"
+  identities
 fi
 hook prepare
 # A release left pending (Ctrl+C) or a first install that failed: Helm refuses

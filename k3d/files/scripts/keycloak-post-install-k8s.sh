@@ -5,22 +5,9 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 COMPOSE_DIR="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 ENV_FILE="${COMPOSE_DIR}/.env"
 
-log() {
-  printf '[keycloak-post-install] %s\n' "$*"
-}
-
-warn() {
-  printf '[keycloak-post-install] WARN: %s\n' "$*" >&2
-}
-
-die() {
-  printf '[keycloak-post-install] ERROR: %s\n' "$*" >&2
-  exit 1
-}
-
-require_cmd() {
-  command -v "$1" >/dev/null 2>&1 || die "missing required command: $1"
-}
+KC_LOG_PREFIX=keycloak-post-install
+# shellcheck source=keycloak-lib.sh
+source "${SCRIPT_DIR}/keycloak-lib.sh"
 
 read_env_file_var() {
   local key="$1"
@@ -46,23 +33,6 @@ is_truthy() {
     true|1|yes|on|always) return 0 ;;
     *) return 1 ;;
   esac
-}
-
-wait_for_keycloak() {
-  local attempts="${1:-120}"
-  local i=1
-  local http_code=""
-
-  while (( i <= attempts )); do
-    http_code="$(curl -sS -o /dev/null -w '%{http_code}' "${KEYCLOAK_SERVER_URL}/realms/master/.well-known/openid-configuration" || true)"
-    if [[ "$http_code" == "200" ]]; then
-      return 0
-    fi
-    sleep 2
-    ((i++))
-  done
-
-  return 1
 }
 
 require_cmd jq
@@ -96,37 +66,6 @@ KEYCLOAK_KF_ENABLE_MANAGE_USERS="${KEYCLOAK_KF_ENABLE_MANAGE_USERS:-true}"
 KEYCLOAK_FORCE_RELOGIN="${KEYCLOAK_FORCE_RELOGIN:-$(read_env_file_var KEYCLOAK_FORCE_RELOGIN)}"
 KEYCLOAK_FORCE_RELOGIN="${KEYCLOAK_FORCE_RELOGIN:-auto}"
 
-CHANGED=0
-KEYCLOAK_ADMIN_HTTP_TOKEN=""
-
-mark_changed() {
-  CHANGED=1
-}
-
-client_uuid() {
-  local client_id="$1"
-  local encoded_client_id
-  encoded_client_id="$(uri_encode "$client_id")"
-  kc_http_get "/clients?clientId=${encoded_client_id}" | jq -r '.[0].id // empty'
-}
-
-ensure_client_exists() {
-  local client_id="$1"
-  local uuid
-  local payload
-
-  uuid="$(client_uuid "$client_id")"
-  if [[ -z "$uuid" ]]; then
-    payload="$(jq -nc --arg client_id "$client_id" '{clientId: $client_id, enabled: true, protocol: "openid-connect"}')"
-    kc_http_post_json "/clients" "$payload"
-    mark_changed
-    uuid="$(client_uuid "$client_id")"
-  fi
-
-  [[ -n "$uuid" ]] || die "cannot ensure client '${client_id}'"
-  printf '%s' "$uuid"
-}
-
 ensure_app_client() {
   local uuid
   local client_json
@@ -158,105 +97,6 @@ ensure_app_client() {
   printf '%s' "$uuid"
 }
 
-ensure_service_client_confidential() {
-  local client_id="$1"
-  local desired_secret="$2"
-  local uuid
-  local client_json
-  local current_secret
-  local payload
-
-  uuid="$(ensure_client_exists "$client_id")"
-  client_json="$(kc_http_get "/clients/${uuid}")"
-
-  if ! jq -e '.enabled == true and .publicClient == false and .serviceAccountsEnabled == true and .clientAuthenticatorType == "client-secret"' >/dev/null <<<"$client_json"; then
-    payload="$(jq -c '.enabled = true | .publicClient = false | .serviceAccountsEnabled = true | .clientAuthenticatorType = "client-secret"' <<<"$client_json")"
-    kc_http_put_json "/clients/${uuid}" "$payload"
-    mark_changed
-    client_json="$(kc_http_get "/clients/${uuid}")"
-  fi
-
-  current_secret="$(kc_http_get "/clients/${uuid}/client-secret" | jq -r '.value // empty')"
-  if [[ "$current_secret" != "$desired_secret" ]]; then
-    # The /client-secret POST endpoint always REGENERATES a random value - it
-    # cannot be told to set a specific secret. Setting an explicit value
-    # requires PUTting the client representation with `secret` set directly
-    # (same effect as kcadm's `update clients/{id} -s secret=...`).
-    payload="$(jq -c --arg secret "$desired_secret" '.secret = $secret' <<<"$client_json")"
-    kc_http_put_json "/clients/${uuid}" "$payload"
-    mark_changed
-  fi
-
-  current_secret="$(kc_http_get "/clients/${uuid}/client-secret" | jq -r '.value // empty')"
-  [[ "$current_secret" == "$desired_secret" ]] || die "failed to apply secret for client '${client_id}'"
-
-  printf '%s' "$uuid"
-}
-
-ensure_client_role() {
-  local client_id="$1"
-  local role_name="$2"
-  local description="$3"
-  local uuid
-  local role_exists
-  local payload
-
-  uuid="$(client_uuid "$client_id")"
-  [[ -n "$uuid" ]] || die "cannot resolve client '${client_id}' to create role '${role_name}'"
-
-  role_exists="$(kc_http_get "/clients/${uuid}/roles?first=0&max=500" | jq -r --arg role_name "$role_name" '.[] | select(.name == $role_name) | .name' | head -n1)"
-  if [[ "$role_exists" == "$role_name" ]]; then
-    return
-  fi
-
-  payload="$(jq -nc --arg name "$role_name" --arg description "$description" '{name: $name, description: $description}')"
-  kc_http_post_json "/clients/${uuid}/roles" "$payload"
-  mark_changed
-}
-
-wait_for_service_account_username() {
-  local client_id="$1"
-  local username="service-account-${client_id}"
-  local encoded_username
-  local attempts=30
-  local i=1
-
-  encoded_username="$(uri_encode "$username")"
-  while (( i <= attempts )); do
-    if kc_http_get "/users?username=${encoded_username}&exact=true" | jq -e 'length > 0' >/dev/null; then
-      printf '%s' "$username"
-      return 0
-    fi
-    sleep 1
-    ((i++))
-  done
-
-  die "service account user '${username}' not found after enabling service account for '${client_id}'"
-}
-
-ensure_user_client_role() {
-  local username="$1"
-  local client_id="$2"
-  local role_name="$3"
-  local user_id
-  local target_client_uuid
-  local role_json
-
-  user_id="$(keycloak_user_json_by_username "$username" | jq -r '.id // empty')"
-  [[ -n "$user_id" ]] || die "cannot resolve user '${username}' to grant '${client_id}/${role_name}'"
-  target_client_uuid="$(client_uuid "$client_id")"
-  [[ -n "$target_client_uuid" ]] || die "cannot resolve client '${client_id}' to grant role '${role_name}'"
-
-  if kc_http_get "/users/${user_id}/role-mappings/clients/${target_client_uuid}" \
-    | jq -e --arg role_name "$role_name" '.[] | select(.name == $role_name)' >/dev/null; then
-    return
-  fi
-
-  role_json="$(kc_http_get "/clients/${target_client_uuid}/roles/$(uri_encode "$role_name")")"
-  kc_http_post_json "/users/${user_id}/role-mappings/clients/${target_client_uuid}" "[${role_json}]"
-  mark_changed
-}
-
 # Receivers trust a workload that holds this client's caller role. The client issues
 # no tokens; Keycloak adds it to the audience of every holder's tokens.
 ensure_delegation_client() {
@@ -277,90 +117,6 @@ ensure_delegation_client() {
     mark_changed
   fi
   ensure_client_role fred-delegation delegation_caller "workload that may speak for a person"
-}
-
-uri_encode() {
-  local raw="$1"
-  jq -rn --arg v "$raw" '$v|@uri'
-}
-
-kc_http_admin_token() {
-  local response
-  local token
-
-  response="$(
-    curl -fsS -X POST "${KEYCLOAK_SERVER_URL}/realms/master/protocol/openid-connect/token" \
-      -H "Content-Type: application/x-www-form-urlencoded" \
-      -d "grant_type=password" \
-      -d "client_id=admin-cli" \
-      -d "username=${KC_BOOTSTRAP_ADMIN_USERNAME}" \
-      -d "password=${KC_BOOTSTRAP_ADMIN_PASSWORD}"
-  )" || die "failed to authenticate to Keycloak admin API (HTTP)"
-
-  token="$(jq -r '.access_token // empty' <<<"$response")"
-  [[ -n "$token" ]] || die "cannot get Keycloak admin access token (HTTP)"
-  printf '%s' "$token"
-}
-
-kc_http_request() {
-  local method="$1"
-  local path="$2"
-  local payload="${3:-}"
-  local url="${KEYCLOAK_SERVER_URL}/admin/realms/${KEYCLOAK_REALM}${path}"
-  local response
-  local body
-  local status
-  local attempt=1
-  local max_attempts=2
-
-  while (( attempt <= max_attempts )); do
-    if [[ -n "$payload" ]]; then
-      response="$(
-        curl -sS -w $'\n%{http_code}' -X "$method" "$url" \
-          -H "Authorization: Bearer ${KEYCLOAK_ADMIN_HTTP_TOKEN}" \
-          -H "Content-Type: application/json" \
-          -d "$payload"
-      )"
-    else
-      response="$(
-        curl -sS -w $'\n%{http_code}' -X "$method" "$url" \
-          -H "Authorization: Bearer ${KEYCLOAK_ADMIN_HTTP_TOKEN}"
-      )"
-    fi
-
-    body="${response%$'\n'*}"
-    status="${response##*$'\n'}"
-
-    if [[ "$status" == "401" && "$attempt" -lt "$max_attempts" ]]; then
-      warn "received 401 on ${method} ${path}; refreshing admin token and retrying"
-      KEYCLOAK_ADMIN_HTTP_TOKEN="$(kc_http_admin_token)"
-      ((attempt++))
-      continue
-    fi
-    if [[ "$status" -lt 200 || "$status" -ge 300 ]]; then
-      die "Keycloak ${method} ${path} failed (${status}): ${body}"
-    fi
-
-    printf '%s' "$body"
-    return 0
-  done
-
-  die "Keycloak ${method} ${path} failed after retry"
-}
-
-kc_http_get() { kc_http_request GET "$1"; }
-kc_http_post_json() { kc_http_request POST "$1" "$2" >/dev/null; }
-kc_http_put_json() { kc_http_request PUT "$1" "$2" >/dev/null; }
-kc_http_put_empty() { kc_http_request PUT "$1" >/dev/null; }
-kc_http_delete_empty() { kc_http_request DELETE "$1" >/dev/null; }
-kc_http_delete_json() { kc_http_request DELETE "$1" "$2" >/dev/null; }
-kc_http_post_empty() { kc_http_request POST "$1" >/dev/null; }
-
-keycloak_user_json_by_username() {
-  local username="$1"
-  local encoded_username
-  encoded_username="$(uri_encode "$username")"
-  kc_http_get "/users?username=${encoded_username}&exact=true" | jq -c '.[0] // empty'
 }
 
 should_force_relogin() {
@@ -394,10 +150,8 @@ app_client_uuid="$(client_uuid app)"
 
 ensure_client_role app service_agent "application service agent role"
 
-# Evaluation worker: its own least-privilege service identity (RFC EVAL-AUTH),
-# as docker/keycloak/keycloak-post-install.sh creates it. Absent from the realm
-# import, so created here.
-eval_worker_client_uuid="$(ensure_service_client_confidential fred-evaluation-worker "$KEYCLOAK_EVAL_WORKER_CLIENT_SECRET")"
+# An application's own service identities are not here: each one declares them
+# in its deploy/k3d/identities.yaml, applied by bin/k3d-identities.
 
 # The imported realm ships with zero users (.users=[]): Keycloak still
 # auto-creates service-account-<clientId> for every confidential client with
@@ -408,7 +162,6 @@ eval_worker_client_uuid="$(ensure_service_client_confidential fred-evaluation-wo
 agentic_service_user="$(wait_for_service_account_username agentic)"
 knowledge_flow_service_user="$(wait_for_service_account_username knowledge-flow)"
 control_plane_service_user="$(wait_for_service_account_username control-plane)"
-eval_worker_service_user="$(wait_for_service_account_username fred-evaluation-worker)"
 
 # Neither agentic (fred-agents), knowledge-flow, nor control-plane call any
 # Keycloak group-admin API (a_get_groups/a_get_group_members) - confirmed
@@ -430,8 +183,6 @@ ensure_user_client_role "$control_plane_service_user" realm-management manage-us
 ensure_user_client_role "$agentic_service_user" app service_agent
 ensure_user_client_role "$knowledge_flow_service_user" app service_agent
 ensure_user_client_role "$control_plane_service_user" app service_agent
-# service_agent only, no realm-management role: least privilege by design.
-ensure_user_client_role "$eval_worker_service_user" app service_agent
 
 # fred-agents speaks for a person on every receiver.
 ensure_delegation_client
@@ -446,4 +197,4 @@ if should_force_relogin; then
   fi
 fi
 
-log "post-install completed (app=${app_client_uuid}, fred-evaluation-worker=${eval_worker_client_uuid}, changes=${CHANGED})"
+log "post-install completed (app=${app_client_uuid}, changes=${CHANGED})"

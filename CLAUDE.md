@@ -8,7 +8,8 @@ README's "Quick start" and `docs/LOCAL-DEVELOPMENT.md`.
 The **local deployment** of Fred and its applications, in two forms:
 
 - **Docker Compose** — the backing services on the host (`make docker-up`); the Fred apps run
-  from a `fred` checkout (`make run` there).
+  from a `fred` checkout (`make run` there). It is the fast loop to debug an app, not a
+  second deployment: k3d is the one that deploys as production does.
 - **k3d** — everything in a local Kubernetes cluster: the infrastructure (`make k3d-up`, chart
   `k3d/`), then each application from its own repository (`make k3d-app DIR=../fred`,
   `DIR=../fred-agent-evaluator`...), with logs, events and metrics collected (`make k3d-health`).
@@ -34,9 +35,14 @@ outside it. Do not reintroduce cloud-specific material here.
 - **Applications register with Fred like any application**: `application_sources` in the
   control-plane values and the frontend gateway's `FRONTEND_APPLICATIONS_JSON`, both in
   fred's `deploy/k3d/values.yaml`. No ad hoc wiring.
-- **Docker and k3d provision the same identities.** A Keycloak client or role added to
-  `docker/keycloak/keycloak-post-install.sh` goes into
-  `k3d/files/scripts/keycloak-post-install-k8s.sh` too, and the reverse.
+- **Identities: k3d takes them from the applications, Docker keeps its own.** On k3d, the
+  platform's identities (realm `app`, the `app` client and its roles, Fred's backend
+  clients for now) are in `k3d/files/scripts/keycloak-post-install-k8s.sh`; an application's
+  service clients are declared in its `deploy/k3d/identities.yaml` and applied by
+  `bin/k3d-identities` (which refuses platform clients and realm-admin roles). Never add an
+  application's client to the post-install script. Docker Compose is the fast debug loop:
+  `docker/keycloak/keycloak-post-install.sh` creates fixed identities for the apps run from
+  their checkouts, with local default secrets, and need not follow k3d.
 
 ## Working rules
 
