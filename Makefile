@@ -492,38 +492,26 @@ k3d-up: k3d-create ## Deploy the full stack into k3d with Helm
 	run_step "Show namespace status $(K3D_NAMESPACE)" \
 	  kubectl get pods,svc -n "$(K3D_NAMESPACE)"
 
-##@ k3d: Fred through Helmfile (local checkout only)
-FRED_DIR ?= ../fred
-FRED_RELEASE ?= fred-app
-FRED_VALUES ?= k3d-apps/fred/values.yaml
-export FRED_DIR FRED_RELEASE FRED_VALUES K3D_CLUSTER K3D_NAMESPACE
-export K3D_HOST_PORT_FRONTEND K3D_HOST_PORT_GRAFANA
+##@ k3d: applications (each one's deploy/k3d/ in its own repository, bin/k3d-app.sh)
+# DIR: a checkout with deploy/k3d/helmfile.yaml.gotmpl, or that directory itself.
+# VALUES: extra values files applied last to every release (space-separated).
+DIR ?=
+VALUES ?=
+K3D_APP_ENV = DIR="$(DIR)" VALUES="$(VALUES)" K3D_CLUSTER="$(K3D_CLUSTER)" K3D_NAMESPACE="$(K3D_NAMESPACE)" \
+	HELM_TIMEOUT="$(HELM_TIMEOUT)" K3D_HOST_PORT_FRONTEND="$(K3D_HOST_PORT_FRONTEND)" \
+	K3D_HOST_PORT_GRAFANA="$(K3D_HOST_PORT_GRAFANA)"
 
-k3d-app: ## Build local Fred images and deploy with Helmfile (FRED_DIR defaults to ../fred)
-	@bin/k3d-app-deploy.sh
+k3d-app: ## Build and deploy an application on k3d: make k3d-app DIR=../fred; rerun after any change
+	@$(K3D_APP_ENV) bin/k3d-app.sh deploy
 
-k3d-app-validate: ## Helm lint/render only; optional FRED_IMAGE_VALUES, no build or cluster mutation
-	@bin/k3d-app-deploy.sh validate
+k3d-app-validate: ## Lint and render an application's releases, no build, no cluster change: make k3d-app-validate DIR=../fred
+	@$(K3D_APP_ENV) bin/k3d-app.sh validate
 
-##@ k3d: the evaluation application (fred-agent-evaluator's chart, values in k3d-apps/fred-evaluator)
-# The fred-agent-evaluator checkout the images are built from, and whose chart is deployed.
-EVALUATOR_DIR ?= ../fred-agent-evaluator
-EVALUATOR_RELEASE ?= fred-evaluator
-EVALUATOR_CHART ?= $(EVALUATOR_DIR)/deploy/charts/fred-evaluator
-EVALUATOR_CHART_VERSION ?=
-EVALUATOR_VALUES ?= k3d-apps/fred-evaluator/values.yaml
-
-k3d-evaluator: ## Build the evaluation application from EVALUATOR_DIR (default ../fred-agent-evaluator) and deploy it next to Fred
-	@EVALUATOR_DIR="$(EVALUATOR_DIR)" EVALUATOR_RELEASE="$(EVALUATOR_RELEASE)" EVALUATOR_CHART="$(EVALUATOR_CHART)" \
-		EVALUATOR_CHART_VERSION="$(EVALUATOR_CHART_VERSION)" EVALUATOR_VALUES="$(EVALUATOR_VALUES)" \
-		K3D_CLUSTER="$(K3D_CLUSTER)" K3D_NAMESPACE="$(K3D_NAMESPACE)" HELM_TIMEOUT="$(HELM_TIMEOUT)" \
-		K3D_HOST_PORT_FRONTEND="$(K3D_HOST_PORT_FRONTEND)" bin/k3d-evaluator-deploy.sh
+k3d-app-uninstall: ## Remove an application's releases; their data stays in the infrastructure: make k3d-app-uninstall DIR=../fred
+	@$(K3D_APP_ENV) bin/k3d-app.sh uninstall
 
 k3d-health: ## What needs attention on k3d: pods, events, errors, 5xx, degraded features, targets, workflows (bin/k3d-observe)
 	@bin/k3d-observe health
-
-k3d-evaluator-uninstall: ## Remove the evaluation application; its data stays in the infrastructure
-	-helm uninstall "$(EVALUATOR_RELEASE)" -n "$(K3D_NAMESPACE)"
 
 ##@ k3d service targets
 k3d-restart: ## Restart a k3d component: make k3d-restart COMPONENT=openfga
@@ -641,7 +629,7 @@ check-pure-infrastructure: ## Offline guard: fail if a tracked artifact carries 
 	@echo "✓ no local validation/ harness wiring left in the Makefile"
 	@echo "✓ check-pure-infrastructure passed"
 
-.PHONY: help network-create env-setup keycloak-post-install postgres-up keycloak-up seaweedfs-up opensearch-up clickhouse-up langfuse-up prometheus-up grafana-up openfga-post-install openfga-up temporal-up preflight-check docker-up docker-start docker-stop docker-down all-down docker-wipe docker-destroy k3d-create k3d-up k3d-restart k3d-redeploy k3d-logs k3d-down k3d-uninstall k3d-delete k3d-wipe k3d-status k3d-app k3d-app-validate k3d-evaluator k3d-evaluator-uninstall k3d-airgap-on k3d-airgap-off k3d-airgap-status checkpoint-save checkpoint-restore docker-restart-from-checkpoint checkpoint-list checkpoint-delete check-pure-infrastructure keycloak-token-short keycloak-token-normal keycloak-token-status
+.PHONY: help network-create env-setup keycloak-post-install postgres-up keycloak-up seaweedfs-up opensearch-up clickhouse-up langfuse-up prometheus-up grafana-up openfga-post-install openfga-up temporal-up preflight-check docker-up docker-start docker-stop docker-down all-down docker-wipe docker-destroy k3d-create k3d-up k3d-restart k3d-redeploy k3d-logs k3d-down k3d-uninstall k3d-delete k3d-wipe k3d-status k3d-app k3d-app-validate k3d-app-uninstall k3d-airgap-on k3d-airgap-off k3d-airgap-status checkpoint-save checkpoint-restore docker-restart-from-checkpoint checkpoint-list checkpoint-delete check-pure-infrastructure keycloak-token-short keycloak-token-normal keycloak-token-status
 
 ##@ Optional ZITADEL identity-provider test
 ZITADEL_COMPOSE = docker compose --env-file docker/zitadel/.env -f docker/zitadel/compose.yaml -p fred-zitadel

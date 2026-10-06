@@ -101,7 +101,7 @@ you much less than two.
   `concurrent.futures.ThreadPoolExecutor` passed as a Temporal `activity_executor`, or similar) is
   exposed to this. Fix: set `MALLOC_ARENA_MAX=1` as an env var on that component (no image
   rebuild — pure deployment config). On k3d, add it to that component's `extraEnvVars` in
-  `k3d-apps/fred/values.yaml` (the GKE values carried a wired example,
+  fred's `deploy/k3d/values.yaml` (the GKE values carried a wired example,
   `knowledgeFlowWorker.mallocArenaMax`, before that deployment left this repository). Opt in
   per component only where the symptom is confirmed; don't set it blind.
 - **`live_object_census()`'s `total_bytes_shallow` (or one specific type in `top_by_count`) itself

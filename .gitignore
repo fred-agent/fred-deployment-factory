@@ -48,3 +48,4 @@ config/fredlab-keycloak-identity.local.json
 # Local ZITADEL bootstrap credentials and provisioning state.
 /docker/zitadel/.env
 /docker/zitadel/state/
+/.cache/

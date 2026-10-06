@@ -22,7 +22,7 @@ The whole platform in a local Kubernetes cluster: the infrastructure, Fred (its 
 Helm chart, with the same posture as production), the evaluation application, and the
 logs, events and metrics to find what goes wrong.
 
-**Once:** Docker, [`k3d`](https://k3d.io), `kubectl`, `helm` and [Helmfile](https://github.com/helmfile/helmfile/releases) (tested with Helm 3.21.2 and Helmfile 1.8.1); a `fred` checkout
+**Once:** Docker, [`k3d`](https://k3d.io), `kubectl`, `helm`, [Helmfile](https://github.com/helmfile/helmfile/releases) (tested with Helm 3.21.2 and Helmfile 1.8.1) and `jq`; a `fred` checkout
 where you ran `make setup-env` (it asks for your model API key); and, for the browser:
 
 ```bash
@@ -32,15 +32,14 @@ grep -qw keycloak /etc/hosts || echo "127.0.0.1 keycloak" | sudo tee -a /etc/hos
 **Then, from this repository:**
 
 ```bash
-make k3d-up                                                # the infrastructure and the observability
-make k3d-app-validate FRED_DIR=../fred                      # check values/chart without changing the cluster
-make k3d-app FRED_DIR=../fred                             # build and deploy Fred; rerun after any change
-make k3d-evaluator EVALUATOR_DIR=../fred-agent-evaluator   # optional: the evaluation application
-make k3d-health                                            # what needs attention, on one screen
+make k3d-up                                      # the infrastructure and the observability
+make k3d-app DIR=../fred                         # build and deploy Fred; rerun after any change
+make k3d-app DIR=../fred-agent-evaluator         # optional: the evaluation application
+make k3d-health                                  # what needs attention, on one screen
 ```
 
-`make k3d-app` prints a command to retrieve the **bootstrap token** locally. Open <http://localhost:8088>, create
-your account with **Register** on the login page, and paste that token where Fred asks for
+`make k3d-app DIR=../fred` ends with a command that prints the **bootstrap token**. Open
+<http://localhost:8088>, create your account with **Register** on the login page, and paste that token where Fred asks for
 it: you are the platform's `platform_admin` (once per platform). Then, in **Admin >
 Features**, turn on the capabilities, the models and the `evaluation` application.
 

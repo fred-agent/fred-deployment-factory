@@ -10,19 +10,22 @@ The **local deployment** of Fred and its applications, in two forms:
 - **Docker Compose** — the backing services on the host (`make docker-up`); the Fred apps run
   from a `fred` checkout (`make run` there).
 - **k3d** — everything in a local Kubernetes cluster: the infrastructure (`make k3d-up`, chart
-  `k3d/`), Fred (`make k3d-app`) and the evaluation application (`make k3d-evaluator`), with
-  logs, events and metrics collected (`make k3d-health`).
+  `k3d/`), then each application from its own repository (`make k3d-app DIR=../fred`,
+  `DIR=../fred-agent-evaluator`...), with logs, events and metrics collected (`make k3d-health`).
 
 The GKE/GCP (fredlab) deployment left this repository on 2026-09-30; an archive clone is kept
 outside it. Do not reintroduce cloud-specific material here.
 
 ## The model
 
-- **Charts stay with their product.** Fred's chart is `fred/deploy/charts/fred`, the evaluation
-  application's is `fred-agent-evaluator/deploy/charts/fred-evaluator`. This repository never
-  copies a chart: it holds each k3d instance's **values** (`k3d-apps/<app>/values.yaml`) and
-  the infrastructure chart (`k3d/`).
-- **An instance's values say only what the instance decides.** Every block is labelled
+- **Applications stay with their product.** Each one's chart, k3d values, image build and
+  hooks live in its repository's `deploy/k3d/` (the contract: `docs/LOCAL-DEVELOPMENT.md` →
+  "The k3d application contract"). This repository holds the infrastructure chart (`k3d/`)
+  and the generic engine (`bin/k3d-app.sh`); it never copies a chart, and names no
+  application in its code.
+- **The platform contract is what applications may rely on:** the namespace, the service
+  names and the keys of `fred-secrets`. Changing one breaks applications in other repositories.
+- **An application's k3d values say only what the instance decides.** Every block is labelled
   `address`, `secret`, `posture`, `choice`, `models` or `sizing`; everything else is the
   chart's default. A `choice` is a candidate to become a chart default, in the chart's repo.
 - **One Foundation Secret.** Every credential lives in `fred-secrets` (created by `make k3d-up`,
@@ -30,7 +33,7 @@ outside it. Do not reintroduce cloud-specific material here.
   in a values file.
 - **Applications register with Fred like any application**: `application_sources` in the
   control-plane values and the frontend gateway's `FRONTEND_APPLICATIONS_JSON`, both in
-  `k3d-apps/fred/values.yaml`. No ad hoc wiring.
+  fred's `deploy/k3d/values.yaml`. No ad hoc wiring.
 - **Docker and k3d provision the same identities.** A Keycloak client or role added to
   `docker/keycloak/keycloak-post-install.sh` goes into
   `k3d/files/scripts/keycloak-post-install-k8s.sh` too, and the reverse.

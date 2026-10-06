@@ -14,7 +14,7 @@ repository) queries them all.
 ## Preconditions
 
 `make k3d-up` ran (observability is in the base stack), and the apps were deployed with
-`make k3d-app` / `make k3d-evaluator` (their overlays open the metrics endpoints and widen
+`make k3d-app DIR=...` (their k3d values open the metrics endpoints and widen
 the console so one log line stays one record). Run everything from this repository's root.
 
 ## The sources, and what each one answers
@@ -55,7 +55,7 @@ Credentials are in the `fred-secrets` Secret; the script reads them itself.
 
 | Symptom | What the sources show | Cause |
 | --- | --- | --- |
-| Documents stay "in ingestion" | pod restarted with `OOMKilled`; Temporal activity `Started` with a stale heartbeat; CPU idle | the worker died mid-extraction; Temporal retries after the heartbeat timeout. Sizing: `k3d-apps/fred/values.yaml`, knowledge-flow-worker |
+| Documents stay "in ingestion" | pod restarted with `OOMKilled`; Temporal activity `Started` with a stale heartbeat; CPU idle | the worker died mid-extraction; Temporal retries after the heartbeat timeout. Sizing: fred's `deploy/k3d/values.yaml`, knowledge-flow-worker |
 | UI shows "in ingestion", backend says done | `kf_task_run` `succeeded`, `metadata` stages all `done` | stale UI after a backend restart; reload |
 | A button answers 503 | `health` lists a "disabled" warning at the service's startup | a capability the service could not build (e.g. the evaluator's analysis without `deepeval` in its API image) |
 
