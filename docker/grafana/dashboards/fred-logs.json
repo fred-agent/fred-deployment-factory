@@ -92,7 +92,7 @@
       "id": 1,
       "type": "logs",
       "title": "Fred logs",
-      "description": "Service names have stable colors; severity uses red for errors, yellow for warnings, green for info. Expand any line for parsed fields and the original raw_record. Use the field filter buttons to include or exclude a value.",
+      "description": "Service names have stable colors; Grafana shows severity once beside the timestamp. Expand any line for parsed fields and the original raw_record. Use the field filter buttons to include or exclude a value.",
       "datasource": {
         "type": "loki",
         "uid": "fred-logs"
@@ -110,7 +110,7 @@
             "type": "loki",
             "uid": "fred-logs"
           },
-          "expr": "{environment=\"dev\", service=~\"${service:regex}\", severity=~\"${severity:regex}\"} | json | drop __error__, __error_details__ | label_format raw_record=\"{{ __line__ }}\", level=\"{{ if .severity }}{{ lower .severity }}{{ else }}{{ lower .level }}{{ end }}\" | line_format `{{ if or .message .msg }}{{ if eq .service \"control-plane\" }}{{ printf \"\\x1b[96m\" }}{{ else if eq .service \"knowledge-flow\" }}{{ printf \"\\x1b[94m\" }}{{ else if eq .service \"fred-agents\" }}{{ printf \"\\x1b[95m\" }}{{ else if eq .service \"control-plane-worker\" }}{{ printf \"\\x1b[96m\" }}{{ else if eq .service \"knowledge-flow-worker\" }}{{ printf \"\\x1b[93m\" }}{{ else if eq .service \"frontend\" }}{{ printf \"\\x1b[92m\" }}{{ else }}{{ printf \"\\x1b[37m\" }}{{ end }}{{ printf \"%-24s\" .service }}{{ printf \"\\x1b[0m\" }} {{ if or (eq .level \"error\") (eq .level \"critical\") (eq .level \"fatal\") }}{{ printf \"\\x1b[91m\" }}{{ else if or (eq .level \"warning\") (eq .level \"warn\") }}{{ printf \"\\x1b[93m\" }}{{ else if eq .level \"info\" }}{{ printf \"\\x1b[92m\" }}{{ else if eq .level \"debug\" }}{{ printf \"\\x1b[96m\" }}{{ else }}{{ printf \"\\x1b[37m\" }}{{ end }}{{ if .severity }}{{ printf \"%-8s\" .severity }}{{ else }}{{ printf \"%-8s\" (upper .level) }}{{ end }}{{ printf \"\\x1b[0m\" }} {{ if .message }}{{ .message }}{{ else }}{{ .msg }}{{ end }}{{ else }}{{ __line__ }}{{ end }}`",
+          "expr": "{environment=\"dev\", service=~\"${service:regex}\", severity=~\"${severity:regex}\"} | json | drop __error__, __error_details__, service_extracted, service_role_extracted, severity_extracted | label_format raw_record=\"{{ __line__ }}\", level=\"{{ if .severity }}{{ lower .severity }}{{ else }}{{ lower .level }}{{ end }}\" | line_format `{{ if or .message .msg }}{{ if eq .service \"control-plane\" }}{{ printf \"\\x1b[96m\" }}{{ else if eq .service \"knowledge-flow\" }}{{ printf \"\\x1b[94m\" }}{{ else if eq .service \"fred-agents\" }}{{ printf \"\\x1b[95m\" }}{{ else if eq .service \"control-plane-worker\" }}{{ printf \"\\x1b[96m\" }}{{ else if eq .service \"knowledge-flow-worker\" }}{{ printf \"\\x1b[93m\" }}{{ else if eq .service \"frontend\" }}{{ printf \"\\x1b[92m\" }}{{ else }}{{ printf \"\\x1b[37m\" }}{{ end }}{{ printf \"%-24s\" .service }}{{ printf \"\\x1b[0m\" }} {{ if .message }}{{ .message }}{{ else }}{{ .msg }}{{ end }}{{ else }}{{ __line__ }}{{ end }}`",
           "queryType": "range",
           "maxLines": 1000
         }
