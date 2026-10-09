@@ -327,9 +327,12 @@ the include/exclude buttons to add **Field filters**; clear them to reset the vi
 The dashboard keeps raw records in Loki unchanged and formats only query results.
 Native text lines remain visible when All is selected. Severity appears once, in
 Grafana's native level column beside the timestamp. In expanded details, `severity`
-is the collected severity and `level` is its lowercase Grafana display alias.
-The query hides duplicate `service_extracted`, `service_role_extracted` and
-`severity_extracted` fields created when JSON keys match collected labels.
+is the collected severity. Loki adds `detected_level` as structured metadata during
+ingestion (`discover_log_levels` defaults to true); Grafana uses it directly for
+the level column and colors. The query hides redundant `level` fields and duplicate
+`service_extracted`, `service_role_extracted` and `severity_extracted` fields
+created when JSON keys match collected labels. Original fields remain available
+in `raw_record`.
 Refresh is manual by default so an expanded log stays open; the refresh menu
 can enable automatic updates.
 
