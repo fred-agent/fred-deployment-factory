@@ -90,7 +90,9 @@ def search_logs(query, since, limit, app=None):
     if query:
         must.append({"query_string": {"query": query, "default_field": "log"}})
     if app:
-        must.append({"prefix": {"kubernetes.pod_name": app}})
+        # The keyword sub-field: the text field is tokenized on hyphens, so a
+        # prefix like "dt-agents" never matches it.
+        must.append({"prefix": {"kubernetes.pod_name.keyword": app}})
     body = {"size": limit, "sort": [{"@timestamp": "desc"}], "query": {"bool": {"must": must}}}
     hits = opensearch("/k3d-logs-*/_search", body)["hits"]["hits"]
     return [hit["_source"] for hit in reversed(hits)]
