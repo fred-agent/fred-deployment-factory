@@ -147,6 +147,11 @@ if [[ -e "$app/build" ]]; then
     cat "$K3D_APP_OUT/images.txt" >>"$K3D_APP_OUT/images.superseded.txt"
   fi
   rm -f "$K3D_APP_OUT/images.txt" "$K3D_APP_OUT/images.yaml"
+  # Images are tagged by their Docker image ID. With the containerd image store
+  # that ID covers the provenance attestation BuildKit adds by default, which is
+  # new on every build: an unchanged image would get a new tag, be copied again
+  # and restart its pods. A local image is never published; it needs none.
+  export BUILDX_NO_DEFAULT_ATTESTATIONS=1
   hook build
   [[ -s "$K3D_APP_OUT/images.txt" && -s "$K3D_APP_OUT/images.yaml" ]] \
     || fail "build wrote no images.txt and images.yaml in \$K3D_APP_OUT ($K3D_APP_OUT)"

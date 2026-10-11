@@ -444,7 +444,9 @@ They are the application's whole contract with this instance; nothing about it l
 `build`, `prepare` and `finish` are executables run from that directory with
 `KUBE_CONTEXT`, `K3D_CLUSTER`, `K3D_NAMESPACE`, `K3D_APP_OUT`, `K3D_HOST_PORT_FRONTEND` and
 `K3D_HOST_PORT_GRAFANA`. A cluster call targets `--context "$KUBE_CONTEXT"`, never the
-current context.
+current context. `build` also runs with `BUILDX_NO_DEFAULT_ATTESTATIONS=1`: tagging by the
+Docker image ID then gives an unchanged image the same tag on every build, so it is neither
+copied again nor restarted (the default provenance attestation changes that ID each time).
 
 `make k3d-app` (`bin/k3d-app.sh`) checks and renders first (a mistake costs seconds, not
 a build), runs `build`, renders again with the new images, copies them into every node,
