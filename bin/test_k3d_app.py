@@ -24,6 +24,8 @@ if name == "helmfile" and "list" in args:
     print(json.dumps([{"name": "app-a", "namespace": "", "enabled": True},
                       {"name": "app-b", "namespace": "other-ns", "enabled": True},
                       {"name": "off", "namespace": "", "enabled": False}]))
+if name == "helmfile" and "sync" in args and os.environ.get("FAIL_SYNC") == "1":
+    sys.exit(1)
 if name == "helm" and "status" in args:
     print(json.dumps({"info": {"status": os.environ.get("RELEASE_STATUS", "deployed")}}))
 if name == "helm" and "history" in args:
@@ -35,7 +37,7 @@ HOOK = """#!/bin/bash
 printf '["%s", "%s", "%s"]\\n' "$(basename "$0")" "$KUBE_CONTEXT" "$PWD" >> "$CALLS"
 if [[ "$(basename "$0")" == build ]]; then
   [[ -n "${FAIL_BUILD:-}" ]] && exit 1
-  echo 'app:k3d-1' > "$K3D_APP_OUT/images.txt"
+  printf '%s\n' ${BUILT_IMAGES:-app:k3d-1} > "$K3D_APP_OUT/images.txt"
   echo 'image: {tag: k3d-1}' > "$K3D_APP_OUT/images.yaml"
 fi
 exit 0
@@ -57,6 +59,9 @@ class K3dAppTests(unittest.TestCase):
         prefetch = self.factory / "bin/k3d-prefetch-images.sh"
         prefetch.write_text('#!/bin/bash\nprintf \'["import", "%s"]\\n\' "$2" >> "$CALLS"\n')
         prefetch.chmod(0o755)
+        prune = self.factory / "bin/k3d-prune-images.sh"
+        prune.write_text('#!/bin/bash\nshift\nprintf \'["prune"\' >> "$CALLS"; printf \', "%s"\' "$@" >> "$CALLS"; echo "]" >> "$CALLS"\n')
+        prune.chmod(0o755)
         self.app = self.root / "some app/deploy/k3d"
         self.app.mkdir(parents=True)
         (self.app / "helmfile.yaml.gotmpl").write_text("releases: []\n")
@@ -66,7 +71,7 @@ class K3dAppTests(unittest.TestCase):
         (self.root / "extra-values.yaml").write_text("{}\n")
         fakebin = self.root / "commands"
         fakebin.mkdir()
-        for name in ("helm", "helmfile", "kubectl"):
+        for name in ("helm", "helmfile", "kubectl", "docker"):
             (fakebin / name).write_text(FAKE)
             (fakebin / name).chmod(0o755)
         self.env = dict(
@@ -156,6 +161,29 @@ class K3dAppTests(unittest.TestCase):
         # Every enabled release is recovered, in its own namespace or the default one.
         statuses = [c for c in calls if c[0] == "helm" and "status" in c]
         self.assertEqual([(c[4], c[6]) for c in statuses], [("app-a", "fred"), ("app-b", "other-ns")])
+
+    def test_earlier_build_images_are_removed_after_a_successful_sync(self) -> None:
+        result, calls = self.run_app(BUILT_IMAGES="app:k3d-1 lib:k3d-1")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(any(c[0] == "prune" for c in calls))
+
+        result, calls = self.run_app(BUILT_IMAGES="app:k3d-2 lib:k3d-1")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        names = [c[0] if c[0] != "helmfile" else "sync" if "sync" in c else "helmfile" for c in calls]
+        # Only what the new build no longer produces, once it is rolled out.
+        self.assertEqual([c for c in calls if c[0] == "prune"], [["prune", "app:k3d-1"]])
+        self.assertLess(names.index("sync"), names.index("prune"))
+        self.assertLess(names.index("prune"), names.index("finish"))
+
+    def test_a_failed_sync_keeps_earlier_images_until_one_succeeds(self) -> None:
+        self.run_app(BUILT_IMAGES="app:k3d-1")
+        result, calls = self.run_app(BUILT_IMAGES="app:k3d-2", FAIL_SYNC="1")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(any(c[0] == "prune" for c in calls))
+
+        result, calls = self.run_app(BUILT_IMAGES="app:k3d-3")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual([c for c in calls if c[0] == "prune"], [["prune", "app:k3d-1", "app:k3d-2"]])
 
     def test_recovery_refuses_to_delete_persistent_claims(self) -> None:
         result, calls = self.run_app(RELEASE_STATUS="failed")

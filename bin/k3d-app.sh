@@ -123,10 +123,29 @@ if [[ "$mode" == uninstall ]]; then
 fi
 
 # ── Deploy ───────────────────────────────────────────────────────────────────
+# BuildKit evicts its build cache while the disk has less free space than its
+# policy keeps: every layer is then rebuilt and every dependency downloaded again.
+build_cache_room() {
+  local root min avail
+  root="$(docker info --format '{{.DockerRootDir}}' 2>/dev/null || true)"
+  [[ -d "$root" ]] || return 0
+  min="$( (docker buildx inspect --debug 2>/dev/null || true) | awk '/Min Free Space:/ {print $4}' | sort -h | tail -n1)"
+  avail="$( (df -B1 --output=avail "$root" 2>/dev/null || true) | tail -n1)"
+  [[ "$min" =~ ^[0-9.]+[KMGT]iB$ && "$avail" =~ ^[0-9]+$ ]] || return 0
+  if (( avail < $(LC_ALL=C numfmt --from=iec-i "${min%B}") )); then
+    warn "Docker has $(LC_ALL=C numfmt --to=iec-i "$avail")B free, under the $min BuildKit keeps free: it evicts its build cache and the images rebuild from scratch (docs/LOCAL-DEVELOPMENT.md)"
+  fi
+}
+
 # Check and render before building: a mistake costs seconds, not a build.
 identities --check
 render
 if [[ -e "$app/build" ]]; then
+  build_cache_room
+  # The images of earlier builds are removed once the new ones are rolled out.
+  if [[ -f "$K3D_APP_OUT/images.txt" ]]; then
+    cat "$K3D_APP_OUT/images.txt" >>"$K3D_APP_OUT/images.superseded.txt"
+  fi
   rm -f "$K3D_APP_OUT/images.txt" "$K3D_APP_OUT/images.yaml"
   hook build
   [[ -s "$K3D_APP_OUT/images.txt" && -s "$K3D_APP_OUT/images.yaml" ]] \
@@ -156,4 +175,13 @@ if ! "${state[@]}" sync --skip-deps --wait --timeout "$timeout_s" "${values[@]}"
   fail "Sync failed (details: ${state[*]} sync)"
 fi
 ok "Releases synced"
+if [[ -s "$K3D_APP_OUT/images.superseded.txt" ]]; then
+  mapfile -t superseded < <(sort -u "$K3D_APP_OUT/images.superseded.txt" \
+    | grep -vxF -f "$K3D_APP_OUT/images.txt" || true)
+  if [[ ${#superseded[@]} -gt 0 ]]; then
+    step "Remove the images of earlier builds"
+    "$here/bin/k3d-prune-images.sh" "$K3D_CLUSTER" "${superseded[@]}"
+  fi
+  rm -f "$K3D_APP_OUT/images.superseded.txt"
+fi
 hook finish
