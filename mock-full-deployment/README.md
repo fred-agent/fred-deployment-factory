@@ -78,14 +78,14 @@ configuration et secrets, `/var/lib/fred` = données.
 | `/opt/fred/.env` | images et IP d'écoute (non secret) | 0644 root |
 | `/opt/fred/bin/fred-deploy.sh` | **la** commande de l'exploitant | 0755 root |
 | `/etc/fred/secrets/postgres.env` | mots de passe Postgres (admin + 3 comptes) | 0600 root |
-| `/etc/fred/seaweedfs/s3.json` | identité S3 (clé + secret) | 0600 uid 1000 |
+| `/etc/fred/seaweedfs/s3.json` | identité S3 (clé + secret) | 0600 uid 65532 |
 | `/etc/fred/postgres/pg_hba.conf` | accès : TLS seulement, fred-app-01 seulement | 0644 root |
 | `/etc/fred/postgres/initdb/` | création des bases (1er démarrage uniquement) | 0755 root |
 | `/etc/fred/tls/ca.crt` | CA interne | 0644 root |
-| `/etc/fred/tls/postgres/server.{crt,key}` | certificat de `fred-sto-01.fred.lan` | clé 0600 uid 999 |
-| `/etc/fred/tls/seaweedfs/server.{crt,key}` | même certificat, pour S3 | clé 0600 uid 1000 |
-| `/var/lib/fred/postgres/` | **données Postgres** (`pgdata/`) | 0700 uid 999 |
-| `/var/lib/fred/seaweedfs/` | **objets S3** (volumes, filer, master) | 0700 uid 1000 |
+| `/etc/fred/tls/postgres/server.{crt,key}` | certificat de `fred-sto-01.fred.lan` | clé 0600 uid 70 |
+| `/etc/fred/tls/seaweedfs/server.{crt,key}` | même certificat, pour S3 | clé 0600 uid 65532 |
+| `/var/lib/fred/postgres/` | **données Postgres** (`pgdata/`) | 0700 uid 70 |
+| `/var/lib/fred/seaweedfs/` | **objets S3** (volumes, filer, master) | 0700 uid 65532 |
 | `/etc/systemd/system/fred-stack.service` | redémarrage de la pile au boot | 0644 root |
 
 ### fred-app-01
@@ -170,15 +170,19 @@ sinon `podman restart postgres seaweedfs`). La CA ne change pas, rien à faire c
 |---|---|
 | `ARCHITECTURE.md` | schémas de l'infrastructure et des piles, images durcies |
 | `config.env` | paramètres non secrets (IP, noms, chemins du kit Entra et du dépôt Fred) |
-| `images.tsv` | catalogue des images du registry ; les images Fred hardenées sont à compléter |
+| `images.tsv` | catalogue des 9 images durcies : image locale → chemin dans le registry |
+| `images/` | `Containerfile` des 9 images durcies (Wolfi, `FROM scratch`), voir `ARCHITECTURE.md` §4 |
 | `simulation/` | **ce que fournit le client** : 2 VMs RHEL 9 (+ podman) et le registry miroir |
 | `bundles/` | **ce qu'on livre** : sources des fichiers posés dans chaque VM |
 | `scripts/secrets.sh` | génère les secrets manquants dans `secrets/` (n'écrase jamais) |
 | `scripts/pki.sh` | CA interne et certificat de fred-sto-01, dans `secrets/pki/` |
 | `scripts/render.py` | produit `build/<vm>/`, copie conforme de l'arborescence de chaque VM |
 | `scripts/deliver.sh` | copie `build/<vm>/` dans la VM et applique modes et propriétaires |
-| `scripts/registry-push.sh` | remplit le registry |
+| `scripts/build-images.sh` | construit les images durcies (`make images`) |
+| `scripts/registry-push.sh` | remplit le registry à partir de `images.tsv` |
 | `scripts/verify.sh` | contrôle conteneurs, chiffrement, refus du clair, OIDC servi |
+| `scripts/trivy-report.py` | agrège les scans trivy de `reports/*.json` en `reports/rapport-trivy.html` |
+| `reports/` | scans trivy des images durcies et rapport HTML/PDF |
 
 `secrets/` et `build/` sont versionnés pour cette maquette de test (clé LLM et secrets Entra remplacés par `CHANGE_ME`).
 
@@ -195,9 +199,10 @@ make secrets          # puis remplir secrets/llm.env (OPENAI_API_KEY = clé Mist
 make render           # hors ligne : secrets, PKI, build/ ; échoue si une valeur manque
 
 # --- réseau nécessaire à partir d'ici ---
+make images           # les 9 images durcies (ONLY="nom …", REFRESH=1 sans cache)
 make vms-build        # image "RHEL 9 + podman" (dnf dans les dépôts UBI)
 make vms              # registry + fred-sto-01 + fred-app-01, attend systemd
-make registry-push IMAGES="CONTROL_PLANE_IMAGE=… KNOWLEDGE_FLOW_IMAGE=… FRED_AGENTS_IMAGE=… FRONTEND_IMAGE=…"
+make registry-push    # images de images.tsv (IMAGES="VAR=image …" pour en remplacer une)
 make deploy           # livre les bundles, puis fred-deploy.sh : stockage d'abord
 make verify
 ```
@@ -210,7 +215,7 @@ Exploitation : `make status`, `make logs VM=fred-app-01 C=knowledge-flow-backend
 `make shell-app`, `make stop` / `make vms` (les VMs redémarrent la pile seules),
 `make destroy` (efface aussi les données).
 
-**Mettre à jour les images** : pousser la nouvelle image avec le même tag, puis
+**Mettre à jour les images** : `make images ONLY="<nom>"`, `make registry-push` (même tag), puis
 `make deploy-app` (`fred-deploy.sh` fait `pull`, `fred-jobs.sh`, puis `up -d`). Les jobs de migration
 Alembic tournent à chaque déploiement, avant les backends.
 
