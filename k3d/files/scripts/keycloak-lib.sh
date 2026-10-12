@@ -104,7 +104,37 @@ ensure_service_client_confidential() {
   current_secret="$(kc_http_get "/clients/${uuid}/client-secret" | jq -r '.value // empty')"
   [[ "$current_secret" == "$desired_secret" ]] || die "failed to apply secret for client '${client_id}'"
 
+  ensure_client_id_claim "$uuid"
   printf '%s' "$uuid"
+}
+
+# A receiver identifies a calling workload by its token's `client_id` claim: a
+# delegated call from a token without it is refused (`caller_not_allowed`). The
+# realm's own clients carry this mapper; a client created here needs it too.
+ensure_client_id_claim() {
+  local uuid="$1"
+  local payload
+
+  if kc_http_get "/clients/${uuid}/protocol-mappers/models" \
+    | jq -e 'any(.[]; .config["claim.name"] == "client_id")' >/dev/null; then
+    return
+  fi
+  payload="$(jq -nc '{
+    name: "Client ID",
+    protocol: "openid-connect",
+    protocolMapper: "oidc-usersessionmodel-note-mapper",
+    config: {
+      "user.session.note": "client_id",
+      "claim.name": "client_id",
+      "jsonType.label": "String",
+      "access.token.claim": "true",
+      "id.token.claim": "true",
+      "introspection.token.claim": "true",
+      "userinfo.token.claim": "true"
+    }
+  }')"
+  kc_http_post_json "/clients/${uuid}/protocol-mappers/models" "$payload"
+  mark_changed
 }
 
 ensure_client_role() {

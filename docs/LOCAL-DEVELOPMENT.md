@@ -406,6 +406,11 @@ off at startup, the Prometheus targets down and the workflows running. Then
 - `make k3d-app DIR=<checkout>` after any change, in code or in the application's
   `deploy/k3d/values.yaml`: it rebuilds (from Docker's cache), copies the images and rolls
   out whatever changed. `VALUES="a.yaml b.yaml"` adds values files, last, to every release.
+  Docker's cache only holds while the disk keeps the free space BuildKit's garbage
+  collector asks for (by default 20% of the disk, see `docker buildx inspect --debug`):
+  below it, the cache is evicted and every image rebuilds from scratch. `make k3d-app`
+  warns when that is the case, and removes the images of an application's earlier
+  builds, from the host and the nodes, once the new ones are rolled out.
 - `make k3d-app-validate DIR=<checkout>` lints and renders, schema-checked, without a
   build or a cluster change (with the images of the last build, if any).
 - `make k3d-status` shows the pods.
@@ -439,12 +444,15 @@ They are the application's whole contract with this instance; nothing about it l
 `build`, `prepare` and `finish` are executables run from that directory with
 `KUBE_CONTEXT`, `K3D_CLUSTER`, `K3D_NAMESPACE`, `K3D_APP_OUT`, `K3D_HOST_PORT_FRONTEND` and
 `K3D_HOST_PORT_GRAFANA`. A cluster call targets `--context "$KUBE_CONTEXT"`, never the
-current context.
+current context. `build` also runs with `BUILDX_NO_DEFAULT_ATTESTATIONS=1`: tagging by the
+Docker image ID then gives an unchanged image the same tag on every build, so it is neither
+copied again nor restarted (the default provenance attestation changes that ID each time).
 
 `make k3d-app` (`bin/k3d-app.sh`) checks and renders first (a mistake costs seconds, not
 a build), runs `build`, renders again with the new images, copies them into every node,
 provisions the identities, runs `prepare`, recovers each release Helm would refuse (`bin/k3d-helm-recover.sh`),
-syncs with `--wait`, then runs `finish`. The factory passes the kube context and the
+syncs with `--wait`, removes the images of its earlier builds (`bin/k3d-prune-images.sh`),
+then runs `finish`. The factory passes the kube context and the
 namespace (`K3D_NAMESPACE`, default `fred`); the current kubectl context is left unchanged.
 Build logs and image values stay in this repository's ignored `.cache/k3d-apps/`. Helm's
 lint keeps the `null` deletion markers the fred schema refuses, so lint skips the schema;
