@@ -1,0 +1,258 @@
+#!/usr/bin/env python3
+"""Check that the checkouts next to this one agree on the Fred libraries they use.
+
+    bin/ecosystem-audit [--root DIR] [--branch swift] [--fetch] [--offline]
+
+The repositories are discovered, never listed: every git checkout in ROOT (the
+parent of this repository by default). The one holding libs/fred-sdk is Fred,
+the reference; every other one is an application. Exit code 1 when an ERROR is
+found. Standard library only.
+"""
+
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+import tomllib
+import urllib.request
+from collections import defaultdict
+from pathlib import Path
+
+SKIP_DIRS = {".git", ".venv", "node_modules", "target", "dist", "build", "__pycache__"}
+REQ = re.compile(r"^\s*([A-Za-z0-9_.-]+)\s*(\[[^\]]*\])?\s*([^;]*)")
+
+
+def vkey(version):
+    """Comparable key for 4.5.0, 4.5.0rc1 or 0.1.0-alpha.4: a pre-release sorts first."""
+    match = re.match(r"(\d+(?:\.\d+)*)(.*)", version.strip())
+    if not match:
+        return ((), "")
+    release = tuple(int(part) for part in match.group(1).split("."))
+    release += (0,) * (3 - len(release))
+    return (release, (0, match.group(2)) if match.group(2) else (1, ""))
+
+
+def admits(spec, version):
+    """Does a PEP 440 specifier such as '>=4.4.3,<5' admit this version."""
+    for clause in filter(None, (c.strip() for c in spec.split(","))):
+        op, bound = re.match(r"(==|!=|>=|<=|~=|>|<)?\s*(.+)", clause).groups()
+        op = op or "=="
+        if bound.endswith(".*"):
+            prefix = bound[:-2]
+            ok = version == prefix or version.startswith(prefix + ".")
+            if (op == "==") != ok:
+                return False
+            continue
+        have, want = vkey(version), vkey(bound)
+        if op == "~=":
+            # ~=4.4.3 means >=4.4.3 and ==4.4.*
+            ok = have >= want and have[0][: len(bound.split(".")) - 1] == want[0][: len(bound.split(".")) - 1]
+        else:
+            ok = {"==": have == want, "!=": have != want, ">=": have >= want,
+                  "<=": have <= want, ">": have > want, "<": have < want}[op]
+        if not ok:
+            return False
+    return True
+
+
+def walk(root, filename):
+    for path in sorted(root.iterdir()):
+        if path.is_dir() and path.name not in SKIP_DIRS:
+            yield from walk(path, filename)
+        elif path.name == filename:
+            yield path
+
+
+def git(repo, *args, timeout=None):
+    # Never prompt: a credential request behind captured output would hang unseen.
+    env = {**os.environ, "GIT_TERMINAL_PROMPT": "0"}
+    try:
+        done = subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=True,
+                              stdin=subprocess.DEVNULL, env=env, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return None
+    return done.stdout.strip() if done.returncode == 0 else None
+
+
+def latest_pypi(name):
+    with urllib.request.urlopen(f"https://pypi.org/pypi/{name}/json", timeout=10) as response:
+        return json.load(response)["info"]["version"]
+
+
+def latest_npm(name):
+    with urllib.request.urlopen(f"https://registry.npmjs.org/{name}", timeout=10) as response:
+        return json.load(response)["dist-tags"]["latest"]
+
+
+class Report:
+    def __init__(self):
+        self.lines = defaultdict(list)
+        self.errors = 0
+
+    def add(self, section, level, text):
+        self.errors += level == "ERROR"
+        self.lines[section].append(f"  {level:5} {text}")
+
+    def toml(self, path, rel):
+        """Parsed file, or None after reporting it: a committed merge conflict is a finding."""
+        try:
+            return tomllib.loads(path.read_text())
+        except tomllib.TOMLDecodeError as error:
+            self.add("Unreadable files", "ERROR", f"{rel(path)}: {error}")
+            return None
+
+    def print(self):
+        for section, lines in self.lines.items():
+            print(f"\n## {section}")
+            print("\n".join(lines))
+        print(f"\n{self.errors} error(s)")
+
+
+def requirements(project):
+    """Every dependency string of a pyproject: main, extras and dependency groups."""
+    data = project.get("project", {})
+    yield from data.get("dependencies", [])
+    for deps in data.get("optional-dependencies", {}).values():
+        yield from deps
+    for deps in project.get("dependency-groups", {}).values():
+        yield from (d for d in deps if isinstance(d, str))
+
+
+def audit(root, branch, fetch, offline):
+    report = Report()
+    repos = sorted(p for p in root.iterdir() if (p / ".git").exists())
+    fred = next((r for r in repos if (r / "libs/fred-sdk/pyproject.toml").exists()), None)
+    if fred is None:
+        sys.exit(f"No Fred checkout (libs/fred-sdk) in {root}")
+    rel = lambda path: str(path.relative_to(root))
+
+    # Git: every checkout contains the tip of the shared branch.
+    for repo in repos:
+        if fetch:
+            print(f"fetching {repo.name}...", file=sys.stderr)
+            if git(repo, "fetch", "-q", "origin", branch, timeout=20) is None:
+                report.add("Git", "WARN", f"{repo.name}: fetch failed or timed out, "
+                                          f"compared with the last fetched origin/{branch}")
+        current = git(repo, "branch", "--show-current") or "(detached)"
+        if git(repo, "rev-parse", "--verify", "-q", f"origin/{branch}") is None:
+            report.add("Git", "ERROR", f"{repo.name}: no origin/{branch}")
+            continue
+        behind = int(git(repo, "rev-list", "--count", f"HEAD..origin/{branch}"))
+        dirty = len((git(repo, "status", "--porcelain") or "").splitlines())
+        level = "ERROR" if behind else ("WARN" if dirty else "OK")
+        report.add("Git", level, f"{repo.name}: on {current}, {behind} behind origin/{branch}, "
+                                 f"{dirty} uncommitted file(s)")
+
+    # Fred's own Python libraries: one version for all, and is it published.
+    published = {}
+    for path in walk(fred / "libs", "pyproject.toml"):
+        project = tomllib.loads(path.read_text()).get("project", {})
+        if "name" in project and "version" in project:
+            published[project["name"]] = project["version"]
+    versions = sorted(set(published.values()), key=vkey)
+    if len(versions) > 1:
+        report.add("Fred libraries", "ERROR", f"several versions in {fred.name}/libs: {versions}")
+    source = versions[-1]
+    reference = source
+    if not offline:
+        on_pypi = latest_pypi("fred-sdk")
+        if vkey(on_pypi) < vkey(source):
+            report.add("Fred libraries", "INFO", f"{source} in the source, not yet on PyPI "
+                                                 f"(latest {on_pypi}): applications are held to {on_pypi}")
+            reference = on_pypi
+        else:
+            report.add("Fred libraries", "OK", f"{source} in the source and on PyPI")
+    else:
+        report.add("Fred libraries", "INFO", f"{source} in the source (PyPI not checked)")
+
+    # Applications: what each one asks for, and what its lock installs.
+    styles = defaultdict(set)
+    for repo in (r for r in repos if r != fred):
+        for path in walk(repo, "pyproject.toml"):
+            project = report.toml(path, rel)
+            lock = path.with_name("uv.lock")
+            locked = report.toml(lock, rel) if lock.exists() else None
+            if project is None:
+                continue
+            if project.get("project", {}).get("name") in published:
+                report.add("Copies of Fred", "WARN", f"{rel(path)}: a copy of "
+                                                     f"{project['project']['name']}, not the published one")
+                continue
+            # A path source outside Fred is a copy: the project is outside the published line.
+            copies = []
+            for name, source_spec in project.get("tool", {}).get("uv", {}).get("sources", {}).items():
+                if name not in published or "path" not in source_spec:
+                    continue
+                if (path.parent / source_spec["path"]).resolve().is_relative_to(fred.resolve()):
+                    report.add("Installed from Fred's source", "WARN",
+                               f"{rel(path)}: {name} -> {source_spec['path']}")
+                else:
+                    copies.append(f"{name} -> {source_spec['path']}")
+            if copies:
+                report.add("Copies of Fred", "WARN", f"{rel(path)}: uses {', '.join(copies)}")
+                continue
+            for requirement in requirements(project):
+                name, _, spec = REQ.match(requirement).groups()
+                if name not in published:
+                    continue
+                spec = spec.strip()
+                styles[re.match(r"(==|>=|~=)?", spec).group(1) or "none"].add(rel(path.parent))
+                if spec and not admits(spec, reference):
+                    report.add("Constraints", "ERROR", f"{rel(path)}: {name}{spec} excludes {reference}")
+            stale = defaultdict(list)
+            for package in (locked or {}).get("package", []):
+                if package["name"] in published and package.get("version") != reference:
+                    stale[package.get("version")].append(package["name"])
+            for version, names in stale.items():
+                report.add("Locks", "ERROR", f"{rel(lock)}: {version} ({', '.join(sorted(names))}), "
+                                             f"expected {reference}")
+    if len(styles) > 1:
+        for style, where in sorted(styles.items()):
+            report.add("Constraint styles", "WARN", f"{style}: {', '.join(sorted(where))}")
+
+    # Fred's npm packages: declared and locked versions in every application.
+    npm = {}
+    for path in (fred / "libs/frontend").glob("*/package.json"):
+        package = json.loads(path.read_text())
+        if not package.get("private"):
+            npm[package["name"]] = package["version"]
+    npm_reference = {name: (None if offline else latest_npm(name)) for name in npm}
+    declared = defaultdict(set)
+    for repo in (r for r in repos if r != fred):
+        for path in walk(repo, "package.json"):
+            deps = json.loads(path.read_text())
+            deps = {**deps.get("dependencies", {}), **deps.get("devDependencies", {})}
+            lock_path = path.with_name("package-lock.json")
+            lock = json.loads(lock_path.read_text()).get("packages", {}) if lock_path.exists() else {}
+            for name in npm.keys() & deps.keys():
+                declared[name].add(deps[name])
+                wanted = npm_reference[name]
+                if wanted and deps[name].lstrip("^~") != wanted:
+                    report.add("npm packages", "ERROR", f"{rel(path)}: {name} {deps[name]}, latest {wanted}")
+                locked = lock.get(f"node_modules/{name}", {}).get("version")
+                if lock and locked and locked != deps[name].lstrip("^~"):
+                    report.add("npm packages", "ERROR", f"{rel(lock_path)}: {name} locked at {locked}, "
+                                                        f"package.json says {deps[name]}")
+    for name, specs in declared.items():
+        if offline and len(specs) > 1:
+            report.add("npm packages", "ERROR", f"{name}: several versions declared {sorted(specs)}")
+    return report
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[2])
+    parser.add_argument("--branch", default="swift")
+    parser.add_argument("--fetch", action="store_true", help="git fetch origin BRANCH first")
+    parser.add_argument("--offline", action="store_true", help="skip PyPI and npm")
+    args = parser.parse_args()
+    report = audit(args.root.resolve(), args.branch, args.fetch, args.offline)
+    print(f"Ecosystem audit of {args.root.resolve()}, branch {args.branch}")
+    report.print()
+    sys.exit(1 if report.errors else 0)
+
+
+if __name__ == "__main__":
+    main()
