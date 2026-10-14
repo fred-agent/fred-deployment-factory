@@ -18,8 +18,9 @@ set -Eeuo pipefail
 # import, release recovery and the sync. It never changes the current kubectl context.
 #
 # Environment (defaults in the Makefile): DIR; VALUES, extra values files applied
-# last to every release (space-separated); K3D_CLUSTER, K3D_NAMESPACE, HELM_TIMEOUT,
-# K3D_HOST_PORT_FRONTEND, K3D_HOST_PORT_GRAFANA (passed on to the hooks).
+# last to every release (space-separated); FRED_LIBS (pypi | local) and FRED_REPO,
+# which fred the hooks and the helmfile build against; K3D_CLUSTER, K3D_NAMESPACE,
+# HELM_TIMEOUT, K3D_HOST_PORT_FRONTEND, K3D_HOST_PORT_GRAFANA (passed on to the hooks).
 
 c_step='\033[1;34m'; c_ok='\033[1;32m'; c_warn='\033[1;33m'; c_err='\033[1;31m'; c_info='\033[0;36m'; c_reset='\033[0m'
 step() { printf "%b[STEP]%b %s\n" "$c_step" "$c_reset" "$1"; }
@@ -64,10 +65,31 @@ mkdir -p "$K3D_APP_OUT"
 [[ -f "$K3D_APP_OUT/images.yaml" ]] || echo '{}' >"$K3D_APP_OUT/images.yaml"
 export K3D_IMAGE_VALUES="$K3D_APP_OUT/images.yaml"
 
-branch="$(git -C "$app" rev-parse --abbrev-ref HEAD 2>/dev/null || echo '?')"
-commit="$(git -C "$app" rev-parse --short HEAD 2>/dev/null || echo '?')"
-dirty="$(git -C "$app" status --porcelain 2>/dev/null | grep -qv '^??' && echo ' + uncommitted changes' || true)"
-info "Application: $app ($branch @ $commit$dirty)"
+describe() {
+  local branch commit dirty
+  branch="$(git -C "$1" rev-parse --abbrev-ref HEAD 2>/dev/null || echo '?')"
+  commit="$(git -C "$1" rev-parse --short HEAD 2>/dev/null || echo '?')"
+  dirty="$(git -C "$1" status --porcelain 2>/dev/null | grep -qv '^??' && echo ' + uncommitted changes' || true)"
+  echo "$branch @ $commit$dirty"
+}
+info "Application: $app ($(describe "$app"))"
+
+# Which fred the application builds against: its hooks and its helmfile read both.
+export FRED_LIBS="${FRED_LIBS:-pypi}"
+case "$FRED_LIBS" in
+  pypi) info "Fred: the released libraries and charts (FRED_LIBS=pypi)" ;;
+  local)
+    [[ -n "${FRED_REPO:-}" ]] || fail "FRED_LIBS=local needs FRED_REPO, the path of YOUR fred checkout, e.g.
+         export FRED_REPO=/path/to/your/fred
+       or use the released fred: FRED_LIBS=pypi"
+    FRED_REPO="$(cd "$FRED_REPO" 2>/dev/null && pwd)" \
+      || fail "FRED_REPO=${FRED_REPO}: no such directory. Set FRED_REPO to the path of your fred checkout."
+    [[ -d "$FRED_REPO/libs" && -d "$FRED_REPO/deploy/charts" ]] \
+      || fail "FRED_REPO=$FRED_REPO is not a fred checkout (no libs/ and deploy/charts/). Set FRED_REPO to the path of your fred checkout."
+    export FRED_REPO
+    info "Fred: libraries and charts from $FRED_REPO ($(describe "$FRED_REPO"))" ;;
+  *) fail "FRED_LIBS must be pypi or local, not '$FRED_LIBS'" ;;
+esac
 
 state=(helmfile --file "$app/helmfile.yaml.gotmpl" --kube-context "$KUBE_CONTEXT" --namespace "$K3D_NAMESPACE")
 render() {

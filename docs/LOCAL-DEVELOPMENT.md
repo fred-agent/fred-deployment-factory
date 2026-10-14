@@ -437,9 +437,9 @@ They are the application's whole contract with this instance; nothing about it l
 | `finish` | no | Runs after the sync (Fred: its Grafana dashboards, how to log in) |
 
 `build`, `prepare` and `finish` are executables run from that directory with
-`KUBE_CONTEXT`, `K3D_CLUSTER`, `K3D_NAMESPACE`, `K3D_APP_OUT`, `K3D_HOST_PORT_FRONTEND` and
-`K3D_HOST_PORT_GRAFANA`. A cluster call targets `--context "$KUBE_CONTEXT"`, never the
-current context.
+`KUBE_CONTEXT`, `K3D_CLUSTER`, `K3D_NAMESPACE`, `K3D_APP_OUT`, `K3D_HOST_PORT_FRONTEND`,
+`K3D_HOST_PORT_GRAFANA`, `FRED_LIBS` and `FRED_REPO` (below, "Work on unreleased fred").
+A cluster call targets `--context "$KUBE_CONTEXT"`, never the current context.
 
 `make k3d-app` (`bin/k3d-app.sh`) checks and renders first (a mistake costs seconds, not
 a build), runs `build`, renders again with the new images, copies them into every node,
@@ -487,6 +487,56 @@ Once built, the standard Helmfile commands work on their own:
 ```bash
 helmfile -f ../fred/deploy/k3d/helmfile.yaml.gotmpl --kube-context k3d-fred -n fred template --skip-deps
 ```
+
+## Work on unreleased fred
+
+fred publishes its Python libraries (PyPI) and its charts (`oci://ghcr.io/thalesgroup/fred-helm`)
+only when it releases. Between releases, every application built on fred (agent pods,
+Knowledge Bases, the evaluator, RAGS) is tested against the fred checkout next to it with one
+switch, the same in every repository:
+
+| | `FRED_LIBS=pypi` (default) | `FRED_LIBS=local` |
+| --- | --- | --- |
+| Python environment | `make dev`: the committed `uv.lock` | `make dev-local`: fred's libraries installed editable from `FRED_REPO` over it; `make dev-pypi` goes back |
+| Image | `make docker-build`: the lock's versions | `FRED_LIBS=local make docker-build`: the Dockerfile installs fred's libraries from `FRED_REPO` (`--build-context fred=...`) over the lock |
+| k3d release | the published chart, at the version the helmfile pins | the chart in `$FRED_REPO/deploy/charts/` |
+
+`FRED_REPO` is the path of your fred checkout; it has no default, anywhere: with
+`FRED_LIBS=local` and no `FRED_REPO`, every command stops and says what to set. For days on
+the latest swift:
+
+```bash
+export FRED_LIBS=local
+export FRED_REPO=/path/to/your/fred
+cd fred-deployment-factory && make k3d-app DIR=/path/to/the/application
+```
+
+`make k3d-app` prints which fred it builds against (`libraries and charts from ... (swift @
+<commit>)`) and refuses a path that is not a fred checkout. The committed lock never points at a checkout:
+CI and a fresh clone always resolve the published versions, and `make ecosystem-audit`
+reports an application missing one of the three switches.
+
+What an application provides for it:
+
+- **Makefile** of each Python project: `FRED_LIBS ?= pypi`, `FRED_REPO` without a default
+  (`dev-local` and a local `docker-build` stop with a clear message when it is unset),
+  `dev-local` and `dev-pypi`, and `docker-build` passing `--build-arg FRED_LIBS` and, when
+  local, `--build-context fred=$(FRED_REPO)`.
+- **Dockerfile**: `ARG FRED_LIBS=pypi`, a `base-local` stage copying `libs` from the `fred`
+  context, and after `uv sync --frozen`, `uv pip install` of the fred packages it uses from
+  there. dt-agents' `dockerfiles/Dockerfile` is the reference.
+- **`deploy/k3d/helmfile.yaml.gotmpl`**: the chart from `$FRED_REPO/deploy/charts/<chart>` when
+  `FRED_LIBS=local`, else the published one at a pinned version:
+
+  ```yaml
+  {{- $local := eq (env "FRED_LIBS") "local" }}
+  releases:
+    - name: dt-agents
+      chart: {{ if $local }}{{ env "FRED_REPO" }}/deploy/charts/agent-pod{{ else }}oci://ghcr.io/thalesgroup/fred-helm/agent-pod{{ end }}
+      {{- if not $local }}
+      version: 3.5.0
+      {{- end }}
+  ```
 
 ## What `docker-up` / `k3d-up` provisions
 

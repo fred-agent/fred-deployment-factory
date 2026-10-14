@@ -30,13 +30,11 @@ checkout next to this one; the one holding `libs/fred-sdk` is Fred, the referenc
 | Locks | a `uv.lock` installs another version | `uv lock --upgrade-package <each fred package>` in that project |
 | npm packages | a `package.json` or its lock is not on the latest `@fred-oss/*` | `npm install --save-exact @fred-oss/<pkg>@<latest>` in that directory |
 | Unreadable files | a TOML file does not parse (often a committed merge conflict) | resolve it, then relock |
+| Fred source switch | a project built on fred lacks one of the three `FRED_LIBS` hooks, or commits `[tool.uv.sources]` to the fred checkout | add the hook as in dt-agents (docs/LOCAL-DEVELOPMENT.md, "Work on unreleased fred"); drop the committed source and relock |
 
 These are **decisions for the developer, never fix them on your own**:
 
 - **Constraint styles**: `==` (an application moves when it decides) or `>=` (it follows Fred).
-- **Installed from Fred's source**: a `[tool.uv.sources]` path to the Fred checkout. The lock
-  then records the source, and an image build that sets `UV_NO_SOURCES*` resolves from PyPI
-  instead of the lock.
 - **Copies of Fred**: a project carrying its own copy of a Fred library is outside the
   published line; aligning it is a migration, not a version bump.
 

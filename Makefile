@@ -495,9 +495,14 @@ k3d-up: k3d-create ## Deploy the full stack into k3d with Helm
 ##@ k3d: applications (each one's deploy/k3d/ in its own repository, bin/k3d-app.sh)
 # DIR: a checkout with deploy/k3d/helmfile.yaml.gotmpl, or that directory itself.
 # VALUES: extra values files applied last to every release (space-separated).
+# FRED_LIBS: pypi (released fred libraries and charts) or local (the fred checkout at
+# FRED_REPO, required then, no default): docs/LOCAL-DEVELOPMENT.md → "Work on unreleased fred".
 DIR ?=
 VALUES ?=
-K3D_APP_ENV = DIR="$(DIR)" VALUES="$(VALUES)" K3D_CLUSTER="$(K3D_CLUSTER)" K3D_NAMESPACE="$(K3D_NAMESPACE)" \
+FRED_LIBS ?= pypi
+FRED_REPO ?=
+K3D_APP_ENV = DIR="$(DIR)" VALUES="$(VALUES)" FRED_LIBS="$(FRED_LIBS)" FRED_REPO="$(FRED_REPO)" \
+	K3D_CLUSTER="$(K3D_CLUSTER)" K3D_NAMESPACE="$(K3D_NAMESPACE)" \
 	HELM_TIMEOUT="$(HELM_TIMEOUT)" K3D_HOST_PORT_FRONTEND="$(K3D_HOST_PORT_FRONTEND)" \
 	K3D_HOST_PORT_GRAFANA="$(K3D_HOST_PORT_GRAFANA)" K3D_HOST_PORT_KEYCLOAK="$(K3D_HOST_PORT_KEYCLOAK)"
 

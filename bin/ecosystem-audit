@@ -58,10 +58,11 @@ def admits(spec, version):
 
 
 def walk(root, filename):
+    """Every file under root named filename (any file when None), skipping build output."""
     for path in sorted(root.iterdir()):
         if path.is_dir() and path.name not in SKIP_DIRS:
             yield from walk(path, filename)
-        elif path.name == filename:
+        elif path.is_file() and filename in (None, path.name):
             yield path
 
 
@@ -108,6 +109,37 @@ class Report:
             print(f"\n## {section}")
             print("\n".join(lines))
         print(f"\n{self.errors} error(s)")
+
+
+def makefile_text(makefile):
+    """A Makefile with the files it includes, where a shared switch usually lives."""
+    if not makefile.exists():
+        return ""
+    text = makefile.read_text()
+    for name in re.findall(r"^-?include\s+(\S+)", text, re.M):
+        included = (makefile.parent / name).resolve()
+        if included.is_file():
+            text += "\n" + included.read_text()
+    return text
+
+
+def switch_images_and_charts(repo, dependents, report, rel):
+    """FRED_LIBS reaches the images of projects built on fred, and the charts fred publishes."""
+    if not dependents:
+        return
+    names = [str(d.relative_to(repo)) for d in dependents]
+    for path in walk(repo, None):
+        if not path.name.startswith("Dockerfile"):
+            continue
+        text = path.read_text(errors="replace")
+        builds = any(path.is_relative_to(d) for d in dependents) or any(
+            n != "." and re.search(rf"\b{re.escape(n)}/", text) for n in names)
+        if builds and "uv " in text and not re.search(r"^ARG FRED_LIBS", text, re.M):
+            report.add("Fred source switch", "ERROR", f"{rel(path)}: no ARG FRED_LIBS")
+    for path in walk(repo, "helmfile.yaml.gotmpl"):
+        text = path.read_text()
+        if re.search(r"fred-helm/|FRED_REPO|\bfred/deploy/charts/", text) and 'env "FRED_LIBS"' not in text:
+            report.add("Fred source switch", "ERROR", f"{rel(path)}: a fred chart without the FRED_LIBS switch")
 
 
 def requirements(project):
@@ -170,6 +202,7 @@ def audit(root, branch, fetch, offline):
     # Applications: what each one asks for, and what its lock installs.
     styles = defaultdict(set)
     for repo in (r for r in repos if r != fred):
+        dependents = []
         for path in walk(repo, "pyproject.toml"):
             project = report.toml(path, rel)
             lock = path.with_name("uv.lock")
@@ -186,21 +219,40 @@ def audit(root, branch, fetch, offline):
                 if name not in published or "path" not in source_spec:
                     continue
                 if (path.parent / source_spec["path"]).resolve().is_relative_to(fred.resolve()):
-                    report.add("Installed from Fred's source", "WARN",
-                               f"{rel(path)}: {name} -> {source_spec['path']}")
+                    report.add("Fred source switch", "ERROR",
+                               f"{rel(path)}: [tool.uv.sources] {name} -> {source_spec['path']}; "
+                               f"the lock must resolve the published version, `make dev-local` "
+                               f"installs the checkout over it")
                 else:
                     copies.append(f"{name} -> {source_spec['path']}")
             if copies:
                 report.add("Copies of Fred", "WARN", f"{rel(path)}: uses {', '.join(copies)}")
                 continue
+            depends = False
             for requirement in requirements(project):
                 name, _, spec = REQ.match(requirement).groups()
                 if name not in published:
                     continue
+                depends = True
                 spec = spec.strip()
                 styles[re.match(r"(==|>=|~=)?", spec).group(1) or "none"].add(rel(path.parent))
                 if spec and not admits(spec, reference):
                     report.add("Constraints", "ERROR", f"{rel(path)}: {name}{spec} excludes {reference}")
+            if depends:
+                dependents.append(path.parent)
+                makefile = path.with_name("Makefile")
+                text = makefile_text(makefile)
+                if not (re.search(r"^dev-local:", text, re.M) and "FRED_LIBS" in text):
+                    report.add("Fred source switch", "ERROR", f"{rel(path.parent)}: no Makefile with "
+                                                              f"FRED_LIBS and dev-local")
+                # `uv run` re-syncs to the lock and silently drops a dev-local overlay.
+                if "dev-local:" in text and "UV_NO_SYNC" not in text and "--no-sync" not in text:
+                    report.add("Fred source switch", "ERROR", f"{rel(makefile)}: dev-local without "
+                                                              f"UV_NO_SYNC; the next `uv run` undoes it")
+                # Every setup differs: a default path would silently point at the wrong fred.
+                if re.search(r"^FRED_REPO[ \t]*\??=[ \t]*\S", text, re.M):
+                    report.add("Fred source switch", "ERROR", f"{rel(makefile)}: FRED_REPO has a default; "
+                                                              f"leave it unset and stop with a clear message")
             stale = defaultdict(list)
             for package in (locked or {}).get("package", []):
                 if package["name"] in published and package.get("version") != reference:
@@ -208,6 +260,7 @@ def audit(root, branch, fetch, offline):
             for version, names in stale.items():
                 report.add("Locks", "ERROR", f"{rel(lock)}: {version} ({', '.join(sorted(names))}), "
                                              f"expected {reference}")
+        switch_images_and_charts(repo, dependents, report, rel)
     if len(styles) > 1:
         for style, where in sorted(styles.items()):
             report.add("Constraint styles", "WARN", f"{style}: {', '.join(sorted(where))}")

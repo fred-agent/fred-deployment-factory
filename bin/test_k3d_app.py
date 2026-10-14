@@ -32,7 +32,7 @@ if name == "kubectl" and "pvc" in args:
     print(json.dumps({"items": [{"metadata": {"name": "data", "annotations": {"meta.helm.sh/release-name": "app-a"}}}]}))
 """
 HOOK = """#!/bin/bash
-printf '["%s", "%s", "%s"]\\n' "$(basename "$0")" "$KUBE_CONTEXT" "$PWD" >> "$CALLS"
+printf '["%s", "%s", "%s", "%s", "%s"]\\n' "$(basename "$0")" "$KUBE_CONTEXT" "$PWD" "$FRED_LIBS" "${FRED_REPO:-}" >> "$CALLS"
 if [[ "$(basename "$0")" == build ]]; then
   [[ -n "${FAIL_BUILD:-}" ]] && exit 1
   echo 'app:k3d-1' > "$K3D_APP_OUT/images.txt"
@@ -76,7 +76,7 @@ class K3dAppTests(unittest.TestCase):
             DIR="some app",
             K3D_CLUSTER="other",
         )
-        for name in ("VALUES", "K3D_NAMESPACE", "KUBE_CONTEXT"):
+        for name in ("VALUES", "K3D_NAMESPACE", "KUBE_CONTEXT", "FRED_LIBS", "FRED_REPO"):
             self.env.pop(name, None)
 
     def run_app(self, mode: str = "deploy", **env: str) -> tuple[subprocess.CompletedProcess, list]:
@@ -101,6 +101,33 @@ class K3dAppTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("helmfile.yaml.gotmpl", result.stderr)
         self.assertEqual(calls, [])
+
+    def test_fred_libs_selects_which_fred_the_hooks_build_against(self) -> None:
+        result, calls = self.run_app()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual({tuple(c[3:]) for c in calls if c[0] == "build"}, {("pypi", "")})
+        self.assertIn("FRED_LIBS=pypi", result.stdout)
+
+        fred = self.root / "fred checkout"
+        (fred / "libs").mkdir(parents=True)
+        (fred / "deploy/charts").mkdir(parents=True)
+        result, calls = self.run_app(FRED_LIBS="local", FRED_REPO=str(fred))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual({tuple(c[3:]) for c in calls if c[0] == "build"}, {("local", str(fred))})
+        self.assertIn(f"libraries and charts from {fred}", result.stdout)
+
+    def test_fred_libs_refuses_what_it_cannot_build_against(self) -> None:
+        for env, message in (
+            ({"FRED_LIBS": "main"}, "must be pypi or local"),
+            ({"FRED_LIBS": "local"}, "needs FRED_REPO, the path of YOUR fred checkout"),
+            ({"FRED_LIBS": "local", "FRED_REPO": str(self.root / "nowhere")}, "no such directory"),
+            ({"FRED_LIBS": "local", "FRED_REPO": str(self.root)}, "is not a fred checkout"),
+        ):
+            with self.subTest(env=env):
+                result, calls = self.run_app("validate", **env)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(message, result.stderr)
+                self.assertEqual(calls, [])
 
     def test_validate_has_no_build_or_cluster_calls(self) -> None:
         result, calls = self.run_app("validate")
@@ -147,7 +174,7 @@ class K3dAppTests(unittest.TestCase):
         self.assertEqual(calls[imported], ["import", "app:k3d-1"])
         for call in calls:
             if call[0] in ("build", "prepare", "finish"):
-                self.assertEqual(call[1:], ["k3d-other", str(self.app)])
+                self.assertEqual(call[1:3], ["k3d-other", str(self.app)])
             if call[0] == "helmfile":
                 self.assertEqual(call[3:5], ["--kube-context", "k3d-other"])
             if call[0] in ("helm", "kubectl"):
