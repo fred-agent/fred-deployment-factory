@@ -70,6 +70,13 @@ make k3d-health                             # what needs attention, on one scree
 asks for it: you are `platform_admin` (once per platform). Then enable what you need in
 **Admin > Features**.
 
+**Integration tests:** before running `cd ../fred && make integration-test-k3d`,
+follow [Prepare k3d for Fred integration tests](docs/LOCAL-DEVELOPMENT.md#prepare-k3d-for-fred-integration-tests).
+The suite logs in as the demo users without a browser: it needs Keycloak Direct
+access grants, plus the test agent, document capability and configured model
+allowed for the test team. Browser login alone does not establish these
+prerequisites. Make selects the URLs; it does not enable permissions.
+
 | URL | What | Login |
 | --- | --- | --- |
 | <http://localhost:8088> | Fred and its applications | your account |

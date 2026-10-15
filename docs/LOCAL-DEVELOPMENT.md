@@ -2,7 +2,8 @@
 
 Run Fred's backing services on your laptop — for day-to-day development against a local Fred,
 or to host the auth/isolation validation release gate, which now lives in the sibling `fred`
-monorepo's own `validation/README.md` (run `cd ../fred && make validation-report`). Fred itself
+monorepo's own `validation/README.md` (run `make integration-test-docker` or
+`make integration-test-k3d` from that checkout after preparing the test prerequisites). Fred itself
 can run on just ChromaDB + SQLite + the local filesystem; this repo gives the fuller
 experience (real Postgres, Keycloak, OpenFGA, OpenSearch, Temporal, plus optional
 Prometheus / Grafana / ClickHouse / Langfuse).
@@ -242,8 +243,13 @@ visible, `validation-report`, the self-test) behaves exactly like before.
 
 **6. Run the automated cross-app validation suite** (from the `fred` repo root)
 
+Prepare password-grant login and the test team's agent/capability/model access as
+explained in [Fred's validation prerequisites](https://github.com/ThalesGroup/fred/blob/swift/validation/README.md#prerequisites).
+A successful browser login does not prove that password-grant login is enabled.
+For the Docker setup in this walkthrough:
+
 ```bash
-make validation-report
+make integration-test-docker
 ```
 
 Logs in as every demo user from step 4 and asserts the full authorization matrix
@@ -420,6 +426,60 @@ off at startup, the Prometheus targets down and the workflows running. Then
 
 `make k3d-up` and `make k3d-app` are both safe to rerun: they converge. Optional Cilium
 (`K3D_USE_CILIUM=true`) is only needed for `CiliumNetworkPolicy` / air-gap flows.
+
+### Prepare k3d for Fred integration tests
+
+Run the harness from the **Fred checkout**, after deploying the applications and
+importing the demo bundle through **Admin > Migration**. The factory provisions
+infrastructure; it does not prepare all the authorizations required by these tests.
+The detailed, authoritative procedure lives in
+[Fred's validation README](https://github.com/ThalesGroup/fred/blob/swift/validation/README.md#run-against-the-existing-k3d-deployment).
+
+Before the first run:
+
+- **Use the trusted realm address.** The workstation's `keycloak` alias must resolve
+  to `127.0.0.1`. Fred's pods trust `http://keycloak:8080/realms/app`; requesting a
+  token through `localhost` can produce an issuer they reject. Fred's public APIs
+  use the ingress on `http://localhost:8088`.
+- **Allow the harness to log in as the demo users.** In the Keycloak admin console
+  at `http://keycloak:8080`, select realm **app**, then
+  `Clients > app > Settings > Capability config`. Switch **Direct access grants**
+  **On** and **Save**.
+  Record the original value. The factory defaults it to **Off**: browser sign-in
+  uses the authorization-code flow, whereas the harness needs the password grant
+  to exercise each demo identity without a browser. This enables authentication;
+  it does not give those users additional Fred roles. No restart is needed.
+- **Allow the test agent, document capability and model for the test team.** In
+  Fred's **Admin > Features**, enable **Test Assistant (no LLM)**,
+  **document_access** and the configured default chat model for `fredlab` (or your
+  `FRED_TEST_TEAM`), via a platform default or explicit team grant. Record changes.
+  A running runtime pod does not imply team access. Graph-agent activation checks
+  model authorization even when the diagnostic agent makes no chat LLM call.
+  Document tests also require the Knowledge Flow worker and working embeddings.
+
+Then, from your Fred checkout:
+
+```bash
+make integration-test-k3d
+```
+
+This selects the endpoint URLs and writes `validation/report.md` and
+`validation/report.xml`. It does not deploy services, import demos, or change
+Keycloak/Fred permissions. `make validation-report` remains the configurable
+entry point; its default direct application ports do not target k3d.
+
+**Keep the prerequisites enabled for the whole manual testing session**, including
+reruns. Restore the recorded settings when that session ends. If they are restored
+between runs, the next Make invocation fails again. Recheck after a fresh cluster
+or infrastructure reprovisioning; do not change the shared realm templates or
+production settings to accommodate local tests.
+
+Repeated setup errors mentioning `Keycloak login/refresh failed for 'alice'` and
+`Keycloak rejected the password grant` mean the common setup could not authenticate
+its demo administrator. They do not represent hundreds of independent isolation
+failures. `ModelNotUsableError` means the test team's configured model is unavailable.
+The **Admin > Self-test** UI uses the already signed-in browser token, so its success
+does not verify the harness's password-grant prerequisite.
 
 ### The k3d application contract
 
