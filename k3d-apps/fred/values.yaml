@@ -228,6 +228,9 @@ x-cp-storage: &cp-storage
 
 x-cp-configuration: &cp-configuration
   app:
+    # posture: every user accepts the terms of use (CGU) before using Fred, as on
+    # fredlab; without a version the chart default turns the acceptance screen off.
+    gcu_version: v1
     # choice: must mirror knowledge-flow above, displayed here, enforced there.
     default_team_max_resources_storage_size: 5368709120
     personal_max_resources_storage_size: 5368709120
