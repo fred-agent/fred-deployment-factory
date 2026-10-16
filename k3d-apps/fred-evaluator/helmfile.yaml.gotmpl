@@ -1,0 +1,20 @@
+# The evaluation application on this k3d instance:
+#   make k3d-app APP=fred-evaluator [RELEASE=<version>] [DIR=<evaluator checkout>]
+# Without DIR, the published chart and images, at RELEASE or the version pinned
+# below (bumped after each evaluator release). With DIR, the checkout's chart,
+# and K3D_IMAGE_VALUES selects the images its deploy/k3d/build made.
+{{- $pinned := "1.2.0" }}
+{{- $checkout := env "K3D_APP_CHECKOUT" }}
+releases:
+  - name: fred-evaluator
+    {{- if $checkout }}
+    chart: {{ printf "%s/deploy/charts/fred-evaluator" $checkout | quote }}
+    {{- else }}
+    chart: oci://ghcr.io/fred-agent/fred-evaluator-helm/fred-evaluator
+    version: {{ env "RELEASE" | default $pinned | quote }}
+    {{- end }}
+    values:
+      - values.yaml
+      {{- with env "K3D_IMAGE_VALUES" }}
+      - {{ . | quote }}
+      {{- end }}

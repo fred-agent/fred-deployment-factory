@@ -343,9 +343,10 @@ a `fred` checkout.
 grep -qw keycloak /etc/hosts || echo "127.0.0.1 keycloak" | sudo tee -a /etc/hosts
 ```
 
-**2. Your model API key** (once, in the `fred` checkout): `make setup-env` writes
-`apps/*/config/.env` and asks for it. `make k3d-app DIR=../fred` copies `OPENAI_API_KEY` from
-`apps/fred-agents/config/.env` into the cluster's `fred-secrets`.
+**2. Your model API key** (once): pass it to the first deployment of Fred,
+`OPENAI_API_KEY=<key> make k3d-app APP=fred`; it stays in the cluster's `fred-secrets`.
+With `DIR=../fred`, the key of the checkout's `apps/fred-agents/config/.env` (`make
+setup-env` there) is used when the environment has none.
 
 **3. Infrastructure** (this repo): creates the cluster `fred` and installs the release
 `fred-stack` into the namespace `fred`:
@@ -354,14 +355,18 @@ grep -qw keycloak /etc/hosts || echo "127.0.0.1 keycloak" | sudo tee -a /etc/hos
 make k3d-up
 ```
 
-**4. Fred** (this repo): builds the four images from the `fred` checkout, copies them into
-the cluster and installs the release `fred-app`, waiting until every pod is ready. As long
-as nobody is `platform_admin` yet, it ends with a command to retrieve the root bootstrap
+**4. Fred** (this repo): installs the release `fred-app` from Fred's published chart and
+images, at the version pinned in `k3d-apps/fred/helmfile.yaml.gotmpl` (`RELEASE=<version>`
+for another one), waiting until every pod is ready. No checkout, no build. As long as
+nobody is `platform_admin` yet, it ends with a command to retrieve the root bootstrap
 token:
 
 ```bash
-make k3d-app DIR=../fred
+make k3d-app APP=fred
 ```
+
+To deploy your own `fred` checkout instead, add `DIR=../fred`: its chart, and the four
+images its `deploy/k3d/build` builds and copies into the cluster, with the same values.
 
 **5. First login, in Fred.** Open <http://localhost:8088>. Fred sends you to the Keycloak
 login page: create your account with **Register** (Fred never creates accounts itself).
@@ -370,13 +375,14 @@ Your account becomes the platform's `platform_admin`; this works once per platfo
 first account keeps the role. Then turn the tools and agent templates on in
 **Admin > Capabilities** (select all).
 
-**6. The evaluation application** (optional, this repo): builds fred-agent-evaluator's API,
-worker and UI and deploys its chart next to Fred. Fred already knows the application
-(`application_sources` in fred's `deploy/k3d/values.yaml`); it shows up once a platform
-admin enables `evaluation` for a team in **Admin > Features** (filter "app").
+**6. The evaluation application** (optional, this repo): deploys its published chart and
+images next to Fred (`DIR=../fred-agent-evaluator` to build a checkout instead). Fred
+already knows the application (`application_sources` in `k3d-apps/fred/values.yaml`); it
+shows up once a platform admin enables `evaluation` for a team in **Admin > Features**
+(filter "app").
 
 ```bash
-make k3d-app DIR=../fred-agent-evaluator
+make k3d-app APP=fred-evaluator
 ```
 
 | URL | What |
@@ -385,7 +391,7 @@ make k3d-app DIR=../fred-agent-evaluator
 | <http://localhost:8088/apps/evaluation/> | The evaluation application, inside Fred |
 | <http://keycloak:8080> | Keycloak: login, registration, admin console |
 | <http://localhost:8233> | Temporal UI |
-| <http://localhost:3002> | Grafana (`admin` / `Azerty123_`): folder **Fred**, the dashboards of the Fred checkout |
+| <http://localhost:3002> | Grafana (`admin` / `Azerty123_`): folder **Fred**, the dashboards of the Fred checkout (with `DIR`) |
 | <http://localhost:9090> | Prometheus: the apps' KPIs, scraped from every `metrics` port |
 | <http://localhost:5601> | OpenSearch Dashboards (`admin` / `FredOpensearch123!!`): Discover on `k3d-logs*` (every pod's output), `k3d-events*` (Kubernetes events), `app-logs-index*` |
 
@@ -403,15 +409,18 @@ off at startup, the Prometheus targets down and the workflows running. Then
 `promql '<expr>'`. The `k3d-observability` skill describes the method.
 
 **Day to day** (this repo):
-- `make k3d-app DIR=<checkout>` after any change, in code or in the application's
-  `deploy/k3d/values.yaml`: it rebuilds (from Docker's cache), copies the images and rolls
-  out whatever changed. `VALUES="a.yaml b.yaml"` adds values files, last, to every release.
-- `make k3d-app-validate DIR=<checkout>` lints and renders, schema-checked, without a
-  build or a cluster change (with the images of the last build, if any).
+- `make k3d-app APP=fred DIR=../fred` (or `DIR=<checkout>` for an application defined in
+  its own repository) after any change, in code or in the application's values: it rebuilds
+  (from Docker's cache), copies the images and rolls out whatever changed. Without `DIR`,
+  `make k3d-app APP=<app>` goes back to the published release. `VALUES="a.yaml b.yaml"`
+  adds values files, last, to every release.
+- `make k3d-app-validate APP=<app>` (or `DIR=<checkout>`) lints and renders,
+  schema-checked, without a build or a cluster change (with the images of the last build,
+  if any).
 - `make k3d-status` shows the pods.
 
 **Tear down** (this repo):
-- `make k3d-app-uninstall DIR=<checkout>` removes an application's releases (it refuses a
+- `make k3d-app-uninstall APP=<app>` (or `DIR=<checkout>`) removes an application's releases (it refuses a
   release that owns volumes). The infrastructure holding their data stays.
 - `make k3d-down` stops the cluster and frees the host ports; `make k3d-up` starts it again.
 - `make k3d-delete` deletes the cluster.
@@ -423,9 +432,17 @@ off at startup, the Prometheus targets down and the workflows running. Then
 
 ### The k3d application contract
 
-`DIR` is a checkout whose `deploy/k3d/` holds the files below, or that directory itself
-(a repository with several applications, e.g. `DIR=../fred-samples/knowledge-bases/webdav`).
-They are the application's whole contract with this instance; nothing about it lives here.
+An application is defined by the files below, in one of two places:
+
+- **here, `k3d-apps/<APP>/`**, for Fred's open-source applications (`fred`, `fred-evaluator`):
+  the instance's values, deployed from the published chart and images (`APP=<app>`,
+  `RELEASE=<version>` or the version the helmfile pins, bumped after each release). Their
+  repositories keep only `deploy/k3d/build`: with `DIR=<checkout>`, the engine runs it and
+  exports `K3D_APP_CHECKOUT`, from which the helmfile takes the chart. `RELEASE` and `DIR`
+  exclude each other; a `RELEASE` that is not a version (`latest`) is refused.
+- **in the application's repository**, for any other application: `DIR` is a checkout whose
+  `deploy/k3d/` holds them, or that directory itself (a repository with several applications,
+  e.g. `DIR=../fred-samples/knowledge-bases/webdav`). Nothing about it lives here.
 
 | File | Required | What |
 | --- | --- | --- |
@@ -436,9 +453,10 @@ They are the application's whole contract with this instance; nothing about it l
 | `prepare` | no | Runs before the sync (Fred: the model key into `fred-secrets`; the evaluator: checks Fred runs) |
 | `finish` | no | Runs after the sync (Fred: its Grafana dashboards, how to log in) |
 
-`build`, `prepare` and `finish` are executables run from that directory with
+`build`, `prepare` and `finish` are executables run from their directory with
 `KUBE_CONTEXT`, `K3D_CLUSTER`, `K3D_NAMESPACE`, `K3D_APP_OUT`, `K3D_HOST_PORT_FRONTEND`,
-`K3D_HOST_PORT_GRAFANA`, `FRED_LIBS` and `FRED_REPO` (below, "Work on unreleased fred").
+`K3D_HOST_PORT_GRAFANA`, `RELEASE`, `K3D_APP_CHECKOUT`, `FRED_LIBS` and `FRED_REPO` (below,
+"Work on unreleased fred"). Without a build, the charts' own images run.
 A cluster call targets `--context "$KUBE_CONTEXT"`, never the current context.
 
 `make k3d-app` (`bin/k3d-app.sh`) checks and renders first (a mistake costs seconds, not
@@ -485,7 +503,7 @@ default secrets.
 Once built, the standard Helmfile commands work on their own:
 
 ```bash
-helmfile -f ../fred/deploy/k3d/helmfile.yaml.gotmpl --kube-context k3d-fred -n fred template --skip-deps
+helmfile -f k3d-apps/fred/helmfile.yaml.gotmpl --kube-context k3d-fred -n fred template --skip-deps
 ```
 
 ## Work on unreleased fred
@@ -576,7 +594,7 @@ the template for custom values. Keycloak backend client secrets:
 - **Compose:** `KEYCLOAK_AGENTIC_CLIENT_SECRET`, `KEYCLOAK_KNOWLEDGE_FLOW_CLIENT_SECRET`,
   `KEYCLOAK_CONTROL_PLANE_CLIENT_SECRET` in `docker/.env.template`.
 - **k3d:** `auth.keycloak*ClientSecret` in `k3d/values.yaml`. They land in the `fred-secrets`
-  Secret, which the Fred apps read by reference (fred's `deploy/k3d/values.yaml`): one place to
+  Secret, which the Fred apps read by reference (`k3d-apps/fred/values.yaml`): one place to
   change them.
 
 ## Real non-Keycloak provider: ZITADEL

@@ -151,7 +151,7 @@ app_client_uuid="$(client_uuid app)"
 ensure_client_role app service_agent "application service agent role"
 
 # An application's own service identities are not here: each one declares them
-# in its deploy/k3d/identities.yaml, applied by bin/k3d-identities.
+# in its identities.yaml (k3d-apps/<APP>/ or its deploy/k3d/), applied by bin/k3d-identities.
 
 # The imported realm ships with zero users (.users=[]): Keycloak still
 # auto-creates service-account-<clientId> for every confidential client with
