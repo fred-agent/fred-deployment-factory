@@ -1,9 +1,10 @@
 # Fred Deployment Factory
 
 Runs [Fred](https://github.com/ThalesGroup/fred) and the applications built on it on your
-machine. Clone this repository **next to** `fred` and the applications you work on (agent
-pods, Knowledge Bases, the evaluator...), in any directory: every command below refers to
-them as `../<repository>`.
+machine. On k3d, this repository alone deploys the published releases of Fred and the
+evaluation application. To run your own code, clone this repository **next to** `fred` and
+the applications you work on (agent pods, Knowledge Bases, the evaluator...): the commands
+below refer to them as `../<repository>`.
 
 There are two ways to run. Pick one per session:
 
@@ -90,8 +91,24 @@ prerequisites. Make selects the URLs; it does not enable permissions.
 | <http://localhost:8233> | Temporal | — |
 | <http://keycloak:8080> | Keycloak (realm `master`) | `admin` / `Azerty123_` |
 
-**Day to day:** every command is safe to rerun. `make k3d-down` stops the cluster (data
-kept). `make k3d-wipe` starts over and **deletes every volume: accounts, documents, runs**.
+**I want to...** `make k3d-app` converges: the first run installs, the next ones upgrade in
+place, keeping the data. You choose an application (`APP=fred`, `APP=fred-evaluator`, or
+`DIR=` a repository that defines its own) and a version (none: the release this repository
+pins, bumped by a Renovate PR after each release; `RELEASE=x.y.z`; or `DIR=` your checkout).
+
+| I want to... | Run |
+| --- | --- |
+| Install everything on a new cluster | `make k3d-up`, the model key Secret, `make k3d-app APP=fred`, `make k3d-app APP=fred-evaluator` |
+| Upgrade to the new release, once its Renovate PR is merged | `git pull`, then `make k3d-app APP=fred` (data kept) |
+| Run another published release | `make k3d-app APP=fred RELEASE=x.y.z` |
+| Test my fred code | `make k3d-app APP=fred DIR=../fred`, rerun after any change |
+| Go back to the published release | `make k3d-app APP=fred` (no `DIR`) |
+| Deploy my own application | `make k3d-app DIR=../<application>` |
+| Stop the cluster, keeping the data | `make k3d-down`, then `make k3d-up` to resume |
+| Start over | `make k3d-wipe`, then `make k3d-up`: **deletes every volume: accounts, documents, runs** |
+
+Going back to an older release in place is not supported: database migrations do not
+downgrade, and the older chart may refuse the current values. Start over instead.
 
 ---
 
