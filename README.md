@@ -94,12 +94,15 @@ prerequisites. Make selects the URLs; it does not enable permissions.
 **I want to...** `make k3d-app` converges: the first run installs, the next ones upgrade in
 place, keeping the data. You choose an application (`APP=fred`, `APP=fred-evaluator`, or
 `DIR=` a repository that defines its own) and a version (none: the release this repository
-pins, bumped by a Renovate PR after each release; `RELEASE=x.y.z`; or `DIR=` your checkout).
+pins; `RELEASE=x.y.z`; or `DIR=` your checkout). The pinned releases follow Fred and the
+evaluator: when either publishes a release, Renovate, a bot, opens a pull request here that
+raises the pinned version, and the CI checks the values against the new chart. Merging it
+and rerunning `make k3d-app` rehearses on k3d, with data, the upgrade production will run.
 
 | I want to... | Run |
 | --- | --- |
 | Install everything on a new cluster | `make k3d-up`, the model key Secret, `make k3d-app APP=fred`, `make k3d-app APP=fred-evaluator` |
-| Upgrade to the new release, once its Renovate PR is merged | `git pull`, then `make k3d-app APP=fred` (data kept) |
+| Rehearse the upgrade to a new release, once its Renovate PR is merged | `git pull` here, then `make k3d-app APP=fred` (data kept) |
 | Run another published release | `make k3d-app APP=fred RELEASE=x.y.z` |
 | Test my fred code | `make k3d-app APP=fred DIR=../fred`, rerun after any change |
 | Go back to the published release | `make k3d-app APP=fred` (no `DIR`) |
