@@ -1,6 +1,5 @@
 """Exercise Fred's k3d hooks with fake commands, never a real cluster."""
 
-import base64
 import json
 import os
 import subprocess
@@ -16,16 +15,7 @@ with open(os.environ["CALLS"], "a") as f:
     f.write(json.dumps([name, *args]) + "\\n")
 if name == "curl": print('{"root_bootstrap_required": true}')
 if name == "kubectl":
-    if "deployments" in args and not os.environ.get("FRESH"):
-        print("deployment/fred-agents\\ndeployment/knowledge-flow-backend\\ndeployment/knowledge-flow-worker")
-    if "secret" in args and "get" in args: print(os.environ.get("CURRENT_KEY", ""))
-    if "secret" in args and "patch" in args:
-        p = Path(args[args.index("--patch-file") + 1])
-        assert p.stat().st_mode & 0o077 == 0
-        import base64
-        (name, value), = json.loads(p.read_text())["data"].items()
-        assert value == base64.b64encode(os.environ[name].encode()).decode()
-        with open(os.environ["CALLS"] + ".patched", "a") as f: f.write(name + "\\n")
+    if "secret" in args and "get" in args: print(os.environ.get("MODEL_KEY", ""))
     if "configmap" in args and "get" in args:
         p = Path(os.environ["CALLS"] + ".count")
         count = int(p.read_text()) if p.exists() else 0
@@ -33,17 +23,18 @@ if name == "kubectl":
         print(count if os.environ.get("DASHBOARD_CHANGED") else "same")
     if "apply" in args: sys.stdin.read()
 """
+STORED_KEY = "dGVzdC1vbmx5LXNlY3JldA=="  # what kubectl returns: the key, base64
 
 
 class HookTests(unittest.TestCase):
-    def exercise(
+    def run_hook(
         self,
-        changed: bool,
-        fresh: bool = False,
-        brave_key: str = "",
+        hook: str,
+        model_key: str = STORED_KEY,
+        dashboards_changed: bool = False,
         checkout: bool = True,
-    ) -> tuple[str, list]:
-        with tempfile.TemporaryDirectory(prefix="fred configure ") as directory:
+    ) -> tuple[subprocess.CompletedProcess, list]:
+        with tempfile.TemporaryDirectory(prefix="fred hooks ") as directory:
             root = Path(directory)
             (root / "deploy/grafana").mkdir(parents=True)
             (root / "deploy/grafana/dashboard.json").write_text(
@@ -55,83 +46,66 @@ class HookTests(unittest.TestCase):
                 command = fakebin / name
                 command.write_text(FAKE)
                 command.chmod(0o755)
-            key = "test-only-secret-not-for-logs"
-            env = dict(
-                os.environ,
-                PATH=f"{fakebin}:{os.environ['PATH']}",
-                CALLS=str(root / "calls"),
-                KUBE_CONTEXT="k3d-test",
-                K3D_NAMESPACE="test",
-                OPENAI_API_KEY=key,
-                CURRENT_KEY="" if changed else base64.b64encode(key.encode()).decode(),
-                DASHBOARD_CHANGED="1" if changed else "",
-                FRESH="1" if fresh else "",
-                WEB_RESEARCH_PROVIDER_KEY=brave_key,
-                K3D_APP_CHECKOUT=str(root) if checkout else "",
+            result = subprocess.run(
+                ["bash", str(Path(__file__).with_name(hook))],
+                env=dict(
+                    os.environ,
+                    PATH=f"{fakebin}:{os.environ['PATH']}",
+                    CALLS=str(root / "calls"),
+                    KUBE_CONTEXT="k3d-test",
+                    K3D_NAMESPACE="test",
+                    MODEL_KEY=model_key,
+                    DASHBOARD_CHANGED="1" if dashboards_changed else "",
+                    K3D_APP_CHECKOUT=str(root) if checkout else "",
+                ),
+                capture_output=True,
+                text=True,
             )
-            output = ""
-            for hook in ("prepare", "finish"):
-                result = subprocess.run(
-                    ["bash", str(Path(__file__).with_name(hook))],
-                    env=env,
-                    capture_output=True,
-                    text=True,
-                )
-                self.assertEqual(result.returncode, 0, result.stderr)
-                output += result.stdout + result.stderr
-            calls = [
-                json.loads(line) for line in (root / "calls").read_text().splitlines()
-            ]
-            for secret in filter(None, (key, brave_key)):
-                self.assertNotIn(secret, output + json.dumps(calls))
-            patched = root / "calls.patched"
-            self.patched = patched.read_text().split() if patched.exists() else []
-            self.assertNotIn(
-                base64.b64encode(key.encode()).decode(), output + json.dumps(calls)
-            )
-            self.assertIn("get secret fred-secrets", output)
+            log = root / "calls"
+            calls = [json.loads(line) for line in log.read_text().splitlines()]
+            output = result.stdout + result.stderr
+            self.assertNotIn(STORED_KEY, output)
             self.assertFalse(
                 any("CONTROL_PLANE_BOOTSTRAP_TOKEN" in str(c) for c in calls)
             )
             for call in calls:
                 if call[0] == "kubectl":
                     self.assertEqual(call[1:3], ["--context", "k3d-test"])
-            return output, calls
+            return result, calls
 
-    def test_changed_key_and_dashboards_restart_consumers_without_logging_secrets(
-        self,
-    ) -> None:
-        _, calls = self.exercise(True)
-        self.assertTrue(any("patch" in c and "secret" in c for c in calls))
-        restarts = [c for c in calls if "restart" in c]
-        self.assertEqual(len(restarts), 4)
-        for app in ("fred-agents", "knowledge-flow-backend", "knowledge-flow-worker"):
-            self.assertTrue(any(f"deployment/{app}" in c for c in restarts))
-        self.assertTrue(any("deployment/grafana" in c for c in restarts))
-
-    def test_fresh_install_prepares_key_without_restarting_absent_consumers(
-        self,
-    ) -> None:
-        _, calls = self.exercise(True, fresh=True)
-        self.assertTrue(any("patch" in c and "secret" in c for c in calls))
-        self.assertFalse(
-            any("restart" in c and "deployment/grafana" not in c for c in calls)
+    def test_prepare_only_reads_the_operator_secret(self) -> None:
+        result, calls = self.run_hook("prepare")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(
+            [c[3:6] for c in calls], [["get", "secret", "fred-model-credentials"]]
         )
 
-    def test_brave_key_from_environment_reaches_fred_secrets(self) -> None:
-        output, _ = self.exercise(False, brave_key="test-only-brave-key")
-        self.assertEqual(self.patched, ["WEB_RESEARCH_PROVIDER_KEY"])
-        self.assertIn("Brave Search key written to fred-secrets", output)
+    def test_prepare_without_the_model_key_stops_and_says_how(self) -> None:
+        result, calls = self.run_hook("prepare", model_key="")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(
+            "create secret generic fred-model-credentials --from-literal=OPENAI_API_KEY=",
+            result.stderr,
+        )
+        self.assertFalse(any(a in c for c in calls for a in ("create", "patch")))
+
+    def test_changed_dashboards_restart_grafana(self) -> None:
+        result, calls = self.run_hook("finish", dashboards_changed=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(
+            any("deployment/grafana" in c and "restart" in c for c in calls)
+        )
+        self.assertIn("get secret fred-secrets", result.stdout)
+
+    def test_unchanged_dashboards_do_not_restart(self) -> None:
+        _, calls = self.run_hook("finish")
+        self.assertFalse(any("restart" in c for c in calls))
 
     def test_published_release_loads_no_dashboards(self) -> None:
-        _, calls = self.exercise(True, checkout=False)
+        _, calls = self.run_hook("finish", dashboards_changed=True, checkout=False)
         self.assertFalse(
             any("configmap" in c or "deployment/grafana" in c for c in calls)
         )
-
-    def test_unchanged_key_and_dashboards_do_not_restart(self) -> None:
-        _, calls = self.exercise(False)
-        self.assertFalse(any("restart" in c or "patch" in c for c in calls))
 
 
 if __name__ == "__main__":

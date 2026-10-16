@@ -53,17 +53,19 @@ x-env-s3: &env-s3
   name: MINIO_SECRET_KEY
   valueFrom:
     secretKeyRef: { name: fred-secrets, key: SEAWEEDFS_ADMIN_PASSWORD, optional: false }
-# Set by prepare (next to this file) from the environment, or from the checkout's
-# apps/fred-agents/config/.env with DIR.
+# Supplied by the operator, as in production: a Secret created before the
+# deployment (docs/LOCAL-DEVELOPMENT.md, "Your model API key"). Without it the
+# pods do not start.
 x-env-model-key: &env-model-key
   name: OPENAI_API_KEY
   valueFrom:
-    secretKeyRef: { name: fred-secrets, key: OPENAI_API_KEY, optional: false }
-# Set by prepare from the environment; absent unless web research is on.
+    secretKeyRef: { name: fred-model-credentials, key: OPENAI_API_KEY, optional: false }
+# Supplied by the operator only to turn web research on, with a values file
+# setting applications.fred-agents.configuration.web_research.enabled.
 x-env-web-research-key: &env-web-research-key
   name: WEB_RESEARCH_PROVIDER_KEY
   valueFrom:
-    secretKeyRef: { name: fred-secrets, key: WEB_RESEARCH_PROVIDER_KEY, optional: true }
+    secretKeyRef: { name: fred-web-research-credentials, key: WEB_RESEARCH_PROVIDER_KEY, optional: true }
 
 # ── observability ────────────────────────────────────────────────────────────
 # The console handler (Rich) wraps at 80 columns when there is no terminal, so
@@ -352,7 +354,9 @@ applications:
       - name: FRONTEND_THEME_S3_SECRET_KEY # secret
         valueFrom:
           secretKeyRef: { name: fred-secrets, key: SEAWEEDFS_ADMIN_PASSWORD, optional: true }
-    ingress:                               # address: everything on http://localhost:8088
+    # address: Fred on http://localhost:8088. Keycloak is not Fred's to expose:
+    # the browser reaches it at http://keycloak:8080, the realm_url above.
+    ingress:
       enabled: true
       className: "traefik"
       hosts:
@@ -362,8 +366,6 @@ applications:
             - { path: /fred/agents/v2, pathType: Prefix, service: { name: fred-agents, port: 80 } }
             - { path: /knowledge-flow, pathType: Prefix, service: { name: knowledge-flow-backend, port: 8000 } }
             - { path: /control-plane, pathType: Prefix, service: { name: control-plane-backend, port: 8222 } }
-            - { path: /realms, pathType: Prefix, service: { name: keycloak, port: 8080 } }
-            - { path: /resources, pathType: Prefix, service: { name: keycloak, port: 8080 } }
       tls: []
     configuration:
       config_json:                         # address

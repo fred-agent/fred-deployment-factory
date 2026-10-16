@@ -34,9 +34,13 @@ outside it. Do not reintroduce cloud-specific material here.
 - **An application's k3d values say only what the instance decides.** Every block is labelled
   `address`, `secret`, `posture`, `choice`, `models` or `sizing`; everything else is the
   chart's default. A `choice` is a candidate to become a chart default, in the chart's repo.
-- **One Foundation Secret.** Every credential lives in `fred-secrets` (created by `make k3d-up`,
-  `k3d/templates/secret.yaml`); the apps read each one by `secretKeyRef`. Never a literal value
-  in a values file.
+- **Credentials as in production.** What the instance generates (database, Keycloak client and
+  infrastructure passwords, the bootstrap token) lives in one Foundation Secret, `fred-secrets`
+  (created by `make k3d-up`, `k3d/templates/secret.yaml`). What the operator supplies (the model
+  key, the web research key) lives in Secrets the operator creates before deploying
+  (`fred-model-credentials`, `fred-web-research-credentials`), never written by a hook. The
+  apps read each one by `secretKeyRef`. Never a literal value in a values file, never a
+  credential taken from the environment or a checkout.
 - **Applications register with Fred like any application**: `application_sources` in the
   control-plane values and the frontend gateway's `FRONTEND_APPLICATIONS_JSON`, both in
   `k3d-apps/fred/values.yaml`; an application defined elsewhere adds its entries with a values

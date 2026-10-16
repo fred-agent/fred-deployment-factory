@@ -33,10 +33,10 @@ extraEnvVars:
     valueFrom:
       secretKeyRef: { name: fred-secrets, key: KEYCLOAK_EVAL_WORKER_CLIENT_SECRET, optional: false }
   # The judge and analysis models are Mistral's: on k3d the model key Fred
-  # uses (OPENAI_API_KEY, written by k3d-apps/fred/prepare) is a Mistral key.
+  # uses, in the operator's fred-model-credentials Secret, is a Mistral key.
   - name: MISTRAL_API_KEY
     valueFrom:
-      secretKeyRef: { name: fred-secrets, key: OPENAI_API_KEY, optional: false }
+      secretKeyRef: { name: fred-model-credentials, key: OPENAI_API_KEY, optional: false }
   # observability: a wide console, so Rich does not wrap one log line into
   # several before the log collector reads it.
   - name: COLUMNS

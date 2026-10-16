@@ -12,8 +12,9 @@ There are two ways to run. Pick one per session:
 | What runs where | the infrastructure (Keycloak, Postgres, OpenFGA, OpenSearch, Temporal...) in containers; Fred and the applications from their checkouts, with `make run` | everything in a local Kubernetes cluster: the infrastructure, then Fred and each application deployed with its Helm chart |
 | Use it to | debug an application quickly (breakpoints, reload) | test as production deploys: charts, images, identities, observability |
 
-**Once, for both:** in your `fred` checkout, run `make setup-env` (it creates each backend's
-`config/.env` and asks for your model API key).
+**Once, for Docker:** in your `fred` checkout, run `make setup-env` (it creates each backend's
+`config/.env` and asks for your model API key). On k3d, the key is a Kubernetes Secret, as in
+production (below).
 
 ---
 
@@ -60,7 +61,9 @@ grep -qw keycloak /etc/hosts || echo "127.0.0.1 keycloak" | sudo tee -a /etc/hos
 
 ```bash
 make k3d-up                                 # the infrastructure and the observability
-OPENAI_API_KEY=<key> make k3d-app APP=fred # Fred's published release; the key stays in the cluster
+kubectl --context k3d-fred -n fred create secret generic fred-model-credentials \
+  --from-literal=OPENAI_API_KEY=<key>       # your model key, once per cluster, as in production
+make k3d-app APP=fred                       # Fred's published release
 make k3d-app APP=fred-evaluator             # the evaluation application's published release
 make k3d-app APP=fred DIR=../fred           # or build and deploy your checkout; rerun after any change
 make k3d-app DIR=../<application>           # an application defined in its repository, e.g. ../dt-agents

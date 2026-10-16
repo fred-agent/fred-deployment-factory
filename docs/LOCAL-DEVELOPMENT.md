@@ -343,16 +343,36 @@ a `fred` checkout.
 grep -qw keycloak /etc/hosts || echo "127.0.0.1 keycloak" | sudo tee -a /etc/hosts
 ```
 
-**2. Your model API key** (once): pass it to the first deployment of Fred,
-`OPENAI_API_KEY=<key> make k3d-app APP=fred`; it stays in the cluster's `fred-secrets`.
-With `DIR=../fred`, the key of the checkout's `apps/fred-agents/config/.env` (`make
-setup-env` there) is used when the environment has none.
-
-**3. Infrastructure** (this repo): creates the cluster `fred` and installs the release
+**2. Infrastructure** (this repo): creates the cluster `fred` and installs the release
 `fred-stack` into the namespace `fred`:
 
 ```bash
 make k3d-up
+```
+
+**3. Your model API key** (once per cluster), as an operator supplies it before installing
+Fred anywhere: a Secret the Fred values read by reference. `make k3d-app APP=fred` stops
+until it exists; Fred's pods would not start without it.
+
+```bash
+kubectl --context k3d-fred -n fred create secret generic fred-model-credentials \
+  --from-literal=OPENAI_API_KEY=<your key>
+```
+
+The k3d values call Mistral through its OpenAI-compatible API: the key is a Mistral key.
+To turn web research (Brave Search) on, add its Secret and a values file:
+
+```bash
+kubectl --context k3d-fred -n fred create secret generic fred-web-research-credentials \
+  --from-literal=WEB_RESEARCH_PROVIDER_KEY=<your key>
+cat > web-research.yaml <<'YAML'
+applications:
+  fred-agents:
+    configuration:
+      web_research:
+        enabled: true
+YAML
+make k3d-app APP=fred VALUES=web-research.yaml
 ```
 
 **4. Fred** (this repo): installs the release `fred-app` from Fred's published chart and
@@ -450,7 +470,7 @@ An application is defined by the files below, in one of two places:
 | `values.yaml` | by convention | Its k3d values, every block labelled `address`, `secret`, `posture`, `choice`, `models` or `sizing` |
 | `identities.yaml` | no | Its service clients in Keycloak, the `fred-secrets` key of each one's secret, and the roles granted (below) |
 | `build` | no | Builds its images; writes `$K3D_APP_OUT/images.txt` (one reference per line, tagged by content) and `$K3D_APP_OUT/images.yaml` (the Helm values selecting them) |
-| `prepare` | no | Runs before the sync (Fred: the model key into `fred-secrets`; the evaluator: checks Fred runs) |
+| `prepare` | no | Runs before the sync (read-only checks: Fred, its operator Secret exists; the evaluator, Fred runs). Never writes a credential |
 | `finish` | no | Runs after the sync (Fred: its Grafana dashboards, how to log in) |
 
 `build`, `prepare` and `finish` are executables run from their directory with
@@ -471,8 +491,8 @@ lint keeps the `null` deletion markers the fred schema refuses, so lint skips th
 What an application can rely on, the **platform contract**: the namespace `fred`; the
 infrastructure services by name (`keycloak:8080` realm `app`, `postgres:5432`,
 `opensearch:9200`, `openfga:9080`, `temporal:7233`, `seaweedfs:8333`); and the credentials
-of `fred-secrets` (`k3d/templates/secret.yaml`), read by `secretKeyRef`, never copied into
-a values file. Fred learns about an application through its own k3d values
+of `fred-secrets` (`k3d/templates/secret.yaml`), plus the operator's own Secrets
+(`fred-model-credentials`), read by `secretKeyRef`, never copied into a values file. Fred learns about an application through its own k3d values
 (`application_sources`, `FRONTEND_APPLICATIONS_JSON`).
 
 **Identities.** The application says what it needs; this repository decides how:
