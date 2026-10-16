@@ -1,14 +1,18 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-# Deploy an application on the k3d instance from its own repository.
+# Deploy an application on the k3d instance.
 #
 #   bin/k3d-app.sh [deploy|validate|uninstall]     (run by `make k3d-app*`)
 #
-# DIR names the application: a checkout whose deploy/k3d/ holds a
-# helmfile.yaml.gotmpl, or that directory itself. It is the application's whole
-# contract with this instance (docs/LOCAL-DEVELOPMENT.md → "The k3d application
-# contract"):
+# APP names one of this repository's application definitions, k3d-apps/<APP>/:
+# its published release (RELEASE, or the version its helmfile pins), or, with
+# DIR, the checkout it develops (the helmfile reads K3D_APP_CHECKOUT for the
+# chart; the checkout's deploy/k3d/build makes the images). DIR alone names an
+# application defined in its own repository: a checkout whose deploy/k3d/ holds a
+# helmfile.yaml.gotmpl, or that directory itself. Either directory is the
+# application's whole contract with this instance (docs/LOCAL-DEVELOPMENT.md →
+# "The k3d application contract"):
 #   helmfile.yaml.gotmpl  its releases: its charts and its k3d values, ordinary Helmfile
 #   identities.yaml       optional: its service identities in Keycloak (bin/k3d-identities)
 #   build                 optional: builds its images, writes $K3D_APP_OUT/images.txt
@@ -17,7 +21,7 @@ set -Eeuo pipefail
 # This script owns the cluster side: the context, the identities, the image
 # import, release recovery and the sync. It never changes the current kubectl context.
 #
-# Environment (defaults in the Makefile): DIR; VALUES, extra values files applied
+# Environment (defaults in the Makefile): APP, RELEASE, DIR; VALUES, extra values files applied
 # last to every release (space-separated); FRED_LIBS (pypi | local) and FRED_REPO,
 # which fred the hooks and the helmfile build against; K3D_CLUSTER, K3D_NAMESPACE,
 # HELM_TIMEOUT, K3D_HOST_PORT_FRONTEND, K3D_HOST_PORT_GRAFANA (passed on to the hooks).
@@ -37,11 +41,28 @@ mode="${1:-deploy}"
 for tool in helm helmfile jq; do command -v "$tool" >/dev/null || fail "$tool is required"; done
 
 # ── The application ──────────────────────────────────────────────────────────
-[[ -n "${DIR:-}" ]] || fail "DIR is required: make k3d-app DIR=../fred"
-dir="$(cd "$DIR" 2>/dev/null && pwd)" || fail "DIR=$DIR: no such directory"
-if [[ -f "$dir/deploy/k3d/helmfile.yaml.gotmpl" ]]; then app="$dir/deploy/k3d"
-elif [[ -f "$dir/helmfile.yaml.gotmpl" ]]; then app="$dir"
-else fail "DIR=$DIR has neither deploy/k3d/helmfile.yaml.gotmpl nor helmfile.yaml.gotmpl"; fi
+defined="$( { cd "$here/k3d-apps" 2>/dev/null && ls -d -- */ 2>/dev/null; } | tr -d / | tr '\n' ' ' || true)"
+checkout=""
+if [[ -n "${APP:-}" ]]; then
+  app="$here/k3d-apps/$APP"
+  [[ "$APP" != */* && -f "$app/helmfile.yaml.gotmpl" ]] || fail "APP=$APP is not defined here; defined: $defined"
+  if [[ -n "${DIR:-}" ]]; then
+    [[ -z "${RELEASE:-}" ]] || fail "RELEASE deploys a published release and DIR a checkout: choose one"
+    checkout="$(cd "$DIR" 2>/dev/null && pwd)" || fail "DIR=$DIR: no such directory"
+    [[ -x "$checkout/deploy/k3d/build" ]] || fail "DIR=$DIR has no executable deploy/k3d/build"
+  fi
+else
+  [[ -n "${DIR:-}" ]] || fail "APP or DIR is required: make k3d-app APP=<one of: $defined>, or DIR=<checkout>"
+  dir="$(cd "$DIR" 2>/dev/null && pwd)" || fail "DIR=$DIR: no such directory"
+  if [[ -f "$dir/deploy/k3d/helmfile.yaml.gotmpl" ]]; then app="$dir/deploy/k3d"
+  elif [[ -f "$dir/helmfile.yaml.gotmpl" ]]; then app="$dir"
+  else fail "DIR=$DIR has neither deploy/k3d/helmfile.yaml.gotmpl nor helmfile.yaml.gotmpl (defined here, with APP: $defined)"; fi
+fi
+[[ -z "${RELEASE:-}" || "$RELEASE" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] \
+  || fail "RELEASE must be a release version such as 3.6.0, not '$RELEASE'"
+export K3D_APP_CHECKOUT="$checkout" RELEASE="${RELEASE:-}"
+# The checkout's build, when APP develops one; otherwise the application's own.
+build_dir="${checkout:+$checkout/deploy/k3d}"; build_dir="${build_dir:-$app}"
 values=()
 for f in ${VALUES:-}; do
   [[ -f "$f" ]] || fail "values file not found: $f"
@@ -60,9 +81,12 @@ esac
 
 # Build outputs live in this repository's cache, one directory per application.
 repo="$(git -C "$app" rev-parse --show-toplevel 2>/dev/null || echo "$app")"
-export K3D_APP_OUT="$here/.cache/k3d-apps/$(basename "$repo")-$(printf '%s' "$app" | sha256sum | cut -c1-8)"
+export K3D_APP_OUT="$here/.cache/k3d-apps/${APP:-$(basename "$repo")}-$(printf '%s' "$app" | sha256sum | cut -c1-8)"
 mkdir -p "$K3D_APP_OUT"
-[[ -f "$K3D_APP_OUT/images.yaml" ]] || echo '{}' >"$K3D_APP_OUT/images.yaml"
+# Without a build, the charts' own images, never those of an earlier build.
+if [[ ! -e "$build_dir/build" || ! -f "$K3D_APP_OUT/images.yaml" ]]; then
+  echo '{}' >"$K3D_APP_OUT/images.yaml"
+fi
 export K3D_IMAGE_VALUES="$K3D_APP_OUT/images.yaml"
 
 describe() {
@@ -72,7 +96,9 @@ describe() {
   dirty="$(git -C "$1" status --porcelain 2>/dev/null | grep -qv '^??' && echo ' + uncommitted changes' || true)"
   echo "$branch @ $commit$dirty"
 }
-info "Application: $app ($(describe "$app"))"
+if [[ -n "$checkout" ]]; then info "Application: $APP, from $checkout ($(describe "$checkout"))"
+elif [[ -n "${APP:-}" ]]; then info "Application: $APP, published release ${RELEASE:-pinned in k3d-apps/$APP/helmfile.yaml.gotmpl}"
+else info "Application: $app ($(describe "$app"))"; fi
 
 # Which fred the application builds against: its hooks and its helmfile read both.
 export FRED_LIBS="${FRED_LIBS:-pypi}"
@@ -100,10 +126,11 @@ render() {
     || fail "rendering failed (rerun: ${state[*]} template)"
 }
 hook() {
-  [[ -e "$app/$1" ]] || return 0
-  [[ -x "$app/$1" ]] || fail "$app/$1 is not executable"
+  local dir="${2:-$app}"
+  [[ -e "$dir/$1" ]] || return 0
+  [[ -x "$dir/$1" ]] || fail "$dir/$1 is not executable"
   step "Run $1"
-  (cd "$app" && "./$1") || fail "$1 failed"
+  (cd "$dir" && "./$1") || fail "$1 failed"
 }
 releases() {
   "${state[@]}" list --output json | jq -r --arg ns "$K3D_NAMESPACE" \
@@ -120,7 +147,7 @@ if [[ "$mode" == validate ]]; then
   identities --check
   render
   if [[ "$(cat "$K3D_IMAGE_VALUES")" == '{}' ]]; then
-    ok "Lint and render passed, with the charts' default images (no build yet)"
+    ok "Lint and render passed, with the charts' own images (no build)"
   else
     ok "Lint and render passed, with the images of the last build ($K3D_IMAGE_VALUES)"
   fi
@@ -148,9 +175,9 @@ fi
 # Check and render before building: a mistake costs seconds, not a build.
 identities --check
 render
-if [[ -e "$app/build" ]]; then
+if [[ -e "$build_dir/build" ]]; then
   rm -f "$K3D_APP_OUT/images.txt" "$K3D_APP_OUT/images.yaml"
-  hook build
+  hook build "$build_dir"
   [[ -s "$K3D_APP_OUT/images.txt" && -s "$K3D_APP_OUT/images.yaml" ]] \
     || fail "build wrote no images.txt and images.yaml in \$K3D_APP_OUT ($K3D_APP_OUT)"
   render

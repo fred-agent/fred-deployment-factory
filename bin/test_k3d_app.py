@@ -32,7 +32,7 @@ if name == "kubectl" and "pvc" in args:
     print(json.dumps({"items": [{"metadata": {"name": "data", "annotations": {"meta.helm.sh/release-name": "app-a"}}}]}))
 """
 HOOK = """#!/bin/bash
-printf '["%s", "%s", "%s", "%s", "%s"]\\n' "$(basename "$0")" "$KUBE_CONTEXT" "$PWD" "$FRED_LIBS" "${FRED_REPO:-}" >> "$CALLS"
+printf '["%s", "%s", "%s", "%s", "%s", "%s", "%s"]\\n' "$(basename "$0")" "$KUBE_CONTEXT" "$PWD" "$FRED_LIBS" "${FRED_REPO:-}" "${K3D_APP_CHECKOUT:-}" "${RELEASE:-}" >> "$CALLS"
 if [[ "$(basename "$0")" == build ]]; then
   [[ -n "${FAIL_BUILD:-}" ]] && exit 1
   echo 'app:k3d-1' > "$K3D_APP_OUT/images.txt"
@@ -76,8 +76,16 @@ class K3dAppTests(unittest.TestCase):
             DIR="some app",
             K3D_CLUSTER="other",
         )
-        for name in ("VALUES", "K3D_NAMESPACE", "KUBE_CONTEXT", "FRED_LIBS", "FRED_REPO"):
+        for name in ("VALUES", "K3D_NAMESPACE", "KUBE_CONTEXT", "FRED_LIBS", "FRED_REPO",
+                     "APP", "RELEASE", "K3D_APP_CHECKOUT"):
             self.env.pop(name, None)
+        # An application defined in this repository: no build of its own.
+        self.defined = self.factory / "k3d-apps/my-app"
+        self.defined.mkdir(parents=True)
+        (self.defined / "helmfile.yaml.gotmpl").write_text("releases: []\n")
+        for hook in ("prepare", "finish"):
+            (self.defined / hook).write_text(HOOK)
+            (self.defined / hook).chmod(0o755)
 
     def run_app(self, mode: str = "deploy", **env: str) -> tuple[subprocess.CompletedProcess, list]:
         (self.root / "calls").unlink(missing_ok=True)
@@ -105,7 +113,7 @@ class K3dAppTests(unittest.TestCase):
     def test_fred_libs_selects_which_fred_the_hooks_build_against(self) -> None:
         result, calls = self.run_app()
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual({tuple(c[3:]) for c in calls if c[0] == "build"}, {("pypi", "")})
+        self.assertEqual({tuple(c[3:5]) for c in calls if c[0] == "build"}, {("pypi", "")})
         self.assertIn("FRED_LIBS=pypi", result.stdout)
 
         fred = self.root / "fred checkout"
@@ -113,7 +121,7 @@ class K3dAppTests(unittest.TestCase):
         (fred / "deploy/charts").mkdir(parents=True)
         result, calls = self.run_app(FRED_LIBS="local", FRED_REPO=str(fred))
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual({tuple(c[3:]) for c in calls if c[0] == "build"}, {("local", str(fred))})
+        self.assertEqual({tuple(c[3:5]) for c in calls if c[0] == "build"}, {("local", str(fred))})
         self.assertIn(f"libraries and charts from {fred}", result.stdout)
 
     def test_fred_libs_refuses_what_it_cannot_build_against(self) -> None:
@@ -133,7 +141,7 @@ class K3dAppTests(unittest.TestCase):
         result, calls = self.run_app("validate")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual([c[0] for c in calls], ["helmfile", "helmfile"])
-        self.assertIn("default images", result.stdout)
+        self.assertIn("own images", result.stdout)
 
     def test_missing_values_fail_before_commands(self) -> None:
         result, calls = self.run_app(VALUES="missing.yaml")
@@ -209,6 +217,49 @@ class K3dAppTests(unittest.TestCase):
         )
         result, _ = self.run_app("validate")
         self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_app_deploys_its_published_release_without_a_build(self) -> None:
+        # An earlier development build must not leak its images into a release.
+        result, _ = self.run_app(APP="my-app", DIR="some app")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        for env in ({}, {"RELEASE": "3.6.0"}):
+            with self.subTest(env=env):
+                result, calls = self.run_app(APP="my-app", DIR="", **env)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertFalse(any(c[0] in ("build", "import") for c in calls))
+                hooks = [c for c in calls if c[0] in ("prepare", "finish")]
+                self.assertEqual([c[0] for c in hooks], ["prepare", "finish"])
+                for call in hooks:
+                    self.assertEqual(call[2:3] + call[5:], [str(self.defined), "", env.get("RELEASE", "")])
+                (images,) = (self.factory / ".cache/k3d-apps").glob("my-app-*/images.yaml")
+                self.assertEqual(images.read_text().strip(), "{}")
+
+    def test_app_with_dir_builds_the_checkout(self) -> None:
+        result, calls = self.run_app(APP="my-app")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        checkout = str(self.root / "some app")
+        build = next(c for c in calls if c[0] == "build")
+        self.assertEqual(build[2], str(self.app))
+        self.assertEqual(build[5], checkout)
+        self.assertIn(["import", "app:k3d-1"], calls)
+        for call in calls:
+            if call[0] in ("prepare", "finish"):
+                self.assertEqual([call[2], call[5]], [str(self.defined), checkout])
+
+    def test_app_refuses_what_it_cannot_deploy(self) -> None:
+        for env, message in (
+            ({"APP": "nowhere"}, "APP=nowhere is not defined here; defined: my-app"),
+            ({"APP": "../my-app"}, "is not defined here"),
+            ({"APP": "my-app", "RELEASE": "latest", "DIR": ""}, "must be a release version"),
+            ({"APP": "my-app", "RELEASE": "3.6.0"}, "choose one"),
+            ({"APP": "my-app", "DIR": "."}, "has no executable deploy/k3d/build"),
+            ({"DIR": ""}, "APP or DIR is required"),
+        ):
+            with self.subTest(env=env):
+                result, calls = self.run_app("validate", **env)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(message, result.stderr)
+                self.assertEqual(calls, [])
 
     def test_uninstall_refuses_a_release_owning_volumes(self) -> None:
         result, calls = self.run_app("uninstall")

@@ -492,27 +492,31 @@ k3d-up: k3d-create ## Deploy the full stack into k3d with Helm
 	run_step "Show namespace status $(K3D_NAMESPACE)" \
 	  kubectl get pods,svc -n "$(K3D_NAMESPACE)"
 
-##@ k3d: applications (each one's deploy/k3d/ in its own repository, bin/k3d-app.sh)
-# DIR: a checkout with deploy/k3d/helmfile.yaml.gotmpl, or that directory itself.
+##@ k3d: applications (k3d-apps/<APP>/ here, or a repository's deploy/k3d/; bin/k3d-app.sh)
+# APP: an application defined in k3d-apps/ (fred, fred-evaluator): its published release,
+# RELEASE=<version> or the one its helmfile pins; with DIR, built from that checkout instead.
+# DIR alone: a checkout with deploy/k3d/helmfile.yaml.gotmpl, or that directory itself.
 # VALUES: extra values files applied last to every release (space-separated).
 # FRED_LIBS: pypi (released fred libraries and charts) or local (the fred checkout at
 # FRED_REPO, required then, no default): docs/LOCAL-DEVELOPMENT.md → "Work on unreleased fred".
+APP ?=
+RELEASE ?=
 DIR ?=
 VALUES ?=
 FRED_LIBS ?= pypi
 FRED_REPO ?=
-K3D_APP_ENV = DIR="$(DIR)" VALUES="$(VALUES)" FRED_LIBS="$(FRED_LIBS)" FRED_REPO="$(FRED_REPO)" \
+K3D_APP_ENV = APP="$(APP)" RELEASE="$(RELEASE)" DIR="$(DIR)" VALUES="$(VALUES)" FRED_LIBS="$(FRED_LIBS)" FRED_REPO="$(FRED_REPO)" \
 	K3D_CLUSTER="$(K3D_CLUSTER)" K3D_NAMESPACE="$(K3D_NAMESPACE)" \
 	HELM_TIMEOUT="$(HELM_TIMEOUT)" K3D_HOST_PORT_FRONTEND="$(K3D_HOST_PORT_FRONTEND)" \
 	K3D_HOST_PORT_GRAFANA="$(K3D_HOST_PORT_GRAFANA)" K3D_HOST_PORT_KEYCLOAK="$(K3D_HOST_PORT_KEYCLOAK)"
 
-k3d-app: ## Build and deploy an application on k3d: make k3d-app DIR=../fred; rerun after any change
+k3d-app: ## Deploy an application on k3d: make k3d-app APP=fred [RELEASE=x.y.z | DIR=../fred]; rerun after any change
 	@$(K3D_APP_ENV) bin/k3d-app.sh deploy
 
-k3d-app-validate: ## Lint and render an application's releases, no build, no cluster change: make k3d-app-validate DIR=../fred
+k3d-app-validate: ## Lint and render an application's releases, no build, no cluster change: make k3d-app-validate APP=fred
 	@$(K3D_APP_ENV) bin/k3d-app.sh validate
 
-k3d-app-uninstall: ## Remove an application's releases; their data stays in the infrastructure: make k3d-app-uninstall DIR=../fred
+k3d-app-uninstall: ## Remove an application's releases; their data stays in the infrastructure: make k3d-app-uninstall APP=fred
 	@$(K3D_APP_ENV) bin/k3d-app.sh uninstall
 
 k3d-health: ## What needs attention on k3d: pods, events, errors, 5xx, degraded features, targets, workflows (bin/k3d-observe)

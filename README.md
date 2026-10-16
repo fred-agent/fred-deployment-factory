@@ -60,12 +60,14 @@ grep -qw keycloak /etc/hosts || echo "127.0.0.1 keycloak" | sudo tee -a /etc/hos
 
 ```bash
 make k3d-up                                 # the infrastructure and the observability
-make k3d-app DIR=../fred                    # build and deploy Fred; rerun after any change
-make k3d-app DIR=../<application>           # each application, e.g. ../fred-agent-evaluator, ../dt-agents
+OPENAI_API_KEY=<key> make k3d-app APP=fred # Fred's published release; the key stays in the cluster
+make k3d-app APP=fred-evaluator             # the evaluation application's published release
+make k3d-app APP=fred DIR=../fred           # or build and deploy your checkout; rerun after any change
+make k3d-app DIR=../<application>           # an application defined in its repository, e.g. ../dt-agents
 make k3d-health                             # what needs attention, on one screen
 ```
 
-`make k3d-app DIR=../fred` ends with the command that prints the **bootstrap token**. Open
+`make k3d-app APP=fred` ends with the command that prints the **bootstrap token**. Open
 <http://localhost:8088>, **Register** on the login page, and paste that token where Fred
 asks for it: you are `platform_admin` (once per platform). Then enable what you need in
 **Admin > Features**.
