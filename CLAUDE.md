@@ -23,7 +23,7 @@ outside it. Do not reintroduce cloud-specific material here.
 
 - **This instance owns its values; products own their charts and images.** Fred's open-source
   applications (Fred, the evaluation application) are defined here, in `k3d-apps/<APP>/`:
-  helmfile (the published OCI chart, its version pinned and bumped after each release), k3d
+  helmfile (the published OCI chart, its version pinned and bumped by Renovate, `renovate.json`), k3d
   values, identities, `prepare` and `finish`. Their repositories keep only `deploy/k3d/build`,
   for `DIR`. Other applications (proprietary ones included) keep their whole definition in
   their own `deploy/k3d/`. Both follow one contract (`docs/LOCAL-DEVELOPMENT.md` → "The k3d

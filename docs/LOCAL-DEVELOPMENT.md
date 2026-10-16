@@ -456,7 +456,7 @@ An application is defined by the files below, in one of two places:
 
 - **here, `k3d-apps/<APP>/`**, for Fred's open-source applications (`fred`, `fred-evaluator`):
   the instance's values, deployed from the published chart and images (`APP=<app>`,
-  `RELEASE=<version>` or the version the helmfile pins, bumped after each release). Their
+  `RELEASE=<version>` or the version the helmfile pins, bumped by a Renovate PR after each release and validated by `.github/workflows/validate.yml`). Their
   repositories keep only `deploy/k3d/build`: with `DIR=<checkout>`, the engine runs it and
   exports `K3D_APP_CHECKOUT`, from which the helmfile takes the chart. `RELEASE` and `DIR`
   exclude each other; a `RELEASE` that is not a version (`latest`) is refused.
