@@ -110,6 +110,29 @@ pins, bumped by a Renovate PR after each release; `RELEASE=x.y.z`; or `DIR=` you
 Going back to an older release in place is not supported: database migrations do not
 downgrade, and the older chart may refuse the current values. Start over instead.
 
+### Check Renovate activity
+
+The Mend-hosted Renovate GitHub App checks the published chart versions and proposes
+updates to the pins in `k3d-apps/*/helmfile.yaml.gotmpl`, according to
+[`renovate.json`](renovate.json). Its jobs run on Mend; GitHub Actions runs this
+repository's validation CI when a PR is opened. Merging a version bump does not deploy
+anything: pull the change and run `make k3d-app APP=fred` (or `APP=fred-evaluator`).
+
+1. Sign in to the [Mend Developer Portal](https://developer.mend.io/) with GitHub.
+2. Select **fred-agent > fred-deployment-factory > Recent jobs**. Open a job and
+   select **DEBUG** to inspect detected versions, warnings and errors.
+3. Check **Repo Engine Settings > Dependency Updates (Renovate)**. In **Silent**
+   mode, Renovate looks up updates but creates **no PRs or issues**. A completed job
+   therefore does not mean a PR was created, and rerunning it does not leave Silent
+   mode. A repository administrator can select **Interactive** in the repository
+   settings to allow PRs; check the next job for the outcome.
+
+**Team access:** colleagues with **Write** access to this GitHub repository should
+be able to read its Renovate job logs using their own GitHub login; a separate Mend
+invitation is normally unnecessary for log access. See the official
+[log access documentation](https://docs.renovatebot.com/troubleshooting/#the-mend-renovate-app-this-means-the-mend-hosted-github-app)
+and [Silent mode documentation](https://docs.renovatebot.com/mend-hosted/hosted-apps-config/#get-onboarding-prs-from-renovate-by-getting-out-of-silent-mode).
+
 ---
 
 ## Work on unreleased fred (both modes)
