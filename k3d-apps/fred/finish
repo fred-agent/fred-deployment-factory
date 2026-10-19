@@ -44,8 +44,13 @@ if ! getent hosts keycloak >/dev/null; then
   warn "'keycloak' does not resolve on this machine: the browser cannot log in. Once, with sudo:"
   printf '       grep -qw keycloak /etc/hosts || echo "127.0.0.1 keycloak" | sudo tee -a /etc/hosts\n'
 fi
+# Manager is selected by the same chart capability used by the helmfile.
+bootstrap_service=control-plane
+if python3 "$(dirname "$0")/manager-transition.py" --is-integrated; then
+  bootstrap_service=fred-manager
+fi
 # Explain token retrieval only while the first-login bootstrap is needed.
-if curl --max-time 10 -fsS "http://localhost:${K3D_HOST_PORT_FRONTEND:-8088}/control-plane/v1/frontend/config" 2>/dev/null \
+if curl --max-time 10 -fsS "http://localhost:${K3D_HOST_PORT_FRONTEND:-8088}/${bootstrap_service}/v1/frontend/config" 2>/dev/null \
     | grep -Eq '"root_bootstrap_required": ?true'; then
   info "First login: open Fred, create your account with Register on the login page,"
   info "Retrieve the bootstrap token locally, then paste it where Fred asks for it:"

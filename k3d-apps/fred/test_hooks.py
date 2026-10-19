@@ -33,6 +33,7 @@ class HookTests(unittest.TestCase):
         model_key: str = STORED_KEY,
         dashboards_changed: bool = False,
         checkout: bool = True,
+        manager: bool = False,
     ) -> tuple[subprocess.CompletedProcess, list]:
         with tempfile.TemporaryDirectory(prefix="fred hooks ") as directory:
             root = Path(directory)
@@ -40,6 +41,9 @@ class HookTests(unittest.TestCase):
             (root / "deploy/grafana/dashboard.json").write_text(
                 '{"datasource": "${DS_PROMETHEUS}"}'
             )
+            if manager:
+                (root / "deploy/charts/fred").mkdir(parents=True)
+                (root / "deploy/charts/fred/values.yaml").write_text("applications: {fred-manager: {}}")
             fakebin = root / "bin"
             fakebin.mkdir()
             for name in ("kubectl", "curl", "getent"):
@@ -100,6 +104,12 @@ class HookTests(unittest.TestCase):
     def test_unchanged_dashboards_do_not_restart(self) -> None:
         _, calls = self.run_hook("finish")
         self.assertFalse(any("restart" in c for c in calls))
+
+    def test_manager_bootstrap_guidance_uses_manager_configuration(self) -> None:
+        result, calls = self.run_hook("finish", manager=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(any(c[0] == "curl" and c[-1].endswith("/fred-manager/v1/frontend/config") for c in calls))
+        self.assertIn("CONTROL_PLANE_BOOTSTRAP_TOKEN", result.stdout)
 
     def test_published_release_loads_no_dashboards(self) -> None:
         _, calls = self.run_hook("finish", dashboards_changed=True, checkout=False)

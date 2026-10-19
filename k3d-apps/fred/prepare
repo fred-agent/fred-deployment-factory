@@ -16,3 +16,6 @@ if [[ -z "$key" ]]; then
     "$KUBE_CONTEXT" "$ns" >&2
   exit 1
 fi
+
+# The helper is a no-op for the pinned legacy release or a legacy checkout.
+python3 "$(dirname "$0")/manager-transition.py"

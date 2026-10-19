@@ -71,6 +71,13 @@ make k3d-app DIR=../<application>           # an application defined in its repo
 make k3d-health                             # what needs attention, on one screen
 ```
 
+A checkout whose Fred chart includes `fred-manager` builds three images and runs
+manager API/worker, Knowledge Flow API/worker and frontend in `fred-app`. The
+manager-aware overlay disables control-plane and fred-agents. An existing known
+standalone manager release is checked, saved in a protected cache directory and
+retired before sync, without resetting data. If sync fails, fix the cause and rerun
+the same command with the same revisions. See the [transition details](docs/LOCAL-DEVELOPMENT.md#manager-integrated-fred-checkouts).
+
 `make k3d-app APP=fred` ends with the command that prints the **bootstrap token**. Open
 <http://localhost:8088>, **Register** on the login page, and paste that token where Fred
 asks for it: you are `platform_admin` (once per platform). Then enable what you need in

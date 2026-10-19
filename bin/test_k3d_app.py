@@ -20,6 +20,8 @@ if name == "helmfile" and "template" in args:
     built = Path(os.environ["K3D_IMAGE_VALUES"]).read_text().strip() != "{}"
     if os.environ.get("FAIL_RENDER") == "1" or (os.environ.get("FAIL_FINAL_RENDER") == "1" and built):
         sys.exit(1)
+if name == "helmfile" and "sync" in args and os.environ.get("FAIL_SYNC") == "1":
+    sys.exit(1)
 if name == "helmfile" and "list" in args:
     print(json.dumps([{"name": "app-a", "namespace": "", "enabled": True},
                       {"name": "app-b", "namespace": "other-ns", "enabled": True},
@@ -154,6 +156,22 @@ class K3dAppTests(unittest.TestCase):
         for call in calls:
             if call[0] == "helmfile" and ("template" in call or "sync" in call):
                 self.assertIn(str(self.root / "extra-values.yaml"), call)
+
+    def test_normalized_values_reach_hooks_after_directory_change(self) -> None:
+        hook = self.app / "prepare"
+        hook.write_text(HOOK.replace("exit 0", 'printf %s "$K3D_APP_VALUES_JSON" > "$CALLS.normalized"\nexit 0'))
+        result, _ = self.run_app(VALUES="extra-values.yaml")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads((self.root / "calls.normalized").read_text()), ["--values", str(self.root / "extra-values.yaml")])
+
+    def test_failed_sync_does_not_finish_and_retry_succeeds(self) -> None:
+        result, calls = self.run_app(FAIL_SYNC="1")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertTrue(any(c[0] == "prepare" for c in calls))
+        self.assertFalse(any(c[0] == "finish" for c in calls))
+        result, calls = self.run_app()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(any(c[0] == "finish" for c in calls))
 
     def test_failures_stop_before_mutations(self) -> None:
         for failure in ("FAIL_RENDER", "FAIL_FINAL_RENDER", "FAIL_BUILD"):

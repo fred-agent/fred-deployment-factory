@@ -69,6 +69,9 @@ for f in ${VALUES:-}; do
   values+=(--values "$(realpath "$f")")
 done
 
+# Hooks that re-render must use exactly the invocation's normalized values arguments.
+export K3D_APP_VALUES_JSON="$(python3 -c 'import json, sys; print(json.dumps(sys.argv[1:]))' "${values[@]}")"
+
 export KUBE_CONTEXT="k3d-${K3D_CLUSTER:-fred}"
 export K3D_CLUSTER="${K3D_CLUSTER:-fred}" K3D_NAMESPACE="${K3D_NAMESPACE:-fred}"
 export K3D_HOST_PORT_FRONTEND="${K3D_HOST_PORT_FRONTEND:-8088}" K3D_HOST_PORT_GRAFANA="${K3D_HOST_PORT_GRAFANA:-3002}"

@@ -456,6 +456,32 @@ off at startup, the Prometheus targets down and the workflows running. Then
 `make k3d-up` and `make k3d-app` are both safe to rerun: they converge. Optional Cilium
 (`K3D_USE_CILIUM=true`) is only needed for `CiliumNetworkPolicy` / air-gap flows.
 
+### Manager-integrated Fred checkouts
+
+`make k3d-app APP=fred DIR=../fred` detects manager support from the checkout chart,
+not the Git branch name. It adds `k3d-apps/fred/manager-values.yaml` and provisions
+the declared manager service identity. The checkout builds three images for five
+Deployments: manager API/worker, Knowledge Flow API/worker and frontend. The
+published pinned legacy path retains its existing chart and values.
+
+The prepare hook retires a recognized standalone `fred-manager` release after
+rendering the replacement and checking live Helm ownership, absence of persistence
+and hooks, and continuity of storage, identity, lifecycle policy and environment
+sources. Changed protected settings or unexpected resources stop before removal.
+It writes manifest/values inspection snapshots to a mode-0700 cache directory with
+mode-0600 files, then removes the release with foreground waiting. The next sync
+installs manager in `fred-app`; there is an interruption, not an atomic handoff.
+Infrastructure, data and foundation Secrets remain intact. If sync fails, correct
+the cause and retry the same command/revisions; the absent standalone release is
+not removed again. Snapshots are not an automatic rollback chart.
+
+The API and worker use the same manager configuration/catalog; configure those on
+`applications.fred-manager`, and keep pair image tags identical. Worker credentials
+are independent and contain only SQL/OpenFGA access. The bootstrap guidance uses
+manager configuration and the existing `CONTROL_PLANE_BOOTSTRAP_TOKEN` Secret key.
+Existing UI stays visible; calls to stopped legacy services can fail. A separate
+manager install, data reset or provisioning reimport is unnecessary.
+
 ### Prepare k3d for Fred integration tests
 
 Run the harness from the **Fred checkout**, after deploying the applications and
@@ -530,7 +556,7 @@ An application is defined by the files below, in one of two places:
 | `values.yaml` | by convention | Its k3d values, every block labelled `address`, `secret`, `posture`, `choice`, `models` or `sizing` |
 | `identities.yaml` | no | Its service clients in Keycloak, the `fred-secrets` key of each one's secret, and the roles granted (below) |
 | `build` | no | Builds its images; writes `$K3D_APP_OUT/images.txt` (one reference per line, tagged by content) and `$K3D_APP_OUT/images.yaml` (the Helm values selecting them) |
-| `prepare` | no | Runs before the sync (read-only checks: Fred, its operator Secret exists; the evaluator, Fred runs). Never writes a credential |
+| `prepare` | no | Runs before sync (Fred checks its operator Secret and guards a known standalone-manager transition; the evaluator checks Fred). Never writes a credential |
 | `finish` | no | Runs after the sync (Fred: its Grafana dashboards, how to log in) |
 
 `build`, `prepare` and `finish` are executables run from their directory with

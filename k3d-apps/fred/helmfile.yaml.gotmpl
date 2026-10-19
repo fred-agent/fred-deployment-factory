@@ -15,6 +15,12 @@ releases:
     {{- end }}
     values:
       - values.yaml
+      {{- if $checkout }}
+      {{- $defaults := readFile (printf "%s/deploy/charts/fred/values.yaml" $checkout) | fromYaml }}
+      {{- if hasKey $defaults.applications "fred-manager" }}
+      - manager-values.yaml
+      {{- end }}
+      {{- end }}
       {{- with env "K3D_IMAGE_VALUES" }}
       - {{ . | quote }}
       {{- end }}

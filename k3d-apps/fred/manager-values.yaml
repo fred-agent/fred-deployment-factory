@@ -1,0 +1,44 @@
+# The instance settings for charts containing Fred Manager. Legacy pinned charts
+# keep values.yaml; the helmfile selects this overlay from the checkout's chart.
+applications:
+  fred-agents: { enabled: false }
+  control-plane-backend: { enabled: false }
+  control-plane-worker: { enabled: false }
+  fred-manager:
+    extraEnvVars:
+      - name: KEYCLOAK_FRED_MANAGER_CLIENT_SECRET
+        valueFrom:
+          secretKeyRef: {name: fred-secrets, key: KEYCLOAK_FRED_MANAGER_CLIENT_SECRET, optional: false}
+      - &postgres
+        name: FRED_POSTGRES_PASSWORD
+        valueFrom:
+          secretKeyRef: {name: fred-secrets, key: POSTGRES_FRED_PASSWORD, optional: false}
+      - &openfga
+        name: OPENFGA_API_TOKEN
+        valueFrom:
+          secretKeyRef: {name: fred-secrets, key: OPENFGA_API_TOKEN, optional: false}
+      - name: FRED_BOOTSTRAP_TOKEN
+        valueFrom:
+          secretKeyRef: {name: fred-secrets, key: CONTROL_PLANE_BOOTSTRAP_TOKEN, optional: false}
+    ingress:
+      className: traefik
+      hosts:
+        - host: ""
+          paths:
+            - path: /fred-manager
+              pathType: Prefix
+              service: {name: fred-manager, port: 8400}
+    configuration: &manager-config
+      security:
+        m2m: {realm_url: "http://keycloak:8080/realms/app"}
+        user: {realm_url: "http://keycloak:8080/realms/app"}
+        authorized_origins: ["http://localhost:8088"]
+        rebac: {api_url: "http://openfga:9080"}
+      storage:
+        postgres: {host: postgres, port: 5432, database: fred, username: fred}
+      scheduler:
+        lifecycle:
+          temporal: {host: "temporal:7233"}
+  fred-manager-worker:
+    extraEnvVars: [*postgres, *openfga]
+    configuration: *manager-config
