@@ -195,8 +195,36 @@ hook prepare
 while read -r release ns; do
   "$here/bin/k3d-helm-recover.sh" "$release" "$ns" "$timeout"
 done < <(releases)
-step "Sync the releases (waits until every pod is ready, up to $timeout)"
+# While the sync waits, say every 30 s which pods are not ready yet and what each is
+# doing (pulling an image, crashing, failing a probe): a long pull is not a hang.
+watch_pods() {
+  local start=$SECONDS pods pod reason event
+  while sleep 30; do
+    pods="$(kubectl --context "$KUBE_CONTEXT" get pods -n "$K3D_NAMESPACE" -o json 2>/dev/null | jq -r '
+      .items[] | select(.status.phase != "Succeeded")
+      | ([.status.initContainerStatuses[]?, .status.containerStatuses[]?] | map(select(.ready | not))) as $waiting
+      | select(($waiting | length) > 0 or (.status.containerStatuses == null))
+      | "\(.metadata.name) \($waiting[0].state.waiting.reason // (if $waiting[0].state.running then "started, not ready yet" else .status.phase end))"' \
+      || true)"
+    if [[ -z "$pods" ]]; then
+      info "$(( (SECONDS - start) / 60 ))m$(printf %02d $(( (SECONDS - start) % 60 ))): every pod ready, Helm is finishing"
+      continue
+    fi
+    info "$(( (SECONDS - start) / 60 ))m$(printf %02d $(( (SECONDS - start) % 60 ))): $(wc -l <<<"$pods") pod(s) not ready yet"
+    while read -r pod reason; do
+      event="$(kubectl --context "$KUBE_CONTEXT" get events -n "$K3D_NAMESPACE" -o json \
+        --field-selector "involvedObject.name=$pod" 2>/dev/null \
+        | jq -r '.items | sort_by(.lastTimestamp // .eventTime) | last | .message // ""' || true)"
+      printf '         %s: %s%s\n' "$pod" "$reason" "${event:+ — ${event:0:140}}"
+    done <<<"$pods"
+  done
+}
+watch_pods &
+watcher=$!
+trap 'kill "$watcher" 2>/dev/null || true' EXIT
+step "Sync the releases (waits until every pod is ready, up to $timeout; progress every 30 s)"
 if ! "${state[@]}" sync --skip-deps --wait --timeout "$timeout_s" "${values[@]}" >/dev/null; then
+  kill "$watcher" 2>/dev/null || true
   warn "Pods not ready in namespace '$K3D_NAMESPACE':"
   kubectl --context "$KUBE_CONTEXT" get pods -n "$K3D_NAMESPACE" --no-headers \
     | awk '$3 != "Completed" && $2 !~ /^([0-9]+)\/\1$/' >&2 || true
@@ -204,5 +232,6 @@ if ! "${state[@]}" sync --skip-deps --wait --timeout "$timeout_s" "${values[@]}"
     --sort-by=.lastTimestamp | tail -n 15 >&2 || true
   fail "Sync failed (details: ${state[*]} sync)"
 fi
+kill "$watcher" 2>/dev/null || true
 ok "Releases synced"
 hook finish
