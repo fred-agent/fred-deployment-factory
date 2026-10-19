@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+# Run by `make k3d-app APP=fred-evaluator` before the sync: the
+# application runs next to Fred and reads Fred's services.
+: "${KUBE_CONTEXT:?factory must provide the explicit k3d context}"
+ns="${K3D_NAMESPACE:-fred}"
+kubectl --context "$KUBE_CONTEXT" get deployment control-plane-backend -n "$ns" >/dev/null 2>&1 || {
+  echo "Fred is not deployed in namespace '$ns': run 'make k3d-app APP=fred' first" >&2
+  exit 1
+}

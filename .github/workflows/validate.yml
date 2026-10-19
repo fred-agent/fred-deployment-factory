@@ -1,0 +1,43 @@
+name: Validate
+
+# Lints and renders the k3d application definitions against their charts, with no
+# cluster: a release pin bump (opened by Renovate) is checked against the new
+# chart's values schema before it merges.
+on:
+  pull_request:
+  push:
+    branches: [swift]
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    env:
+      HELMFILE_VERSION: "1.8.1"
+      HELMFILE_SHA256: "ccabbe75dddbc25008d055fe92a44f95a184342211e7244d32b870409239c7a3"
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: azure/setup-helm@v5
+        with:
+          version: v3.21.2
+
+      - name: Install Helmfile and PyYAML
+        run: |
+          archive="helmfile_${HELMFILE_VERSION}_linux_amd64.tar.gz"
+          curl -fsSLO "https://github.com/helmfile/helmfile/releases/download/v${HELMFILE_VERSION}/${archive}"
+          echo "${HELMFILE_SHA256}  ${archive}" | sha256sum -c -
+          tar -xzf "${archive}" helmfile
+          sudo install helmfile /usr/local/bin/helmfile
+          sudo apt-get install -y python3-yaml
+
+      - name: Command tests
+        run: python3 -m unittest bin/test_k3d_app.py k3d-apps/fred/test_hooks.py
+
+      - name: Validate the applications
+        run: |
+          for app in fred fred-evaluator; do
+            make k3d-app-validate APP="$app"
+          done

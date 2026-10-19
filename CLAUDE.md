@@ -11,34 +11,44 @@ The **local deployment** of Fred and its applications, in two forms:
   from a `fred` checkout (`make run` there). It is the fast loop to debug an app, not a
   second deployment: k3d is the one that deploys as production does.
 - **k3d** — everything in a local Kubernetes cluster: the infrastructure (`make k3d-up`, chart
-  `k3d/`), then each application from its own repository (`make k3d-app DIR=../fred`,
-  `DIR=../fred-agent-evaluator`...), with logs, events and metrics collected (`make k3d-health`).
+  `k3d/`), then each application: Fred's open-source ones defined here, from their published
+  releases (`make k3d-app APP=fred`, `APP=fred-evaluator`) or a checkout (`DIR=../fred`), the
+  others from their own repository (`make k3d-app DIR=../dt-agents`), with logs, events and
+  metrics collected (`make k3d-health`).
 
 The GKE/GCP (fredlab) deployment left this repository on 2026-09-30; an archive clone is kept
 outside it. Do not reintroduce cloud-specific material here.
 
 ## The model
 
-- **Applications stay with their product.** Each one's chart, k3d values, image build and
-  hooks live in its repository's `deploy/k3d/` (the contract: `docs/LOCAL-DEVELOPMENT.md` →
-  "The k3d application contract"). This repository holds the infrastructure chart (`k3d/`)
-  and the generic engine (`bin/k3d-app.sh`); it never copies a chart, and names no
-  application in its code.
+- **This instance owns its values; products own their charts and images.** Fred's open-source
+  applications (Fred, the evaluation application) are defined here, in `k3d-apps/<APP>/`:
+  helmfile (the published OCI chart, its version pinned and bumped by Renovate, `renovate.json`), k3d
+  values, identities, `prepare` and `finish`. Their repositories keep only `deploy/k3d/build`,
+  for `DIR`. Other applications (proprietary ones included) keep their whole definition in
+  their own `deploy/k3d/`. Both follow one contract (`docs/LOCAL-DEVELOPMENT.md` → "The k3d
+  application contract"). This repository never copies a chart, and the engine
+  (`bin/k3d-app.sh`) names no application.
 - **The platform contract is what applications may rely on:** the namespace, the service
   names and the keys of `fred-secrets`. Changing one breaks applications in other repositories.
 - **An application's k3d values say only what the instance decides.** Every block is labelled
   `address`, `secret`, `posture`, `choice`, `models` or `sizing`; everything else is the
   chart's default. A `choice` is a candidate to become a chart default, in the chart's repo.
-- **One Foundation Secret.** Every credential lives in `fred-secrets` (created by `make k3d-up`,
-  `k3d/templates/secret.yaml`); the apps read each one by `secretKeyRef`. Never a literal value
-  in a values file.
+- **Credentials as in production.** What the instance generates (database, Keycloak client and
+  infrastructure passwords, the bootstrap token) lives in one Foundation Secret, `fred-secrets`
+  (created by `make k3d-up`, `k3d/templates/secret.yaml`). What the operator supplies (the model
+  key, the web research key) lives in Secrets the operator creates before deploying
+  (`fred-model-credentials`, `fred-web-research-credentials`), never written by a hook. The
+  apps read each one by `secretKeyRef`. Never a literal value in a values file, never a
+  credential taken from the environment or a checkout.
 - **Applications register with Fred like any application**: `application_sources` in the
   control-plane values and the frontend gateway's `FRONTEND_APPLICATIONS_JSON`, both in
-  fred's `deploy/k3d/values.yaml`. No ad hoc wiring.
+  `k3d-apps/fred/values.yaml`; an application defined elsewhere adds its entries with a values
+  file passed in `VALUES` (Helm replaces lists: repeat the entries it keeps). No ad hoc wiring.
 - **Identities: k3d takes them from the applications, Docker keeps its own.** On k3d, the
   platform's identities (realm `app`, the `app` client and its roles, Fred's backend
   clients for now) are in `k3d/files/scripts/keycloak-post-install-k8s.sh`; an application's
-  service clients are declared in its `deploy/k3d/identities.yaml` and applied by
+  service clients are declared in its `identities.yaml` and applied by
   `bin/k3d-identities` (which refuses platform clients and realm-admin roles). Never add an
   application's client to the post-install script. Docker Compose is the fast debug loop:
   `docker/keycloak/keycloak-post-install.sh` creates fixed identities for the apps run from

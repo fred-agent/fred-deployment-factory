@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+# Run by `make k3d-app APP=fred` before the sync. Read-only: the model key is the
+# operator's, in a Secret created before the deployment, as in production. Without
+# it the pods would wait for it until the sync times out; stop now and say how.
+: "${KUBE_CONTEXT:?factory must provide the explicit k3d context}"
+ns="${K3D_NAMESPACE:-fred}"
+
+key="$(kubectl --context "$KUBE_CONTEXT" get secret fred-model-credentials -n "$ns" \
+  -o jsonpath='{.data.OPENAI_API_KEY}' 2>/dev/null || true)"
+if [[ -z "$key" ]]; then
+  printf '%s\n' "No model API key: Fred's pods need the Secret fred-model-credentials (key OPENAI_API_KEY)." \
+    "Create it once per cluster, as an operator does before installing Fred:" >&2
+  printf "  kubectl --context %q -n %q create secret generic fred-model-credentials --from-literal=OPENAI_API_KEY=<your key>\n" \
+    "$KUBE_CONTEXT" "$ns" >&2
+  exit 1
+fi

@@ -492,22 +492,31 @@ k3d-up: k3d-create ## Deploy the full stack into k3d with Helm
 	run_step "Show namespace status $(K3D_NAMESPACE)" \
 	  kubectl get pods,svc -n "$(K3D_NAMESPACE)"
 
-##@ k3d: applications (each one's deploy/k3d/ in its own repository, bin/k3d-app.sh)
-# DIR: a checkout with deploy/k3d/helmfile.yaml.gotmpl, or that directory itself.
+##@ k3d: applications (k3d-apps/<APP>/ here, or a repository's deploy/k3d/; bin/k3d-app.sh)
+# APP: an application defined in k3d-apps/ (fred, fred-evaluator): its published release,
+# RELEASE=<version> or the one its helmfile pins; with DIR, built from that checkout instead.
+# DIR alone: a checkout with deploy/k3d/helmfile.yaml.gotmpl, or that directory itself.
 # VALUES: extra values files applied last to every release (space-separated).
+# FRED_LIBS: pypi (released fred libraries and charts) or local (the fred checkout at
+# FRED_REPO, required then, no default): docs/LOCAL-DEVELOPMENT.md → "Work on unreleased fred".
+APP ?=
+RELEASE ?=
 DIR ?=
 VALUES ?=
-K3D_APP_ENV = DIR="$(DIR)" VALUES="$(VALUES)" K3D_CLUSTER="$(K3D_CLUSTER)" K3D_NAMESPACE="$(K3D_NAMESPACE)" \
+FRED_LIBS ?= pypi
+FRED_REPO ?=
+K3D_APP_ENV = APP="$(APP)" RELEASE="$(RELEASE)" DIR="$(DIR)" VALUES="$(VALUES)" FRED_LIBS="$(FRED_LIBS)" FRED_REPO="$(FRED_REPO)" \
+	K3D_CLUSTER="$(K3D_CLUSTER)" K3D_NAMESPACE="$(K3D_NAMESPACE)" \
 	HELM_TIMEOUT="$(HELM_TIMEOUT)" K3D_HOST_PORT_FRONTEND="$(K3D_HOST_PORT_FRONTEND)" \
 	K3D_HOST_PORT_GRAFANA="$(K3D_HOST_PORT_GRAFANA)" K3D_HOST_PORT_KEYCLOAK="$(K3D_HOST_PORT_KEYCLOAK)"
 
-k3d-app: ## Build and deploy an application on k3d: make k3d-app DIR=../fred; rerun after any change
+k3d-app: ## Deploy an application on k3d: make k3d-app APP=fred [RELEASE=x.y.z | DIR=../fred]; rerun after any change
 	@$(K3D_APP_ENV) bin/k3d-app.sh deploy
 
-k3d-app-validate: ## Lint and render an application's releases, no build, no cluster change: make k3d-app-validate DIR=../fred
+k3d-app-validate: ## Lint and render an application's releases, no build, no cluster change: make k3d-app-validate APP=fred
 	@$(K3D_APP_ENV) bin/k3d-app.sh validate
 
-k3d-app-uninstall: ## Remove an application's releases; their data stays in the infrastructure: make k3d-app-uninstall DIR=../fred
+k3d-app-uninstall: ## Remove an application's releases; their data stays in the infrastructure: make k3d-app-uninstall APP=fred
 	@$(K3D_APP_ENV) bin/k3d-app.sh uninstall
 
 k3d-health: ## What needs attention on k3d: pods, events, errors, 5xx, degraded features, targets, workflows (bin/k3d-observe)
@@ -629,7 +638,11 @@ check-pure-infrastructure: ## Offline guard: fail if a tracked artifact carries 
 	@echo "✓ no local validation/ harness wiring left in the Makefile"
 	@echo "✓ check-pure-infrastructure passed"
 
-.PHONY: help network-create env-setup keycloak-post-install postgres-up keycloak-up seaweedfs-up opensearch-up clickhouse-up langfuse-up prometheus-up grafana-up openfga-post-install openfga-up temporal-up preflight-check docker-up docker-start docker-stop docker-down all-down docker-wipe docker-destroy k3d-create k3d-up k3d-restart k3d-redeploy k3d-logs k3d-down k3d-uninstall k3d-delete k3d-wipe k3d-status k3d-app k3d-app-validate k3d-app-uninstall k3d-airgap-on k3d-airgap-off k3d-airgap-status checkpoint-save checkpoint-restore docker-restart-from-checkpoint checkpoint-list checkpoint-delete check-pure-infrastructure keycloak-token-short keycloak-token-normal keycloak-token-status
+BRANCH ?= swift
+ecosystem-audit: ## Do the sibling checkouts agree on Fred's libraries? Branch, constraints, locks, npm: make ecosystem-audit [BRANCH=swift]
+	@bin/ecosystem-audit --branch "$(BRANCH)" --fetch
+
+.PHONY: help network-create env-setup keycloak-post-install postgres-up keycloak-up seaweedfs-up opensearch-up clickhouse-up langfuse-up prometheus-up grafana-up openfga-post-install openfga-up temporal-up preflight-check docker-up docker-start docker-stop docker-down all-down docker-wipe docker-destroy k3d-create k3d-up k3d-restart k3d-redeploy k3d-logs k3d-down k3d-uninstall k3d-delete k3d-wipe k3d-status k3d-app k3d-app-validate k3d-app-uninstall k3d-airgap-on k3d-airgap-off k3d-airgap-status checkpoint-save checkpoint-restore docker-restart-from-checkpoint checkpoint-list checkpoint-delete check-pure-infrastructure ecosystem-audit keycloak-token-short keycloak-token-normal keycloak-token-status
 
 ##@ Optional ZITADEL identity-provider test
 ZITADEL_COMPOSE = docker compose --env-file docker/zitadel/.env -f docker/zitadel/compose.yaml -p fred-zitadel
