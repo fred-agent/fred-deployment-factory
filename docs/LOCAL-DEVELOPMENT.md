@@ -391,6 +391,10 @@ token:
 make k3d-app APP=fred
 ```
 
+To test the PyMuPDF variant of knowledge-flow (the `knowledge-flow-backend-pymupdf` image
+and the PyMuPDF processors in every profile), add `VALUES=k3d-apps/fred/pymupdf.yaml`;
+redeploy without it to go back. Published releases only.
+
 To deploy your own `fred` checkout instead, add `DIR=../fred`: its chart, and the four
 images its `deploy/k3d/build` builds and copies into the cluster, with the same values.
 
