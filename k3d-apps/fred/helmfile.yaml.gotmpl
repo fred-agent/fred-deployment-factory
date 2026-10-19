@@ -3,7 +3,7 @@
 # below (bumped by a Renovate PR after each Fred release). With DIR, the checkout's chart, and
 # K3D_IMAGE_VALUES selects the images its deploy/k3d/build made.
 # renovate: datasource=docker depName=ghcr.io/thalesgroup/fred-helm/fred
-{{- $pinned := "3.7.0" }}
+{{- $pinned := "3.7.1" }}
 {{- $checkout := env "K3D_APP_CHECKOUT" }}
 releases:
   - name: fred-app
