@@ -50,6 +50,12 @@ spec:
           imagePullPolicy: {{ .Values.imagePullPolicy }}
           args:
             - -Ediscovery.type=single-node
+            # Disk watermarks in free space, as the kubelet's (Makefile, K3D_KUBELET_DISK_ARGS).
+            # The defaults are percentages of the host disk: at 95% used, 47 GiB free on a
+            # 1 TB laptop, OpenSearch blocked index creation and every Fred backend crashed.
+            - -Ecluster.routing.allocation.disk.watermark.low=15gb
+            - -Ecluster.routing.allocation.disk.watermark.high=10gb
+            - -Ecluster.routing.allocation.disk.watermark.flood_stage=5gb
           env:
             - name: OPENSEARCH_JAVA_OPTS
               value: -Xms512m -Xmx512m
