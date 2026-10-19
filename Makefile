@@ -330,7 +330,7 @@ keycloak-token-status: ## Local Docker: show browser and agentic M2M access toke
 	bash local-testing/scripts/keycloak-token-lifetime.sh status
 
 ##@ k3d
-k3d-create: ## Create a local k3d cluster (set K3D_USE_CILIUM=true for air-gap/Cilium policies)
+k3d-create: k3d-disk-check ## Create a local k3d cluster (set K3D_USE_CILIUM=true for air-gap/Cilium policies)
 	@set -euo pipefail; \
 		c_step='\033[1;34m'; c_ok='\033[1;32m'; c_warn='\033[1;33m'; c_err='\033[1;31m'; c_info='\033[0;36m'; c_reset='\033[0m'; \
 		step() { printf "%b[STEP]%b %s\n" "$$c_step" "$$c_reset" "$$1"; }; \
@@ -510,8 +510,11 @@ K3D_APP_ENV = APP="$(APP)" RELEASE="$(RELEASE)" DIR="$(DIR)" VALUES="$(VALUES)" 
 	HELM_TIMEOUT="$(HELM_TIMEOUT)" K3D_HOST_PORT_FRONTEND="$(K3D_HOST_PORT_FRONTEND)" \
 	K3D_HOST_PORT_GRAFANA="$(K3D_HOST_PORT_GRAFANA)" K3D_HOST_PORT_KEYCLOAK="$(K3D_HOST_PORT_KEYCLOAK)"
 
-k3d-app: ## Deploy an application on k3d: make k3d-app APP=fred [RELEASE=x.y.z | DIR=../fred]; rerun after any change
+k3d-app: k3d-disk-check ## Deploy an application on k3d: make k3d-app APP=fred [RELEASE=x.y.z | DIR=../fred]; rerun after any change
 	@$(K3D_APP_ENV) bin/k3d-app.sh deploy
+
+k3d-disk-check: ## Check the free disk space for k3d (run by k3d-create, k3d-up and k3d-app); never cleans
+	@bin/k3d-disk-check.sh
 
 k3d-app-validate: ## Lint and render an application's releases, no build, no cluster change: make k3d-app-validate APP=fred
 	@$(K3D_APP_ENV) bin/k3d-app.sh validate
@@ -642,7 +645,7 @@ BRANCH ?= swift
 ecosystem-audit: ## Do the sibling checkouts agree on Fred's libraries? Branch, constraints, locks, npm: make ecosystem-audit [BRANCH=swift]
 	@bin/ecosystem-audit --branch "$(BRANCH)" --fetch
 
-.PHONY: help network-create env-setup keycloak-post-install postgres-up keycloak-up seaweedfs-up opensearch-up clickhouse-up langfuse-up prometheus-up grafana-up openfga-post-install openfga-up temporal-up preflight-check docker-up docker-start docker-stop docker-down all-down docker-wipe docker-destroy k3d-create k3d-up k3d-restart k3d-redeploy k3d-logs k3d-down k3d-uninstall k3d-delete k3d-wipe k3d-status k3d-app k3d-app-validate k3d-app-uninstall k3d-airgap-on k3d-airgap-off k3d-airgap-status checkpoint-save checkpoint-restore docker-restart-from-checkpoint checkpoint-list checkpoint-delete check-pure-infrastructure ecosystem-audit keycloak-token-short keycloak-token-normal keycloak-token-status
+.PHONY: help network-create env-setup keycloak-post-install postgres-up keycloak-up seaweedfs-up opensearch-up clickhouse-up langfuse-up prometheus-up grafana-up openfga-post-install openfga-up temporal-up preflight-check docker-up docker-start docker-stop docker-down all-down docker-wipe docker-destroy k3d-create k3d-up k3d-restart k3d-redeploy k3d-logs k3d-down k3d-uninstall k3d-delete k3d-wipe k3d-status k3d-app k3d-disk-check k3d-app-validate k3d-app-uninstall k3d-airgap-on k3d-airgap-off k3d-airgap-status checkpoint-save checkpoint-restore docker-restart-from-checkpoint checkpoint-list checkpoint-delete check-pure-infrastructure ecosystem-audit keycloak-token-short keycloak-token-normal keycloak-token-status
 
 ##@ Optional ZITADEL identity-provider test
 ZITADEL_COMPOSE = docker compose --env-file docker/zitadel/.env -f docker/zitadel/compose.yaml -p fred-zitadel

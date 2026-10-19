@@ -340,7 +340,9 @@ they use the same host ports.
 (`curl -s https://raw.githubusercontent.com/k3d-io/k3d/main/install.sh | bash`), `kubectl`,
 `helm` (3 or 4), [Helmfile](https://github.com/helmfile/helmfile/releases) (verify the
 archive against its published checksums; tested: Helmfile 1.8.1, Helm 3.21.2), `jq`, and
-a `fred` checkout.
+a `fred` checkout. Disk: `make k3d-create`, `k3d-up` and `k3d-app` stop under 10 GiB free
+where Docker stores its data, and warn under 30 (`K3D_DISK_FAIL_GB`, `K3D_DISK_WARN_GB`). They
+name the cleanup commands and never run them.
 
 **1. Make `keycloak` resolve to your machine** (once). Fred sends the browser to
 `http://keycloak:8080` to log in, the same address the pods use inside the cluster:
