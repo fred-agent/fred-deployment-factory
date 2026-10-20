@@ -1,0 +1,10 @@
+# The service identity this Knowledge Base needs from the k3d instance's
+# Keycloak, provisioned by `make k3d-app` before the sync (bin/k3d-identities
+# documents the format).
+clients:
+  # Named after the prefix it publishes under: Fred binds the prefix to the
+  # client listed for it in knowledge_bases.publishers. values.yaml reads its
+  # secret by secretKeyRef.
+  - id: kb-fred.webdav
+    secret: KEYCLOAK_KB_FRED_WEBDAV_CLIENT_SECRET # pragma: allowlist secret (Secret key name, not a credential)
+    grants: [app/service_agent]
