@@ -148,6 +148,9 @@ KEYCLOAK_EVAL_WORKER_CLIENT_SECRET="${KEYCLOAK_EVAL_WORKER_CLIENT_SECRET:-Azerty
 KEYCLOAK_KB_FRED_SAMPLES_CLIENT_SECRET="${KEYCLOAK_KB_FRED_SAMPLES_CLIENT_SECRET:-$(read_env_file_var KEYCLOAK_KB_FRED_SAMPLES_CLIENT_SECRET)}"
 KEYCLOAK_KB_FRED_SAMPLES_CLIENT_SECRET="${KEYCLOAK_KB_FRED_SAMPLES_CLIENT_SECRET:-Azerty123_}"
 
+KEYCLOAK_KB_FRED_WEBDAV_CLIENT_SECRET="${KEYCLOAK_KB_FRED_WEBDAV_CLIENT_SECRET:-$(read_env_file_var KEYCLOAK_KB_FRED_WEBDAV_CLIENT_SECRET)}"
+KEYCLOAK_KB_FRED_WEBDAV_CLIENT_SECRET="${KEYCLOAK_KB_FRED_WEBDAV_CLIENT_SECRET:-Azerty123_}"
+
 KEYCLOAK_KF_ENABLE_MANAGE_USERS="${KEYCLOAK_KF_ENABLE_MANAGE_USERS:-$(read_env_file_var KEYCLOAK_KF_ENABLE_MANAGE_USERS)}"
 KEYCLOAK_KF_ENABLE_MANAGE_USERS="${KEYCLOAK_KF_ENABLE_MANAGE_USERS:-true}"
 
@@ -528,6 +531,7 @@ eval_worker_client_uuid="$(ensure_service_client_confidential fred-evaluation-wo
 # and Fred claims that prefix for the client that first publishes under it — so
 # the client is named after the prefix, never after one Knowledge Base.
 kb_fred_samples_client_uuid="$(ensure_service_client_confidential kb-fred.samples "$KEYCLOAK_KB_FRED_SAMPLES_CLIENT_SECRET")"
+kb_fred_webdav_client_uuid="$(ensure_service_client_confidential kb-fred.webdav "$KEYCLOAK_KB_FRED_WEBDAV_CLIENT_SECRET")"
 
 ensure_client_role app service_agent "application service agent role"
 
@@ -536,6 +540,7 @@ knowledge_flow_service_user="$(wait_for_service_account_username knowledge-flow)
 control_plane_service_user="$(wait_for_service_account_username control-plane)"
 eval_worker_service_user="$(wait_for_service_account_username fred-evaluation-worker)"
 kb_fred_samples_service_user="$(wait_for_service_account_username kb-fred.samples)"
+kb_fred_webdav_service_user="$(wait_for_service_account_username kb-fred.webdav)"
 
 # Neither agentic (fred-agents), knowledge-flow, nor control-plane call any
 # Keycloak group-admin API (a_get_groups/a_get_group_members) - confirmed
@@ -565,6 +570,7 @@ ensure_user_client_role "$eval_worker_service_user" app service_agent
 # Publishing a declaration and reporting a run is all a Knowledge Base pod does:
 # service_agent only, no realm-management role, same posture as the worker above.
 ensure_user_client_role "$kb_fred_samples_service_user" app service_agent
+ensure_user_client_role "$kb_fred_webdav_service_user" app service_agent
 
 # fred-agents speaks for a person on every receiver.
 ensure_delegation_client

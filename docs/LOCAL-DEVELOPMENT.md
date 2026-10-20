@@ -417,6 +417,16 @@ shows up once a platform admin enables `evaluation` for a team in **Admin > Feat
 make k3d-app APP=fred-evaluator
 ```
 
+**7. The Knowledge Bases** (optional, this repo): `APP=webdav-kb` deploys the WebDAV
+Knowledge Base's published chart and image (`DIR=../webdav-knowledge-base` to build a
+checkout instead). Fred already lets it publish (`knowledge_bases.publishers` in
+`k3d-apps/fred/values.yaml`); it shows up once a platform admin enables it for a team in
+**Admin > Features > Knowledge Bases**.
+
+```bash
+make k3d-app APP=webdav-kb
+```
+
 | URL | What |
 | --- | --- |
 | <http://localhost:8088> | Fred: the frontend and every app API, through the Traefik ingress |
@@ -520,7 +530,8 @@ does not verify the harness's password-grant prerequisite.
 
 An application is defined by the files below, in one of two places:
 
-- **here, `k3d-apps/<APP>/`**, for Fred's open-source applications (`fred`, `fred-evaluator`):
+- **here, `k3d-apps/<APP>/`**, for Fred's open-source applications (`fred`, `fred-evaluator`,
+  `webdav-kb`):
   the instance's values, deployed from the published chart and images (`APP=<app>`,
   `RELEASE=<version>` or the version the helmfile pins, bumped by a Renovate PR after each release and validated by `.github/workflows/validate.yml`). Their
   repositories keep only `deploy/k3d/build`: with `DIR=<checkout>`, the engine runs it and
@@ -532,7 +543,7 @@ An application is defined by the files below, in one of two places:
 
 | File | Required | What |
 | --- | --- | --- |
-| `helmfile.yaml.gotmpl` | yes | Its releases: its charts, its k3d values, then `K3D_IMAGE_VALUES` when set. Ordinary Helmfile: no hooks, no `exec` |
+| `helmfile.yaml.gotmpl` | yes | Its releases: its charts, its k3d values, then `K3D_IMAGE_VALUES` when set. Ordinary Helmfile, no `exec`; one hook only, for a checkout's chart with dependencies (a Knowledge Base's on Fred's `knowledge-base`): `bin/k3d-chart-stage` copies it to `$K3D_APP_OUT/chart` and fetches them there, from `FRED_REPO` with `FRED_LIBS=local` |
 | `values.yaml` | by convention | Its k3d values, every block labelled `address`, `secret`, `posture`, `choice`, `models` or `sizing` |
 | `identities.yaml` | no | Its service clients in Keycloak, the `fred-secrets` key of each one's secret, and the roles granted (below) |
 | `build` | no | Builds its images; writes `$K3D_APP_OUT/images.txt` (one reference per line, tagged by content) and `$K3D_APP_OUT/images.yaml` (the Helm values selecting them) |

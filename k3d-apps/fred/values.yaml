@@ -473,9 +473,15 @@ applications:
       # definition per team (Admin > Features > Knowledge Bases).
       knowledge_bases:
         publishers:
-          # webdav-knowledge-base and fred-samples' Knowledge Bases share this client.
+          # fred-samples' Knowledge Bases share this client.
           - client_id: kb-fred.samples
             prefix: fred.samples
+          # make k3d-app APP=webdav-kb
+          - client_id: kb-fred.webdav
+            prefix: fred.webdav
+          # make k3d-app APP=opentext-kb
+          - client_id: kb-fred.opentext
+            prefix: fred.opentext
 
   control-plane-worker:
     enabled: true                          # posture

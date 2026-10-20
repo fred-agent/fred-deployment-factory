@@ -66,6 +66,7 @@ kubectl --context k3d-fred -n fred create secret generic fred-model-credentials 
   --from-literal=OPENAI_API_KEY=<key>       # your model key, once per cluster, as in production
 make k3d-app APP=fred                       # Fred's published release
 make k3d-app APP=fred-evaluator             # the evaluation application's published release
+make k3d-app APP=webdav-kb                  # the WebDAV Knowledge Base's published release
 make k3d-app APP=fred DIR=../fred           # or build and deploy your checkout; rerun after any change
 make k3d-app DIR=../<application>           # an application defined in its repository, e.g. ../dt-agents
 make k3d-health                             # what needs attention, on one screen
@@ -92,8 +93,8 @@ prerequisites. Make selects the URLs; it does not enable permissions.
 | <http://keycloak:8080> | Keycloak (realm `master`) | `admin` / `Azerty123_` |
 
 **I want to...** `make k3d-app` converges: the first run installs, the next ones upgrade in
-place, keeping the data. You choose an application (`APP=fred`, `APP=fred-evaluator`, or
-`DIR=` a repository that defines its own) and a version (none: the release this repository
+place, keeping the data. You choose an application (`APP=fred`, `APP=fred-evaluator`, `APP=webdav-kb`,
+or `DIR=` a repository that defines its own) and a version (none: the release this repository
 pins, bumped by a Renovate PR after each release; `RELEASE=x.y.z`; or `DIR=` your checkout).
 
 | I want to... | Run |
