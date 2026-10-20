@@ -4,7 +4,7 @@
 # below (bumped by a Renovate PR after each evaluator release). With DIR, the checkout's chart,
 # and K3D_IMAGE_VALUES selects the images its deploy/k3d/build made.
 # renovate: datasource=docker depName=ghcr.io/fred-agent/fred-evaluator-helm/fred-evaluator
-{{- $pinned := "1.2.0" }}
+{{- $pinned := "1.3.0" }}
 {{- $checkout := env "K3D_APP_CHECKOUT" }}
 releases:
   - name: fred-evaluator
