@@ -550,6 +550,13 @@ An application is defined by the files below, in one of two places:
 | `prepare` | no | Runs before the sync (read-only checks: Fred, its operator Secret exists; the evaluator, Fred runs). Never writes a credential |
 | `finish` | no | Runs after the sync (Fred: its Grafana dashboards, how to log in) |
 
+With `APP=<name> DIR=<checkout>`, a `deploy/k3d/helmfile.yaml.gotmpl` in the
+checkout takes precedence over the factory definition, including its identities
+and prepare/finish hooks. Without it, the factory definition is unchanged.
+`K3D_FACTORY_ROOT` exposes this factory checkout for shared instance values;
+`K3D_APP_VALUES` lists the absolute extra values paths, one per line, so a
+prepare hook can render the same configuration as the deployment.
+
 `build`, `prepare` and `finish` are executables run from their directory with
 `KUBE_CONTEXT`, `K3D_CLUSTER`, `K3D_NAMESPACE`, `K3D_APP_OUT`, `K3D_HOST_PORT_FRONTEND`,
 `K3D_HOST_PORT_GRAFANA`, `ENV`, `K3D_PUBLIC_URL`, `K3D_REALM_URL`, `RELEASE`, `K3D_APP_CHECKOUT`, `FRED_LIBS` and `FRED_REPO` (below,

@@ -8,7 +8,9 @@ set -Eeuo pipefail
 # APP names one of this repository's application definitions, k3d-apps/<APP>/:
 # its published release (RELEASE, or the version its helmfile pins), or, with
 # DIR, the checkout it develops (the helmfile reads K3D_APP_CHECKOUT for the
-# chart; the checkout's deploy/k3d/build makes the images). DIR alone names an
+# chart; the checkout's deploy/k3d/build makes the images). If that checkout
+# supplies deploy/k3d/helmfile.yaml.gotmpl, its definition and hooks take precedence.
+# DIR alone names an
 # application defined in its own repository: a checkout whose deploy/k3d/ holds a
 # helmfile.yaml.gotmpl, or that directory itself. Either directory is the
 # application's whole contract with this instance (docs/LOCAL-DEVELOPMENT.md →
@@ -37,6 +39,7 @@ trap 'fail "unexpected failure at line $LINENO: $BASH_COMMAND"' ERR
 
 here="$(cd "$(dirname "$0")/.." && pwd)"
 source "$here/bin/k3d-environment.sh"
+export K3D_FACTORY_ROOT="$here"
 mode="${1:-deploy}"
 [[ "$mode" =~ ^(deploy|validate|uninstall)$ ]] || fail "usage: $0 [deploy|validate|uninstall]"
 for tool in helm helmfile jq; do command -v "$tool" >/dev/null || fail "$tool is required"; done
@@ -51,6 +54,10 @@ if [[ -n "${APP:-}" ]]; then
     [[ -z "${RELEASE:-}" ]] || fail "RELEASE deploys a published release and DIR a checkout: choose one"
     checkout="$(cd "$DIR" 2>/dev/null && pwd)" || fail "DIR=$DIR: no such directory"
     [[ -x "$checkout/deploy/k3d/build" ]] || fail "DIR=$DIR has no executable deploy/k3d/build"
+    # A checkout may own its complete deployment, not only its image build.
+    if [[ -f "$checkout/deploy/k3d/helmfile.yaml.gotmpl" ]]; then
+      app="$checkout/deploy/k3d"
+    fi
   fi
 else
   [[ -n "${DIR:-}" ]] || fail "APP or DIR is required: make k3d-app APP=<one of: $defined>, or DIR=<checkout>"
@@ -65,10 +72,13 @@ export K3D_APP_CHECKOUT="$checkout" RELEASE="${RELEASE:-}"
 # The checkout's build, when APP develops one; otherwise the application's own.
 build_dir="${checkout:+$checkout/deploy/k3d}"; build_dir="${build_dir:-$app}"
 values=()
+value_files=()
 for f in ${VALUES:-}; do
   [[ -f "$f" ]] || fail "values file not found: $f"
   values+=(--values "$(realpath "$f")")
+  value_files+=("$(realpath "$f")")
 done
+export K3D_APP_VALUES="$(printf '%s\n' "${value_files[@]}")"
 
 timeout="${HELM_TIMEOUT:-20m}"
 case "$timeout" in
