@@ -49,8 +49,9 @@ class K3dAppTests(unittest.TestCase):
         self.root = Path(self.temp.name)
         self.factory = self.root / "factory checkout"
         (self.factory / "bin").mkdir(parents=True)
-        for name in ("k3d-app.sh", "k3d-helm-recover.sh", "k3d-identities"):
+        for name in ("k3d-app.sh", "k3d-helm-recover.sh", "k3d-identities", "k3d-environment.sh"):
             shutil.copy(ROOT / "bin" / name, self.factory / "bin" / name)
+        shutil.copytree(ROOT / "k3d/environments", self.factory / "k3d/environments")
         realm = self.factory / "k3d/files/keycloak"
         realm.mkdir(parents=True)
         shutil.copy(ROOT / "k3d/files/keycloak/app-realm.json.template", realm)
@@ -74,6 +75,7 @@ class K3dAppTests(unittest.TestCase):
             PATH=f"{fakebin}:{os.environ['PATH']}",
             CALLS=str(self.root / "calls"),
             DIR="some app",
+            ENV="swift",
             K3D_CLUSTER="other",
         )
         for name in ("VALUES", "K3D_NAMESPACE", "KUBE_CONTEXT", "FRED_LIBS", "FRED_REPO",
@@ -231,8 +233,8 @@ class K3dAppTests(unittest.TestCase):
                 self.assertEqual([c[0] for c in hooks], ["prepare", "finish"])
                 for call in hooks:
                     self.assertEqual(call[2:3] + call[5:], [str(self.defined), "", env.get("RELEASE", "")])
-                (images,) = (self.factory / ".cache/k3d-apps").glob("my-app-*/images.yaml")
-                self.assertEqual(images.read_text().strip(), "{}")
+                images = (self.factory / ".cache/k3d-apps").rglob("images.yaml")
+                self.assertEqual(sum(path.read_text().strip() == "{}" for path in images), 1)
 
     def test_app_with_dir_builds_the_checkout(self) -> None:
         result, calls = self.run_app(APP="my-app")

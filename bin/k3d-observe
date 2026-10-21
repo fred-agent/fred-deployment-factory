@@ -17,6 +17,8 @@ and Temporal. Standard library only.
 import argparse
 import base64
 import json
+import os
+from pathlib import Path
 import re
 import ssl
 import subprocess
@@ -24,9 +26,18 @@ import sys
 import urllib.parse
 import urllib.request
 
-NAMESPACE = "fred"
-OPENSEARCH = "https://localhost:9200"
-PROMETHEUS = "http://localhost:9090"
+ENV = os.environ.get("ENV", "swift")
+if ENV not in {"swift", "secondary"}:
+    sys.exit(f"Invalid ENV {ENV!r}: use swift or secondary")
+# The same literal profile as Make and the shell helpers; no cluster-global context.
+profile = Path(__file__).resolve().parent.parent / "k3d" / "environments" / f"{ENV}.env"
+settings = dict(line.split("=", 1) for line in profile.read_text().splitlines() if line.startswith("K3D_"))
+settings.update({key: value for key, value in os.environ.items() if key.startswith("K3D_")})
+NAMESPACE = settings.get("K3D_NAMESPACE", "fred")
+CONTEXT = "k3d-" + settings["K3D_CLUSTER"]
+KUBECTL = ["kubectl", "--context", CONTEXT, "-n", NAMESPACE]
+OPENSEARCH = f"https://localhost:{settings['K3D_HOST_PORT_OPENSEARCH']}"
+PROMETHEUS = f"http://localhost:{settings['K3D_HOST_PORT_PROMETHEUS']}"
 # A pod name minus its ReplicaSet and pod suffixes: fred-agents-7f9c-x2k4p -> fred-agents
 POD_SUFFIX = re.compile(r"-[a-z0-9]{8,10}-[a-z0-9]{5}$|-[a-z0-9]{5}$")
 LEVEL = re.compile(r"\b(ERROR|CRITICAL|WARNING)\b")
@@ -41,7 +52,7 @@ def fail(message):
 
 
 def kubectl(*args):
-    result = subprocess.run(["kubectl", "-n", NAMESPACE, *args], capture_output=True, text=True)
+    result = subprocess.run([*KUBECTL, *args], capture_output=True, text=True)
     if result.returncode != 0:
         fail(f"kubectl {' '.join(args)}: {result.stderr.strip()}")
     return result.stdout
@@ -109,7 +120,7 @@ def show(doc):
 
 # ── health ───────────────────────────────────────────────────────────────────
 def cmd_health(args):
-    print(f"== Pods (namespace {NAMESPACE})")
+    print(f"== Pods (ENV={ENV}, context {CONTEXT}, namespace {NAMESPACE})")
     pods = json.loads(kubectl("get", "pods", "-o", "json"))["items"]
     trouble = 0
     for pod in pods:
@@ -178,7 +189,7 @@ def cmd_health(args):
 
     print("\n== Temporal: workflows running")
     result = subprocess.run(
-        ["kubectl", "-n", NAMESPACE, "exec", "deploy/temporal", "-c", "temporal", "--",
+        [*KUBECTL, "exec", "deploy/temporal", "-c", "temporal", "--",
          "temporal", "workflow", "list", "--address", "temporal:7233",
          "--query", 'ExecutionStatus="Running"', "--limit", "20"],
         capture_output=True, text=True)
@@ -204,7 +215,7 @@ def cmd_trace(args):
     if not docs:
         print("  none")
     result = subprocess.run(
-        ["kubectl", "-n", NAMESPACE, "exec", "deploy/temporal", "-c", "temporal", "--",
+        [*KUBECTL, "exec", "deploy/temporal", "-c", "temporal", "--",
          "temporal", "workflow", "list", "--address", "temporal:7233",
          "--query", f"WorkflowId STARTS_WITH '{args.id}' OR WorkflowId = 'run-eval-{args.id}'",
          "--limit", "5"], capture_output=True, text=True)
@@ -220,7 +231,7 @@ def cmd_trace(args):
         sql = ("select operational_state, verdict, total_cases, completed_cases, passed_cases,"
                " execution_error_cases, scoring_error_cases, insufficient_cases"
                f" from evaluation_run where run_id = '{args.id}'")
-        print(subprocess.run(["kubectl", "-n", NAMESPACE, "exec", "deploy/postgres", "--",
+        print(subprocess.run([*KUBECTL, "exec", "deploy/postgres", "--",
                               "psql", "-U", "admin", "-d", "evaluation", "-c", sql],
                              capture_output=True, text=True).stdout.rstrip())
 

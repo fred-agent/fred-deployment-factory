@@ -48,8 +48,19 @@ endif
 # is worse than an over-stopped one.
 DOCKER_ALL_PROJECTS := postgres keycloak $(DOCKER_REST_PROJECTS_BASE) $(DOCKER_REST_PROJECTS_EXTENDED)
 
-K3D_CLUSTER ?= fred
+# Keep the existing cluster and URLs when ENV is omitted.
+ENV ?= swift
+ifeq ($(filter $(ENV),swift secondary),)
+$(error Invalid ENV '$(ENV)'. Use ENV=swift or ENV=secondary)
+endif
+include k3d/environments/$(ENV).env
+export ENV K3D_CLUSTER K3D_KEYCLOAK_HOST
+export $(filter K3D_HOST_%,$(.VARIABLES))
+KUBE_CONTEXT := k3d-$(K3D_CLUSTER)
 K3D_NAMESPACE ?= fred
+export KUBE_CONTEXT K3D_NAMESPACE
+KUBECTL := kubectl --context "$(KUBE_CONTEXT)"
+HELM := helm --kube-context "$(KUBE_CONTEXT)"
 HELM_RELEASE ?= fred-stack
 HELM_CHART_DIR ?= ./k3d
 HELM_TIMEOUT ?= 20m
@@ -72,20 +83,11 @@ else
 K3D_CA_VOLUME_ARG :=
 endif
 
-K3D_HOST_PORT_KEYCLOAK ?= 8080
-K3D_HOST_PORT_POSTGRES ?= 5432
-K3D_HOST_PORT_SEAWEEDFS_S3 ?= 8333
-K3D_HOST_PORT_CLICKHOUSE_HTTP ?= 8123
-K3D_HOST_PORT_CLICKHOUSE_NATIVE ?= 9002
-K3D_HOST_PORT_OPENSEARCH ?= 9200
-K3D_HOST_PORT_OPENSEARCH_DASHBOARDS ?= 5601
-K3D_HOST_PORT_OPENFGA_HTTP ?= 9080
-K3D_HOST_PORT_OPENFGA_GRPC ?= 9081
-K3D_HOST_PORT_TEMPORAL_FRONTEND ?= 7233
-K3D_HOST_PORT_TEMPORAL_UI ?= 8233
-K3D_HOST_PORT_PROMETHEUS ?= 9090
-K3D_HOST_PORT_GRAFANA ?= 3002
-K3D_HOST_PORT_FRONTEND ?= 8088
+# One set of values for lint, prefetch rendering and the actual infrastructure release.
+K3D_HELM_VALUES = --set stack=$(STACK) --set-string host.fqdn="$(K3D_HOST_NAME)" \
+	--set-string keycloak.hostname="$(K3D_KEYCLOAK_HOST)" --set keycloak.publicPort=$(K3D_HOST_PORT_KEYCLOAK) \
+	--set host.frontendPort=$(K3D_HOST_PORT_FRONTEND) --set host.dashboardsPort=$(K3D_HOST_PORT_OPENSEARCH_DASHBOARDS) \
+	--set temporal.uiPort=$(K3D_HOST_PORT_TEMPORAL_UI)
 
 # Kubelet disk thresholds in absolute sizes. The defaults are percentages of the
 # host disk (image GC above 85% used, eviction under 15% free): on a developer
@@ -97,6 +99,7 @@ K3D_KUBELET_DISK_ARGS := \
 	--k3s-arg "--kubelet-arg=eviction-hard=memory.available<100Mi,nodefs.available<2Gi,imagefs.available<2Gi,nodefs.inodesFree<5%,imagefs.inodesFree<5%@server:*;agent:*"
 
 K3D_CLUSTER_CREATE_BASE_ARGS := \
+	--kubeconfig-switch-context=false \
 	--servers 1 \
 	--agents 1 \
 	--wait \
@@ -330,6 +333,14 @@ keycloak-token-status: ## Local Docker: show browser and agentic M2M access toke
 	bash local-testing/scripts/keycloak-token-lifetime.sh status
 
 ##@ k3d
+k3d-env: ## Show the selected cluster, URLs and browser DNS setup (ENV=swift by default)
+	@source bin/k3d-environment.sh; \
+	printf 'ENV=%s  context=%s  namespace=%s\n' "$$ENV" "$$KUBE_CONTEXT" "$$K3D_NAMESPACE"; \
+	printf 'Fred: %s\nKeycloak: %s\n' "$$K3D_PUBLIC_URL" "$$K3D_KEYCLOAK_URL"; \
+	printf 'Temporal: http://%s:%s\nGrafana: http://%s:%s\n' "$$K3D_HOST_NAME" "$$K3D_HOST_PORT_TEMPORAL_UI" "$$K3D_HOST_NAME" "$$K3D_HOST_PORT_GRAFANA"; \
+	printf 'OpenSearch Dashboards: http://%s:%s\n' "$$K3D_HOST_NAME" "$$K3D_HOST_PORT_OPENSEARCH_DASHBOARDS"; \
+	printf 'Local DNS (/etc/hosts): 127.0.0.1 %s %s\n' "$$K3D_HOST_NAME" "$$K3D_KEYCLOAK_HOST"
+
 k3d-create: k3d-disk-check ## Create a local k3d cluster (set K3D_USE_CILIUM=true for air-gap/Cilium policies)
 	@set -euo pipefail; \
 		c_step='\033[1;34m'; c_ok='\033[1;32m'; c_warn='\033[1;33m'; c_err='\033[1;31m'; c_info='\033[0;36m'; c_reset='\033[0m'; \
@@ -340,6 +351,7 @@ k3d-create: k3d-disk-check ## Create a local k3d cluster (set K3D_USE_CILIUM=tru
 		fail() { local msg="$$1"; local rc="$${2:-1}"; printf "%b[FAIL]%b %s\n" "$$c_err" "$$c_reset" "$$msg"; exit "$$rc"; }; \
 		run_step() { local title="$$1"; shift; step "$$title"; if "$$@"; then ok "$$title"; else local rc=$$?; fail "$$title (exit $$rc)" "$$rc"; fi; }; \
 	command -v k3d >/dev/null 2>&1 || fail "k3d is required"; \
+	mkdir -p .cache; exec 9>.cache/k3d-create.lock; flock 9; \
 	if k3d cluster get "$(K3D_CLUSTER)" >/dev/null 2>&1; then \
 	  info "Cluster '$(K3D_CLUSTER)' already exists, skipping creation."; \
 	  exit 0; \
@@ -352,8 +364,8 @@ k3d-create: k3d-disk-check ## Create a local k3d cluster (set K3D_USE_CILIUM=tru
 	    $(K3D_CA_VOLUME_ARG) \
 	    --k3s-arg '--flannel-backend=none@server:*' \
 	    --k3s-arg '--disable-network-policy@server:*'; \
-	  run_step "Install Cilium $(CILIUM_VERSION)" cilium install --version "$(CILIUM_VERSION)"; \
-	  run_step "Wait for Cilium readiness" cilium status --wait --wait-duration 5m; \
+	  run_step "Install Cilium $(CILIUM_VERSION)" cilium --context "$(KUBE_CONTEXT)" install --version "$(CILIUM_VERSION)"; \
+	  run_step "Wait for Cilium readiness" cilium --context "$(KUBE_CONTEXT)" status --wait --wait-duration 5m; \
 	else \
 	  run_step "Create k3d cluster '$(K3D_CLUSTER)' (default k3s networking)" \
 	    k3d cluster create "$(K3D_CLUSTER)" \
@@ -361,7 +373,7 @@ k3d-create: k3d-disk-check ## Create a local k3d cluster (set K3D_USE_CILIUM=tru
 	    $(K3D_CA_VOLUME_ARG); \
 	fi
 
-k3d-up: k3d-create ## Deploy the full stack into k3d with Helm
+k3d-up: k3d-create ## Deploy infrastructure into the selected cluster (ENV=swift or ENV=secondary)
 	@set -euo pipefail; \
 		c_step='\033[1;34m'; c_ok='\033[1;32m'; c_warn='\033[1;33m'; c_err='\033[1;31m'; c_info='\033[0;36m'; c_reset='\033[0m'; \
 		step() { printf "%b[STEP]%b %s\n" "$$c_step" "$$c_reset" "$$1"; }; \
@@ -390,14 +402,13 @@ k3d-up: k3d-create ## Deploy the full stack into k3d with Helm
 	  run_step "Start k3d cluster '$(K3D_CLUSTER)'" \
 	    k3d cluster start "$(K3D_CLUSTER)"; \
 	fi; \
-	run_step "Switch kubectl context to k3d-$(K3D_CLUSTER)" \
-	  kubectl config use-context "k3d-$(K3D_CLUSTER)"; \
+	info "Environment $(ENV): context $(KUBE_CONTEXT), namespace $(K3D_NAMESPACE)"; \
 	if [ "$(K3D_PREFETCH_IMAGES)" = "true" ] || [ "$(K3D_PREFETCH_IMAGES)" = "1" ]; then \
 	  step "Resolve chart images from $(HELM_CHART_DIR)"; \
 	  helm_images=(); \
 	  while IFS= read -r image; do \
 	    [ -n "$$image" ] && helm_images+=("$$image"); \
-	  done < <(helm template "$(HELM_RELEASE)" "$(HELM_CHART_DIR)" --set stack=$(STACK) | awk '/image:[[:space:]]*/ {print $$2}' | tr -d '"' | sort -u); \
+	  done < <($(HELM) template "$(HELM_RELEASE)" "$(HELM_CHART_DIR)" $(K3D_HELM_VALUES) | awk '/image:[[:space:]]*/ {print $$2}' | tr -d '"' | sort -u); \
 	  if [ "$${#helm_images[@]}" -eq 0 ]; then \
 	    fail "No images found in chart template for prefetch."; \
 	  fi; \
@@ -408,7 +419,7 @@ k3d-up: k3d-create ## Deploy the full stack into k3d with Helm
 	    k3s_system_images=(); \
 	    while IFS= read -r image; do \
 	      [ -n "$$image" ] && k3s_system_images+=("$$image"); \
-	    done < <(kubectl get deploy,daemonset -n kube-system -o jsonpath='{..image}' 2>/dev/null | tr -s '[:space:]' '\n' | sed '/^$$/d' | sort -u || true); \
+	    done < <($(KUBECTL) get deploy,daemonset -n kube-system -o jsonpath='{..image}' 2>/dev/null | tr -s '[:space:]' '\n' | sed '/^$$/d' | sort -u || true); \
 	    if [ "$${#k3s_system_images[@]}" -gt 0 ]; then \
 	      ok "Resolve kube-system images ($${#k3s_system_images[@]} images)"; \
 	      merged_images=(); \
@@ -442,17 +453,17 @@ k3d-up: k3d-create ## Deploy the full stack into k3d with Helm
 	run_step "Recover release $(HELM_RELEASE) if an earlier run left it pending or failed" \
 	  bin/k3d-helm-recover.sh "$(HELM_RELEASE)" "$(K3D_NAMESPACE)" "$(HELM_TIMEOUT)"; \
 	run_step "Validate Helm chart $(HELM_CHART_DIR)" \
-	  helm lint "$(HELM_CHART_DIR)"; \
-		if helm upgrade --help | grep -q -- "--rollback-on-failure"; then \
+	  $(HELM) lint "$(HELM_CHART_DIR)" $(K3D_HELM_VALUES); \
+		if $(HELM) upgrade --help | grep -q -- "--rollback-on-failure"; then \
 		  rollback_flag="--rollback-on-failure"; \
 		else \
 		  rollback_flag="--atomic"; \
 		fi; \
 		step "Deploy Helm release '$(HELM_RELEASE)' into namespace '$(K3D_NAMESPACE)'"; \
-		helm upgrade --install "$(HELM_RELEASE)" "$(HELM_CHART_DIR)" \
+		$(HELM) upgrade --install "$(HELM_RELEASE)" "$(HELM_CHART_DIR)" \
 		  --namespace "$(K3D_NAMESPACE)" \
 		  --create-namespace \
-		  --set stack=$(STACK) \
+		  $(K3D_HELM_VALUES) \
 		  --wait \
 		  --wait-for-jobs \
 		  "$$rollback_flag" \
@@ -463,13 +474,13 @@ k3d-up: k3d-create ## Deploy the full stack into k3d with Helm
 		while kill -0 "$$helm_pid" >/dev/null 2>&1; do \
 		  sleep 10; \
 		  helm_wait_secs=$$((helm_wait_secs + 10)); \
-		  pods_ready="$$(kubectl get pods -n "$(K3D_NAMESPACE)" --no-headers 2>/dev/null | awk '{total+=1; split($$2,a,"/"); if (a[1]==a[2]) ready+=1} END {if (total==0) print "0/0"; else printf "%d/%d", ready, total}' || true)"; \
-		  jobs_done="$$(kubectl get jobs -n "$(K3D_NAMESPACE)" --no-headers 2>/dev/null | awk '{total+=1; split($$2,a,"/"); if (a[1]==a[2]) done+=1} END {if (total==0) print "0/0"; else printf "%d/%d", done, total}' || true)"; \
+		  pods_ready="$$($(KUBECTL) get pods -n "$(K3D_NAMESPACE)" --no-headers 2>/dev/null | awk '{total+=1; split($$2,a,"/"); if (a[1]==a[2]) ready+=1} END {if (total==0) print "0/0"; else printf "%d/%d", ready, total}' || true)"; \
+		  jobs_done="$$($(KUBECTL) get jobs -n "$(K3D_NAMESPACE)" --no-headers 2>/dev/null | awk '{total+=1; split($$2,a,"/"); if (a[1]==a[2]) done+=1} END {if (total==0) print "0/0"; else printf "%d/%d", done, total}' || true)"; \
 		  [ -n "$$pods_ready" ] || pods_ready="0/0"; \
 		  [ -n "$$jobs_done" ] || jobs_done="0/0"; \
 		  info "Helm in progress ($${helm_wait_secs}s elapsed) - pods ready: $$pods_ready, jobs complete: $$jobs_done"; \
 		  if [ $$((helm_wait_secs % 40)) -eq 0 ]; then \
-		    kubectl get pods -n "$(K3D_NAMESPACE)" --no-headers 2>/dev/null | awk 'NR<=8 {printf "  - %s: %s (%s)\n", $$1, $$3, $$2}' || true; \
+		    $(KUBECTL) get pods -n "$(K3D_NAMESPACE)" --no-headers 2>/dev/null | awk 'NR<=8 {printf "  - %s: %s (%s)\n", $$1, $$3, $$2}' || true; \
 		  fi; \
 		done; \
 		rc=0; \
@@ -483,14 +494,14 @@ k3d-up: k3d-create ## Deploy the full stack into k3d with Helm
 		else \
 		  printf "%b[FAIL]%b Deploy Helm release '%s' into namespace '%s' (exit %s)\n" "$$c_err" "$$c_reset" "$(HELM_RELEASE)" "$(K3D_NAMESPACE)" "$$rc"; \
 		  warn "Collecting diagnostics from namespace '$(K3D_NAMESPACE)'"; \
-		  kubectl get pods -n "$(K3D_NAMESPACE)" -o wide || true; \
-	  kubectl get jobs -n "$(K3D_NAMESPACE)" || true; \
-	  kubectl get events -n "$(K3D_NAMESPACE)" --sort-by=.metadata.creationTimestamp | tail -n 40 || true; \
-	  helm status "$(HELM_RELEASE)" -n "$(K3D_NAMESPACE)" || true; \
+		  $(KUBECTL) get pods -n "$(K3D_NAMESPACE)" -o wide || true; \
+	  $(KUBECTL) get jobs -n "$(K3D_NAMESPACE)" || true; \
+	  $(KUBECTL) get events -n "$(K3D_NAMESPACE)" --sort-by=.metadata.creationTimestamp | tail -n 40 || true; \
+	  $(HELM) status "$(HELM_RELEASE)" -n "$(K3D_NAMESPACE)" || true; \
 	  fail "Helm deployment failed. Review diagnostics above." "$$rc"; \
 	fi; \
 	run_step "Show namespace status $(K3D_NAMESPACE)" \
-	  kubectl get pods,svc -n "$(K3D_NAMESPACE)"
+	  $(KUBECTL) get pods,svc -n "$(K3D_NAMESPACE)"
 
 ##@ k3d: applications (k3d-apps/<APP>/ here, or a repository's deploy/k3d/; bin/k3d-app.sh)
 # APP: an application defined in k3d-apps/ (fred, fred-evaluator): its published release,
@@ -508,7 +519,8 @@ FRED_REPO ?=
 K3D_APP_ENV = APP="$(APP)" RELEASE="$(RELEASE)" DIR="$(DIR)" VALUES="$(VALUES)" FRED_LIBS="$(FRED_LIBS)" FRED_REPO="$(FRED_REPO)" \
 	K3D_CLUSTER="$(K3D_CLUSTER)" K3D_NAMESPACE="$(K3D_NAMESPACE)" \
 	HELM_TIMEOUT="$(HELM_TIMEOUT)" K3D_HOST_PORT_FRONTEND="$(K3D_HOST_PORT_FRONTEND)" \
-	K3D_HOST_PORT_GRAFANA="$(K3D_HOST_PORT_GRAFANA)" K3D_HOST_PORT_KEYCLOAK="$(K3D_HOST_PORT_KEYCLOAK)"
+	K3D_HOST_PORT_GRAFANA="$(K3D_HOST_PORT_GRAFANA)" K3D_HOST_PORT_KEYCLOAK="$(K3D_HOST_PORT_KEYCLOAK)" \
+	K3D_HOST_PORT_OPENSEARCH="$(K3D_HOST_PORT_OPENSEARCH)"
 
 k3d-app: k3d-disk-check ## Deploy an application on k3d: make k3d-app APP=fred [RELEASE=x.y.z | DIR=../fred]; rerun after any change
 	@$(K3D_APP_ENV) bin/k3d-app.sh deploy
@@ -528,25 +540,25 @@ k3d-health: ## What needs attention on k3d: pods, events, errors, 5xx, degraded 
 ##@ k3d service targets
 k3d-restart: ## Restart a k3d component: make k3d-restart COMPONENT=openfga
 	@test -n "$(COMPONENT)" || (echo "ERROR: COMPONENT is required. Usage: make k3d-restart COMPONENT=<name>"; exit 1)
-	kubectl rollout restart statefulset/$(COMPONENT) -n "$(K3D_NAMESPACE)" 2>/dev/null || \
-		kubectl rollout restart deployment/$(COMPONENT) -n "$(K3D_NAMESPACE)"
+	$(KUBECTL) rollout restart statefulset/$(COMPONENT) -n "$(K3D_NAMESPACE)" 2>/dev/null || \
+		$(KUBECTL) rollout restart deployment/$(COMPONENT) -n "$(K3D_NAMESPACE)"
 
 k3d-redeploy: ## Restart a k3d component and re-run its post-install job: make k3d-redeploy COMPONENT=openfga
 	@test -n "$(COMPONENT)" || (echo "ERROR: COMPONENT is required. Usage: make k3d-redeploy COMPONENT=<name>"; exit 1)
-	kubectl delete job $(COMPONENT)-post-install -n "$(K3D_NAMESPACE)" --ignore-not-found
-	kubectl rollout restart statefulset/$(COMPONENT) -n "$(K3D_NAMESPACE)" 2>/dev/null || \
-		kubectl rollout restart deployment/$(COMPONENT) -n "$(K3D_NAMESPACE)"
+	$(KUBECTL) delete job $(COMPONENT)-post-install -n "$(K3D_NAMESPACE)" --ignore-not-found
+	$(KUBECTL) rollout restart statefulset/$(COMPONENT) -n "$(K3D_NAMESPACE)" 2>/dev/null || \
+		$(KUBECTL) rollout restart deployment/$(COMPONENT) -n "$(K3D_NAMESPACE)"
 	$(MAKE) k3d-up
 
 k3d-logs: ## Show logs for a service: make k3d-logs SVC=openfga-post-install
 	@if [ -z "$(SVC)" ]; then echo "Usage: make k3d-logs SVC=<name>"; exit 1; fi
-	@kubectl logs -n "$(K3D_NAMESPACE)" -l app=$(SVC) --tail=100 2>/dev/null || \
-		kubectl logs -n "$(K3D_NAMESPACE)" job/$(SVC) --tail=100 2>/dev/null || \
+	@$(KUBECTL) logs -n "$(K3D_NAMESPACE)" -l app=$(SVC) --tail=100 2>/dev/null || \
+		$(KUBECTL) logs -n "$(K3D_NAMESPACE)" job/$(SVC) --tail=100 2>/dev/null || \
 		echo "No logs found for '$(SVC)'"
 
 k3d-uninstall: ## Uninstall the Helm release from k3d namespace
-	@echo "Removing Helm release '$(HELM_RELEASE)' from namespace '$(K3D_NAMESPACE)'..."
-	-helm uninstall "$(HELM_RELEASE)" -n "$(K3D_NAMESPACE)"
+	@echo "Removing Helm release '$(HELM_RELEASE)' from context '$(KUBE_CONTEXT)', namespace '$(K3D_NAMESPACE)'..."
+	-$(HELM) uninstall "$(HELM_RELEASE)" -n "$(K3D_NAMESPACE)"
 
 k3d-down: ## Turn off the k3d containers to release publicly allocated ports
 	@echo "Turning the k3d cluster '$(K3D_CLUSTER)' down, and stopping k3d docker containers"
@@ -554,7 +566,8 @@ k3d-down: ## Turn off the k3d containers to release publicly allocated ports
 
 k3d-delete: ## Delete the k3d cluster
 	@echo "Deleting k3d cluster '$(K3D_CLUSTER)'..."
-	-k3d cluster delete "$(K3D_CLUSTER)"
+	@mkdir -p .cache
+	-flock .cache/k3d-create.lock k3d cluster delete "$(K3D_CLUSTER)"
 
 k3d-wipe: ## Full k3d reset (uninstall Helm release and delete cluster)
 	@echo -e "\n--- K3D WIPE IN PROGRESS ---"
@@ -562,27 +575,26 @@ k3d-wipe: ## Full k3d reset (uninstall Helm release and delete cluster)
 	@$(MAKE) k3d-delete
 	@echo -e "\n--- K3D WIPE COMPLETE ---"
 
-k3d-status: ## Show pods and services in the k3d namespace
-	@kubectl config use-context "k3d-$(K3D_CLUSTER)" >/dev/null
-	@echo "Namespace: $(K3D_NAMESPACE)"
-	kubectl get pods,svc -n "$(K3D_NAMESPACE)"
+k3d-status: ## Show pods and services in the selected environment
+	@echo "Environment: $(ENV), context: $(KUBE_CONTEXT), namespace: $(K3D_NAMESPACE)"
+	$(KUBECTL) get pods,svc -n "$(K3D_NAMESPACE)"
 
 k3d-airgap-on: ## Enable air-gap mode (block internet except OpenAI API)
-	@if ! kubectl get crd ciliumnetworkpolicies.cilium.io >/dev/null 2>&1; then echo "Cilium CRDs not found; recreate with K3D_USE_CILIUM=true to use air-gap targets."; exit 1; fi
+	@if ! $(KUBECTL) get crd ciliumnetworkpolicies.cilium.io >/dev/null 2>&1; then echo "Cilium CRDs not found; recreate with K3D_USE_CILIUM=true to use air-gap targets."; exit 1; fi
 	@echo "🔒 Enabling air-gap mode in namespace '$(K3D_NAMESPACE)'..."
-	kubectl apply -f k3d/policies/cilium-airgap-policy.yaml
+	$(KUBECTL) apply -f k3d/policies/cilium-airgap-policy.yaml
 	@echo "Air-gap enabled. Only cluster-internal traffic and api.openai.com:443 are allowed."
 
 k3d-airgap-off: ## Disable air-gap mode (restore full internet access)
-	@if ! kubectl get crd ciliumnetworkpolicies.cilium.io >/dev/null 2>&1; then echo "Cilium CRDs not found; nothing to disable."; exit 0; fi
+	@if ! $(KUBECTL) get crd ciliumnetworkpolicies.cilium.io >/dev/null 2>&1; then echo "Cilium CRDs not found; nothing to disable."; exit 0; fi
 	@echo "🔓 Disabling air-gap mode in namespace '$(K3D_NAMESPACE)'..."
-	-kubectl delete -f k3d/policies/cilium-airgap-policy.yaml
+	-$(KUBECTL) delete -f k3d/policies/cilium-airgap-policy.yaml
 	@echo "Air-gap disabled. Full internet access restored."
 
 k3d-airgap-status: ## Show active Cilium network policies
-	@if ! kubectl get crd ciliumnetworkpolicies.cilium.io >/dev/null 2>&1; then echo "Cilium CRDs not found; no Cilium policies available."; exit 0; fi
+	@if ! $(KUBECTL) get crd ciliumnetworkpolicies.cilium.io >/dev/null 2>&1; then echo "Cilium CRDs not found; no Cilium policies available."; exit 0; fi
 	@echo "📊 CiliumNetworkPolicies in namespace '$(K3D_NAMESPACE)':"
-	kubectl get ciliumnetworkpolicies -n "$(K3D_NAMESPACE)"
+	$(KUBECTL) get ciliumnetworkpolicies -n "$(K3D_NAMESPACE)"
 
 ##@ Checkpoints
 checkpoint-save: ## Save current Docker stack state as a named checkpoint (NAME=<name> required)
@@ -645,7 +657,7 @@ BRANCH ?= swift
 ecosystem-audit: ## Do the sibling checkouts agree on Fred's libraries? Branch, constraints, locks, npm: make ecosystem-audit [BRANCH=swift]
 	@bin/ecosystem-audit --branch "$(BRANCH)" --fetch
 
-.PHONY: help network-create env-setup keycloak-post-install postgres-up keycloak-up seaweedfs-up opensearch-up clickhouse-up langfuse-up prometheus-up grafana-up openfga-post-install openfga-up temporal-up preflight-check docker-up docker-start docker-stop docker-down all-down docker-wipe docker-destroy k3d-create k3d-up k3d-restart k3d-redeploy k3d-logs k3d-down k3d-uninstall k3d-delete k3d-wipe k3d-status k3d-app k3d-disk-check k3d-app-validate k3d-app-uninstall k3d-airgap-on k3d-airgap-off k3d-airgap-status checkpoint-save checkpoint-restore docker-restart-from-checkpoint checkpoint-list checkpoint-delete check-pure-infrastructure ecosystem-audit keycloak-token-short keycloak-token-normal keycloak-token-status
+.PHONY: k3d-env k3d-health help network-create env-setup keycloak-post-install postgres-up keycloak-up seaweedfs-up opensearch-up clickhouse-up langfuse-up prometheus-up grafana-up openfga-post-install openfga-up temporal-up preflight-check docker-up docker-start docker-stop docker-down all-down docker-wipe docker-destroy k3d-create k3d-up k3d-restart k3d-redeploy k3d-logs k3d-down k3d-uninstall k3d-delete k3d-wipe k3d-status k3d-app k3d-disk-check k3d-app-validate k3d-app-uninstall k3d-airgap-on k3d-airgap-off k3d-airgap-status checkpoint-save checkpoint-restore docker-restart-from-checkpoint checkpoint-list checkpoint-delete check-pure-infrastructure ecosystem-audit keycloak-token-short keycloak-token-normal keycloak-token-status
 
 ##@ Optional ZITADEL identity-provider test
 ZITADEL_COMPOSE = docker compose --env-file docker/zitadel/.env -f docker/zitadel/compose.yaml -p fred-zitadel

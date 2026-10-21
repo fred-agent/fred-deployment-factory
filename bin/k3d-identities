@@ -25,6 +25,7 @@ set -Eeuo pipefail
 # Environment: KUBE_CONTEXT, K3D_NAMESPACE, K3D_HOST_PORT_KEYCLOAK (default 8080).
 
 here="$(cd "$(dirname "$0")/.." && pwd)"
+source "$here/bin/k3d-environment.sh"
 check=false
 [[ "${1:-}" == --check ]] && { check=true; shift; }
 file="${1:?usage: $0 [--check] <identities.yaml>}"

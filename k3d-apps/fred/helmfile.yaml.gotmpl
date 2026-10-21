@@ -15,6 +15,9 @@ releases:
     {{- end }}
     values:
       - values.yaml
+      {{- if eq (env "ENV") "secondary" }}
+      - secondary.yaml.gotmpl
+      {{- end }}
       {{- with env "K3D_IMAGE_VALUES" }}
       - {{ . | quote }}
       {{- end }}

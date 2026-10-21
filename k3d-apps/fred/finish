@@ -36,16 +36,16 @@ if [[ -n "$grafana_dir" ]] && kubectl get deployment grafana -n "$ns" >/dev/null
     kubectl rollout restart deployment/grafana -n "$ns" >/dev/null
     kubectl rollout status deployment/grafana -n "$ns" --timeout "$timeout" >/dev/null
   fi
-  ok "Fred's Grafana dashboards loaded: http://localhost:${K3D_HOST_PORT_GRAFANA:-3002} (folder Fred)"
+  ok "Fred's Grafana dashboards loaded: http://$K3D_HOST_NAME:$K3D_HOST_PORT_GRAFANA (folder Fred)"
 fi
 
-ok "Fred is running: http://localhost:${K3D_HOST_PORT_FRONTEND:-8088}"
-if ! getent hosts keycloak >/dev/null; then
-  warn "'keycloak' does not resolve on this machine: the browser cannot log in. Once, with sudo:"
-  printf '       grep -qw keycloak /etc/hosts || echo "127.0.0.1 keycloak" | sudo tee -a /etc/hosts\n'
+ok "Fred is running: $K3D_PUBLIC_URL"
+if ! getent hosts "$K3D_KEYCLOAK_HOST" >/dev/null; then
+  warn "'$K3D_KEYCLOAK_HOST' does not resolve on this machine: the browser cannot log in."
+  printf 'Add to /etc/hosts: 127.0.0.1 %s %s\n' "$K3D_KEYCLOAK_HOST" "$K3D_HOST_NAME"
 fi
 # Explain token retrieval only while the first-login bootstrap is needed.
-if curl --max-time 10 -fsS "http://localhost:${K3D_HOST_PORT_FRONTEND:-8088}/control-plane/v1/frontend/config" 2>/dev/null \
+if curl --max-time 10 -fsS "$K3D_PUBLIC_URL/control-plane/v1/frontend/config" 2>/dev/null \
     | grep -Eq '"root_bootstrap_required": ?true'; then
   info "First login: open Fred, create your account with Register on the login page,"
   info "Retrieve the bootstrap token locally, then paste it where Fred asks for it:"

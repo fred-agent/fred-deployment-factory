@@ -58,3 +58,7 @@ without metrics or logs cannot be used to find problems. */ -}}
 {{- define "fred-stack.logCollectionEnabled" -}}
 {{- if .Values.logCollection.enabled -}}true{{- end -}}
 {{- end -}}
+
+{{- define "fred-stack.keycloakUrl" -}}
+{{- printf "http://%s:%v" .Values.keycloak.hostname .Values.keycloak.publicPort -}}
+{{- end -}}

@@ -58,6 +58,41 @@ Fred is on <http://localhost:5173>.
 grep -qw keycloak /etc/hosts || echo "127.0.0.1 keycloak" | sudo tee -a /etc/hosts
 ```
 
+`ENV=swift` is the default: existing commands keep the `fred` cluster and its
+current ports. To work on another branch at the same time, use `ENV=secondary`:
+an independent `fred-secondary` cluster with host ports offset by 10000.
+Each cluster has its own data, identities and workflows.
+
+Add the second environment's browser addresses to `/etc/hosts` once:
+
+```text
+127.0.0.1 keycloak-secondary secondary.localhost
+```
+
+From this repository, deploy two separate Fred checkouts or Git worktrees:
+
+```bash
+# Current release branch (swift), in a checkout of your choice.
+make k3d-up
+# Create fred-model-credentials in context k3d-fred, as described below.
+make k3d-app APP=fred DIR=~/work/current/fred
+
+# Another branch, in a separate checkout of your choice.
+make k3d-up ENV=secondary
+# Create fred-model-credentials separately in context k3d-fred-secondary.
+make k3d-app ENV=secondary APP=fred DIR=~/work/experiment/fred
+```
+
+Open Swift at <http://localhost:8088> and the second environment at
+<http://secondary.localhost:18088>. The folder names are arbitrary: `DIR` selects
+an existing checkout, while `ENV` selects the cluster and ports. The factory does
+not switch Git branches. Docker Compose is unchanged.
+
+The second environment currently covers Fred alone; satellites retain their
+existing Swift configuration. See
+[Two persistent k3d environments](docs/LOCAL-DEVELOPMENT.md#two-persistent-k3d-environments)
+for ports and day-to-day commands.
+
 **Then, from this repository:**
 
 ```bash

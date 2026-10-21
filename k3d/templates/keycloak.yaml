@@ -13,9 +13,32 @@ spec:
       {{- if eq (include "fred-stack.serviceType" .) "NodePort" }}
       nodePort: {{ .Values.service.nodePorts.keycloak }}
       {{- end }}
+    {{- if and (eq .Values.keycloak.hostname "keycloak") (ne (int .Values.keycloak.publicPort) 8080) }}
+    - name: public
+      port: {{ .Values.keycloak.publicPort }}
+      targetPort: 8080
+    {{- end }}
   selector:
     app.kubernetes.io/component: keycloak
     {{- include "fred-stack.selectorLabels" . | nindent 4 }}
+{{- if ne .Values.keycloak.hostname "keycloak" }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.keycloak.hostname }}
+  labels:
+    {{- include "fred-stack.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: {{ .Values.keycloak.publicPort }}
+      targetPort: 8080
+  selector:
+    app.kubernetes.io/component: keycloak
+    {{- include "fred-stack.selectorLabels" . | nindent 4 }}
+{{- end }}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -68,7 +91,10 @@ spec:
             - -ec
             - |
               mkdir -p /opt/keycloak/data/import
-              sed "s#docker-compose.host.fqdn#${DOCKER_COMPOSE_HOST_FQDN}#g; s#__TEMPORAL_UI_PORT__#${TEMPORAL_UI_PORT}#g" \
+              sed -e "s#docker-compose.host.fqdn#${DOCKER_COMPOSE_HOST_FQDN}#g" \
+                -e "s#__TEMPORAL_UI_PORT__#${TEMPORAL_UI_PORT}#g" \
+                -e "s#__FRONTEND_PORT__#${FRONTEND_PORT}#g" \
+                -e "s#__DASHBOARDS_PORT__#${DASHBOARDS_PORT}#g" \
                 /tmp/app-realm.json.template > /opt/keycloak/data/import/app-realm.json
               /opt/keycloak/bin/kc.sh start-dev --import-realm
           env:
@@ -82,6 +108,8 @@ spec:
               value: "true"
             - name: KC_HTTP_MANAGEMENT_PORT
               value: "9000"
+            - name: KC_HOSTNAME
+              value: {{ include "fred-stack.keycloakUrl" . | quote }}
             - name: KC_HOSTNAME_STRICT
               value: "false"
             - name: KC_HOSTNAME_STRICT_HTTPS
@@ -114,6 +142,10 @@ spec:
                   key: KC_BOOTSTRAP_ADMIN_PASSWORD
             - name: DOCKER_COMPOSE_HOST_FQDN
               value: {{ .Values.host.fqdn | quote }}
+            - name: FRONTEND_PORT
+              value: {{ .Values.host.frontendPort | quote }}
+            - name: DASHBOARDS_PORT
+              value: {{ .Values.host.dashboardsPort | quote }}
             - name: TEMPORAL_UI_PORT
               value: {{ .Values.temporal.uiPort | quote }}
           ports:

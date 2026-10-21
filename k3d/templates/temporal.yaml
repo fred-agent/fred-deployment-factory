@@ -212,9 +212,9 @@ spec:
             - name: TEMPORAL_AUTH_TYPE
               value: oidc
             - name: TEMPORAL_AUTH_PROVIDER_URL
-              value: http://keycloak:8080/realms/app
+              value: {{ printf "%s/realms/app" (include "fred-stack.keycloakUrl" .) | quote }}
             - name: TEMPORAL_AUTH_ISSUER_URL
-              value: http://keycloak:8080/realms/app
+              value: {{ printf "%s/realms/app" (include "fred-stack.keycloakUrl" .) | quote }}
             - name: TEMPORAL_AUTH_CLIENT_ID
               value: temporal-web
             - name: TEMPORAL_AUTH_CALLBACK_URL

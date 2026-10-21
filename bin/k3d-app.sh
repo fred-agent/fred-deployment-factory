@@ -21,10 +21,10 @@ set -Eeuo pipefail
 # This script owns the cluster side: the context, the identities, the image
 # import, release recovery and the sync. It never changes the current kubectl context.
 #
-# Environment (defaults in the Makefile): APP, RELEASE, DIR; VALUES, extra values files applied
+# Environment: ENV (swift by default), APP, RELEASE, DIR; VALUES, extra values files applied
 # last to every release (space-separated); FRED_LIBS (pypi | local) and FRED_REPO,
 # which fred the hooks and the helmfile build against; K3D_CLUSTER, K3D_NAMESPACE,
-# HELM_TIMEOUT, K3D_HOST_PORT_FRONTEND, K3D_HOST_PORT_GRAFANA (passed on to the hooks).
+# HELM_TIMEOUT and the selected profile's ports and URLs (passed on to the hooks).
 
 c_step='\033[1;34m'; c_ok='\033[1;32m'; c_warn='\033[1;33m'; c_err='\033[1;31m'; c_info='\033[0;36m'; c_reset='\033[0m'
 step() { printf "%b[STEP]%b %s\n" "$c_step" "$c_reset" "$1"; }
@@ -36,6 +36,7 @@ fail() { printf "%b[FAIL]%b %s\n" "$c_err" "$c_reset" "$1" >&2; exit 1; }
 trap 'fail "unexpected failure at line $LINENO: $BASH_COMMAND"' ERR
 
 here="$(cd "$(dirname "$0")/.." && pwd)"
+source "$here/bin/k3d-environment.sh"
 mode="${1:-deploy}"
 [[ "$mode" =~ ^(deploy|validate|uninstall)$ ]] || fail "usage: $0 [deploy|validate|uninstall]"
 for tool in helm helmfile jq; do command -v "$tool" >/dev/null || fail "$tool is required"; done
@@ -69,9 +70,6 @@ for f in ${VALUES:-}; do
   values+=(--values "$(realpath "$f")")
 done
 
-export KUBE_CONTEXT="k3d-${K3D_CLUSTER:-fred}"
-export K3D_CLUSTER="${K3D_CLUSTER:-fred}" K3D_NAMESPACE="${K3D_NAMESPACE:-fred}"
-export K3D_HOST_PORT_FRONTEND="${K3D_HOST_PORT_FRONTEND:-8088}" K3D_HOST_PORT_GRAFANA="${K3D_HOST_PORT_GRAFANA:-3002}"
 timeout="${HELM_TIMEOUT:-20m}"
 case "$timeout" in
   *m) timeout_s=$(( ${timeout%m} * 60 )) ;;
@@ -79,15 +77,18 @@ case "$timeout" in
   *) timeout_s="$timeout"; timeout="${timeout}s" ;;
 esac
 
-# Build outputs live in this repository's cache, one directory per application.
+# Isolate generated values and logs by cluster, namespace, definition and checkout.
 repo="$(git -C "$app" rev-parse --show-toplevel 2>/dev/null || echo "$app")"
-export K3D_APP_OUT="$here/.cache/k3d-apps/${APP:-$(basename "$repo")}-$(printf '%s' "$app" | sha256sum | cut -c1-8)"
+build_key="$(printf '%s\n' "$app" "$build_dir" | sha256sum | cut -c1-12)"
+export K3D_APP_OUT="$here/.cache/k3d-apps/$K3D_CLUSTER/$K3D_NAMESPACE/${APP:-$(basename "$repo")}-$build_key"
 mkdir -p "$K3D_APP_OUT"
 # Without a build, the charts' own images, never those of an earlier build.
 if [[ ! -e "$build_dir/build" || ! -f "$K3D_APP_OUT/images.yaml" ]]; then
   echo '{}' >"$K3D_APP_OUT/images.yaml"
 fi
 export K3D_IMAGE_VALUES="$K3D_APP_OUT/images.yaml"
+
+info "Environment: $ENV, context: $KUBE_CONTEXT, namespace: $K3D_NAMESPACE"
 
 describe() {
   local branch commit dirty
@@ -156,7 +157,7 @@ fi
 
 command -v kubectl >/dev/null || fail "kubectl is required"
 kubectl --context "$KUBE_CONTEXT" get secret fred-secrets -n "$K3D_NAMESPACE" -o name >/dev/null 2>&1 \
-  || fail "no Secret fred-secrets in context '$KUBE_CONTEXT', namespace '$K3D_NAMESPACE': run 'make k3d-up' first"
+  || fail "no Secret fred-secrets in context '$KUBE_CONTEXT', namespace '$K3D_NAMESPACE': run 'make k3d-up ENV=$ENV' first"
 
 # ── Uninstall: the releases go, the data stays in the infrastructure ─────────
 if [[ "$mode" == uninstall ]]; then
@@ -177,7 +178,8 @@ identities --check
 render
 if [[ -e "$build_dir/build" ]]; then
   rm -f "$K3D_APP_OUT/images.txt" "$K3D_APP_OUT/images.yaml"
-  hook build "$build_dir"
+  # Product Makefiles accept IMAGE_TAG. Avoid sharing mutable build tags across checkouts.
+  IMAGE_TAG="k3d-$K3D_CLUSTER-$build_key" hook build "$build_dir"
   [[ -s "$K3D_APP_OUT/images.txt" && -s "$K3D_APP_OUT/images.yaml" ]] \
     || fail "build wrote no images.txt and images.yaml in \$K3D_APP_OUT ($K3D_APP_OUT)"
   render

@@ -552,7 +552,7 @@ An application is defined by the files below, in one of two places:
 
 `build`, `prepare` and `finish` are executables run from their directory with
 `KUBE_CONTEXT`, `K3D_CLUSTER`, `K3D_NAMESPACE`, `K3D_APP_OUT`, `K3D_HOST_PORT_FRONTEND`,
-`K3D_HOST_PORT_GRAFANA`, `RELEASE`, `K3D_APP_CHECKOUT`, `FRED_LIBS` and `FRED_REPO` (below,
+`K3D_HOST_PORT_GRAFANA`, `ENV`, `K3D_PUBLIC_URL`, `K3D_REALM_URL`, `RELEASE`, `K3D_APP_CHECKOUT`, `FRED_LIBS` and `FRED_REPO` (below,
 "Work on unreleased fred"). Without a build, the charts' own images run.
 A cluster call targets `--context "$KUBE_CONTEXT"`, never the current context.
 
@@ -561,13 +561,17 @@ a build), runs `build`, renders again with the new images, copies them into ever
 provisions the identities, runs `prepare`, recovers each release Helm would refuse (`bin/k3d-helm-recover.sh`),
 syncs with `--wait`, then runs `finish`. The factory passes the kube context and the
 namespace (`K3D_NAMESPACE`, default `fred`); the current kubectl context is left unchanged.
-Build logs and image values stay in this repository's ignored `.cache/k3d-apps/`. Helm's
+Build logs and image values stay in this repository's ignored
+`.cache/k3d-apps/<cluster>/<namespace>/<application>-<checkout-hash>/`.
+Build hooks receive an `IMAGE_TAG` specific to that cluster and checkout; product
+Makefiles must honor it, then publish content-tagged references in `images.txt`. Helm's
 lint keeps the `null` deletion markers the fred schema refuses, so lint skips the schema;
 **template and sync enforce it**.
 
 What an application can rely on, the **platform contract**: the namespace `fred`; the
-infrastructure services by name (`keycloak:8080` realm `app`, `postgres:5432`,
-`opensearch:9200`, `openfga:9080`, `temporal:7233`, `seaweedfs:8333`); and the credentials
+infrastructure services by name (`postgres:5432`,
+`opensearch:9200`, `openfga:9080`, `temporal:7233`, `seaweedfs:8333`); the OIDC issuer
+from `K3D_REALM_URL` (realm `app`); and the credentials
 of `fred-secrets` (`k3d/templates/secret.yaml`), plus the operator's own Secrets
 (`fred-model-credentials`), read by `secretKeyRef`, never copied into a values file. Fred learns about an application through its own k3d values
 (`application_sources`, `FRONTEND_APPLICATIONS_JSON`).
@@ -777,3 +781,88 @@ audience, expiration and assigned roles were verified using Fred's installed JWT
 library. All three generated configs passed their JSON schemas and Fred provider
 validation. Offline tests cover required claims and exclusive delegation roles.
 The Fred PR #2863 local ZITADEL walkthrough was declared successful by the developer on 2026-10-01; no exported administrator self-test report is attached. Fresh Kubernetes acceptance remains separate.
+
+
+## Two persistent k3d environments
+
+`ENV=swift` is the default and keeps the existing cluster `fred`. `ENV=secondary`
+selects `fred-secondary`. The literal profiles in `k3d/environments/*.env` are shared
+by Make, application hooks and `bin/k3d-observe`. Unknown environments fail before
+any cluster operation. Make command-line overrides remain available.
+
+| Service | Swift host port | Secondary host port |
+| --- | --- | --- |
+| Fred frontend | 8088 | 18088 |
+| Keycloak | 8080 | 18080 |
+| PostgreSQL | 5432 | 15432 |
+| S3 | 8333 | 18333 |
+| OpenSearch | 9200 | 19200 |
+| OpenSearch Dashboards | 5601 | 15601 |
+| OpenFGA HTTP / gRPC | 9080 / 9081 | 19080 / 19081 |
+| Temporal frontend / UI | 7233 / 8233 | 17233 / 18233 |
+| Prometheus | 9090 | 19090 |
+| Grafana | 3002 | 13002 |
+| ClickHouse HTTP / native | 8123 / 9002 | 18123 / 19002 |
+
+Kubernetes API ports are allocated by k3d and recorded in kubeconfig. Internal
+service ports, the `fred` namespace and Helm release names stay the same in both
+clusters. PVCs, databases, buckets, search indices, realms, secrets and Temporal
+workflows belong to their own cluster. Both clusters still share the host's CPU,
+memory, disk and Docker image cache.
+
+For browser access, keep `127.0.0.1 keycloak` in `/etc/hosts` for Swift and add:
+
+```text
+127.0.0.1 keycloak-secondary secondary.localhost
+```
+
+Swift keeps `http://localhost:8088` and `http://keycloak:8080`. The secondary environment uses
+`http://secondary.localhost:18088` and `http://keycloak-secondary:18080`. Distinct hostnames
+separate browser cookies as well as application local storage. Use
+`secondary.localhost` for the secondary environment's Grafana, Dashboards and Temporal UI too.
+Keycloak publishes one fixed issuer per cluster. In the secondary environment, a Kubernetes Service
+named `keycloak-secondary` exposes port 18080 to pods, forwarding to Keycloak's
+unchanged container port 8080. Browser and backend discovery therefore agree on
+the exact issuer. The stable internal `keycloak:8080` service remains available
+for infrastructure administration.
+
+```bash
+# Infrastructure, once per environment; reruns upgrade the selected stack.
+make k3d-up
+make k3d-up ENV=secondary
+
+# The operator supplies the model Secret separately in each cluster.
+# Use your normal local secret-loading method with --context k3d-fred or
+# --context k3d-fred-secondary. Neither environment copies the other's secrets.
+
+# Independent checkouts or Git worktrees, each on its own branch.
+# These paths are examples; choose any two directories.
+make k3d-app APP=fred DIR=~/work/current/fred
+make k3d-app ENV=secondary APP=fred DIR=~/work/experiment/fred
+
+# Daily operations target only the selected cluster.
+make k3d-env ENV=secondary
+make k3d-status ENV=secondary
+make k3d-health ENV=secondary
+ENV=secondary bin/k3d-observe logs 'ERROR' --since 30m
+make k3d-down ENV=secondary           # stop the secondary environment, preserve its data; Swift keeps running
+make k3d-up ENV=secondary             # start it and reconcile the infrastructure
+```
+
+All factory Kubernetes and Helm calls specify their context; neither normal
+operations nor cluster creation switch the global current context. Cluster
+creation serializes k3d's kubeconfig updates. Logs, generated values and mutable
+build tags are isolated by cluster and checkout. A Swift build cannot select the
+secondary environment's cached image values. Separate worktrees/checkouts remain the
+operator's choice; the factory does not modify source branches.
+
+Fred keeps its original `k3d-apps/fred/values.yaml` for the default Swift mode.
+Only `ENV=secondary` adds `k3d-apps/fred/secondary.yaml.gotmpl`: environment URLs and
+empty application/Knowledge Base registrations, for testing Fred alone.
+`DIR` selects the source checkout; `ENV` never changes branches or selects a
+different application architecture.
+
+Satellite support in the secondary environment is out of scope. Existing evaluator and external
+application deployment commands remain available in the default Swift mode;
+their configuration is unchanged. The generic deployment script contains no
+satellite-specific dispatch or configuration.

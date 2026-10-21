@@ -13,6 +13,13 @@ stack: base
 
 host:
   fqdn: localhost
+  frontendPort: 8088
+  dashboardsPort: 5601
+
+# One issuer reachable with the same hostname/port from the browser and the pods.
+keycloak:
+  hostname: keycloak
+  publicPort: 8080
 
 auth:
   postgresAdminUser: admin
