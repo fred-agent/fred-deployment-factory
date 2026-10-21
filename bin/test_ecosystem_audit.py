@@ -72,6 +72,47 @@ class EcosystemAuditTest(unittest.TestCase):
         self.assertIn("fred-sdk==4.4.3 excludes 4.5.0", text)
         self.assertIn("app-a/uv.lock: 4.4.3 (fred-sdk), expected 4.5.0", text)
 
+    def add_library(self, name, version):
+        write(self.root / f"fred/libs/{name}/pyproject.toml", f'[project]\nname = "{name}"\nversion = "{version}"\n')
+
+    def multi_app(self, locked):
+        """An application on several Fred libraries, locked at the given versions."""
+        repo = self.root / "app-m"
+        deps = ", ".join(f'"{name}>=4.0"' for name in locked)
+        write(repo / "pyproject.toml", f'[project]\nname = "app-m"\ndependencies = [{deps}]\n')
+        write(repo / "uv.lock", "".join(f'[[package]]\nname = "{n}"\nversion = "{v}"\n' for n, v in locked.items()))
+        write(repo / "Makefile", SWITCH)
+        commit(repo)
+
+    def test_each_library_has_its_own_version(self):
+        self.add_library("fred-pod", "4.4.1")
+        self.multi_app({"fred-sdk": "4.5.0", "fred-pod": "4.4.1"})
+        report, text = self.run_audit()
+        self.assertEqual(report.errors, 0, text)
+
+        self.multi_app({"fred-sdk": "4.5.0", "fred-pod": "4.4.0"})
+        report, text = self.run_audit()
+        self.assertIn("app-m/uv.lock: 4.4.0 (fred-pod), expected 4.4.1", text)
+        self.assertEqual(report.errors, 1, text)
+
+    def test_reference_is_the_latest_on_pypi_for_each_library(self):
+        self.add_library("fred-pod", "4.4.2")
+        self.add_library("fred-new", "0.1.0")
+        self.multi_app({"fred-sdk": "4.5.0", "fred-pod": "4.4.1"})
+        pypi = {"fred-sdk": "4.5.1", "fred-pod": "4.4.1", "fred-new": None}
+        original = audit_module.latest_pypi, audit_module.latest_npm
+        audit_module.latest_pypi, audit_module.latest_npm = pypi.get, lambda name: "0.2.0"
+        try:
+            report = audit_module.audit(self.root, "swift", fetch=False, offline=False)
+        finally:
+            audit_module.latest_pypi, audit_module.latest_npm = original
+        text = "\n".join(line for lines in report.lines.values() for line in lines)
+        self.assertIn("fred-sdk: 4.5.0 in the source, behind PyPI (4.5.1)", text)
+        self.assertIn("fred-pod: 4.4.2 in the source, not yet on PyPI (latest 4.4.1)", text)
+        self.assertIn("fred-new: 0.1.0 in the source, never published", text)
+        self.assertIn("app-m/uv.lock: 4.5.0 (fred-sdk), expected 4.5.1", text)
+        self.assertEqual(report.errors, 1, text)
+
     def test_committed_merge_conflict_is_reported(self):
         app(self.root, "app-a", ">=4.5.0", "4.5.0")
         write(self.root / "app-a/uv.lock", "<<<<<<< HEAD\n")

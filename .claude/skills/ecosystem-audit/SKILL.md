@@ -25,8 +25,8 @@ checkout next to this one; the one holding `libs/fred-sdk` is Fred, the referenc
 | Section | Means | Fix |
 | --- | --- | --- |
 | Git | a checkout behind `origin/<branch>`, or uncommitted work | `git pull`; ask before touching uncommitted work |
-| Fred libraries | Fred's libs disagree, or the source is ahead of PyPI | applications are held to the PyPI version until Fred publishes |
-| Constraints | a `pyproject.toml` excludes the reference version | edit the constraint (keep the project's style), then relock |
+| Fred libraries | a library's source is ahead of PyPI (or behind it); each library is released on its own | applications are held to the latest version of each library on PyPI |
+| Constraints | a `pyproject.toml` excludes the latest published version of that library | edit the constraint (keep the project's style), then relock |
 | Locks | a `uv.lock` installs another version | `uv lock --upgrade-package <each fred package>` in that project |
 | npm packages | a `package.json` or its lock is not on the latest `@fred-oss/*` | `npm install --save-exact @fred-oss/<pkg>@<latest>` in that directory |
 | Unreadable files | a TOML file does not parse (often a committed merge conflict) | resolve it, then relock |

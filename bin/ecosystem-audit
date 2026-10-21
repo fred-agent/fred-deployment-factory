@@ -16,6 +16,7 @@ import re
 import subprocess
 import sys
 import tomllib
+import urllib.error
 import urllib.request
 from collections import defaultdict
 from pathlib import Path
@@ -78,8 +79,14 @@ def git(repo, *args, timeout=None):
 
 
 def latest_pypi(name):
-    with urllib.request.urlopen(f"https://pypi.org/pypi/{name}/json", timeout=10) as response:
-        return json.load(response)["info"]["version"]
+    """Latest version on PyPI, or None for a library Fred has never published."""
+    try:
+        with urllib.request.urlopen(f"https://pypi.org/pypi/{name}/json", timeout=10) as response:
+            return json.load(response)["info"]["version"]
+    except urllib.error.HTTPError as error:
+        if error.code == 404:
+            return None
+        raise
 
 
 def latest_npm(name):
@@ -177,27 +184,34 @@ def audit(root, branch, fetch, offline):
         report.add("Git", level, f"{repo.name}: on {current}, {behind} behind origin/{branch}, "
                                  f"{dirty} uncommitted file(s)")
 
-    # Fred's own Python libraries: one version for all, and is it published.
+    # Fred's own Python libraries: each is released on its own, so each has its own
+    # reference, the latest on PyPI (the source when offline or not yet published).
     published = {}
     for path in walk(fred / "libs", "pyproject.toml"):
         project = tomllib.loads(path.read_text()).get("project", {})
         if "name" in project and "version" in project:
             published[project["name"]] = project["version"]
-    versions = sorted(set(published.values()), key=vkey)
-    if len(versions) > 1:
-        report.add("Fred libraries", "ERROR", f"several versions in {fred.name}/libs: {versions}")
-    source = versions[-1]
-    reference = source
-    if not offline:
-        on_pypi = latest_pypi("fred-sdk")
-        if vkey(on_pypi) < vkey(source):
-            report.add("Fred libraries", "INFO", f"{source} in the source, not yet on PyPI "
-                                                 f"(latest {on_pypi}): applications are held to {on_pypi}")
-            reference = on_pypi
+    reference = dict(published)
+    status = defaultdict(list)
+    for name, source in sorted(published.items()):
+        if offline:
+            status[("INFO", f"{source} in the source (PyPI not checked)")].append(name)
+            continue
+        on_pypi = latest_pypi(name)
+        if on_pypi is None:
+            status[("INFO", f"{source} in the source, never published")].append(name)
+        elif vkey(on_pypi) < vkey(source):
+            status[("INFO", f"{source} in the source, not yet on PyPI (latest {on_pypi}): "
+                            f"applications are held to {on_pypi}")].append(name)
+            reference[name] = on_pypi
+        elif vkey(on_pypi) > vkey(source):
+            status[("WARN", f"{source} in the source, behind PyPI ({on_pypi}): applications "
+                            f"follow {on_pypi}")].append(name)
+            reference[name] = on_pypi
         else:
-            report.add("Fred libraries", "OK", f"{source} in the source and on PyPI")
-    else:
-        report.add("Fred libraries", "INFO", f"{source} in the source (PyPI not checked)")
+            status[("OK", f"{source} in the source and on PyPI")].append(name)
+    for (level, text), names in status.items():
+        report.add("Fred libraries", level, f"{', '.join(names)}: {text}")
 
     # Applications: what each one asks for, and what its lock installs.
     styles = defaultdict(set)
@@ -236,8 +250,8 @@ def audit(root, branch, fetch, offline):
                 depends = True
                 spec = spec.strip()
                 styles[re.match(r"(==|>=|~=)?", spec).group(1) or "none"].add(rel(path.parent))
-                if spec and not admits(spec, reference):
-                    report.add("Constraints", "ERROR", f"{rel(path)}: {name}{spec} excludes {reference}")
+                if spec and not admits(spec, reference[name]):
+                    report.add("Constraints", "ERROR", f"{rel(path)}: {name}{spec} excludes {reference[name]}")
             if depends:
                 dependents.append(path.parent)
                 makefile = path.with_name("Makefile")
@@ -255,11 +269,12 @@ def audit(root, branch, fetch, offline):
                                                               f"leave it unset and stop with a clear message")
             stale = defaultdict(list)
             for package in (locked or {}).get("package", []):
-                if package["name"] in published and package.get("version") != reference:
-                    stale[package.get("version")].append(package["name"])
-            for version, names in stale.items():
+                expected = reference.get(package["name"])
+                if expected and package.get("version") != expected:
+                    stale[(package.get("version"), expected)].append(package["name"])
+            for (version, expected), names in stale.items():
                 report.add("Locks", "ERROR", f"{rel(lock)}: {version} ({', '.join(sorted(names))}), "
-                                             f"expected {reference}")
+                                             f"expected {expected}")
         switch_images_and_charts(repo, dependents, report, rel)
     if len(styles) > 1:
         for style, where in sorted(styles.items()):
