@@ -82,6 +82,25 @@ x-observability: &observability
     prometheus:
       address: "0.0.0.0"
 
+# ── posture: trust the node's CA bundle ──────────────────────────────────────
+# The apps that call a model API trust the CAs of the k3d node they run on:
+# the public bundle of the k3s image, or the host's when the cluster was
+# created with K3D_CA_BUNDLE (corporate TLS inspection, e.g. Zscaler). Python
+# otherwise trusts only certifi, and the model call fails with
+# CERTIFICATE_VERIFY_FAILED behind such a proxy. SSL_CERT_FILE reaches httpx
+# (the model clients) only; not REQUESTS_CA_BUNDLE, which requests applies
+# even over verify=False and would break OpenSearch's self-signed certificate.
+x-node-ca-volume: &node-ca-volume
+  name: node-ca
+  hostPath: { path: /etc/ssl/certs/ca-certificates.crt, type: File }
+x-node-ca-mount: &node-ca-mount
+  name: node-ca
+  mountPath: /etc/fred/node-ca/ca-certificates.crt
+  readOnly: true
+x-env-ssl-cert-file: &env-ssl-cert-file
+  name: SSL_CERT_FILE
+  value: /etc/fred/node-ca/ca-certificates.crt
+
 # ── knowledge-flow (backend and worker) ──────────────────────────────────────
 x-kf-security: &kf-security
   profile: c3                              # posture
@@ -257,6 +276,9 @@ applications:
       - name: KEYCLOAK_AGENTIC_CLIENT_SECRET
         valueFrom:
           secretKeyRef: { name: fred-secrets, key: KEYCLOAK_AGENTIC_CLIENT_SECRET, optional: false }
+      - *env-ssl-cert-file                 # posture
+    extraVolumes: [*node-ca-volume]        # posture
+    extraVolumeMounts: [*node-ca-mount]
     configuration:
       app:
         # posture: c3 refuses to boot with the OpenAI-compatible surface, which
@@ -392,6 +414,9 @@ applications:
       - name: KEYCLOAK_KNOWLEDGE_FLOW_CLIENT_SECRET
         valueFrom:
           secretKeyRef: { name: fred-secrets, key: KEYCLOAK_KNOWLEDGE_FLOW_CLIENT_SECRET, optional: false }
+      - *env-ssl-cert-file                 # posture
+    extraVolumes: &kf-volumes [*node-ca-volume]          # posture
+    extraVolumeMounts: &kf-volume-mounts [*node-ca-mount]
     configuration:
       <<: *kf-configuration
       scheduler: *kf-scheduler
@@ -408,6 +433,8 @@ applications:
       requests: { cpu: "1", memory: 2Gi }
       limits: { cpu: "4", memory: 6Gi }
     extraEnvVars: *kf-env                  # secret
+    extraVolumes: *kf-volumes              # posture
+    extraVolumeMounts: *kf-volume-mounts
     configuration:
       <<: *kf-configuration
       scheduler:
