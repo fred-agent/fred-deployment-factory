@@ -176,7 +176,7 @@ install_workloads() {
 smoke() {
   [[ -s "$cache/broker-token" && -s "$cache/ca.crt" ]] || die "Run up first"
   local port=18443 session output
-  session="$(openssl rand -hex 32)"
+  session="$(printf 'fred-sandbox-smoke:%s' "$cluster" | sha256sum | cut -d' ' -f1)"
   kube -n fred-sandbox-system port-forward service/fred-sandbox-broker "$port:443" \
     > "$cache/port-forward.log" 2>&1 &
   local forward_pid=$!
