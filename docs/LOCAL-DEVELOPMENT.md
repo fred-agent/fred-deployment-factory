@@ -631,6 +631,7 @@ the pinned SIG Agent Sandbox controller and four CRDs. It pushes the approved
 `python:3.12-slim` image and the broker built from `FRED_REPO` to the cluster's registry,
 using digest references in the SandboxTemplate and broker Deployment. The namespace has
 a deny-all NetworkPolicy, Restricted Pod Security, a resource quota, and broker RBAC.
+It checks CNI enforcement with a control Pod before starting the broker.
 The `SandboxWarmPool` has zero replicas. The smoke command executes Python and Bash
 through the live HTTPS broker and checks that the Pod runs under gVisor with the
 registry image. Broker credentials and its local CA stay in `.cache/agent-sandbox/`

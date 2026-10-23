@@ -105,6 +105,60 @@ install_sig() {
   done
 }
 
+verify_network_policy() {
+  local image="$1" api_ip name control_result sandbox_result
+  api_ip="$(kube -n default get service kubernetes -o jsonpath='{.spec.clusterIP}')"
+  [[ -n "$api_ip" ]] || die "Kubernetes API service has no ClusterIP"
+  name="fred-sandbox-policy-$(openssl rand -hex 4)"
+  kube -n default run "$name" --image="$image" --restart=Never --command -- sleep 120 >/dev/null
+  if ! kube apply -f - >/dev/null <<EOF
+apiVersion: v1
+kind: Pod
+metadata:
+  name: $name
+  namespace: fred-sandbox
+spec:
+  automountServiceAccountToken: false
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 65534
+    seccompProfile: { type: RuntimeDefault }
+  containers:
+    - name: probe
+      image: $image
+      command: [sleep, "120"]
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities: { drop: [ALL] }
+      resources:
+        requests: { cpu: 10m, memory: 16Mi }
+        limits: { cpu: 100m, memory: 64Mi }
+EOF
+  then
+    kube -n default delete "pod/$name" --wait=false >/dev/null
+    die "Could not create the restricted sandbox policy probe"
+  fi
+  local probe='import socket,sys; s=socket.socket(); s.settimeout(2); print("reachable" if s.connect_ex((sys.argv[1],443)) == 0 else "blocked")'
+  if ! kube -n default wait "pod/$name" --for=condition=Ready --timeout=90s >/dev/null \
+    || ! kube -n fred-sandbox wait "pod/$name" --for=condition=Ready --timeout=90s >/dev/null; then
+    kube -n default delete "pod/$name" --wait=false >/dev/null
+    kube -n fred-sandbox delete "pod/$name" --wait=false >/dev/null
+    die "NetworkPolicy probe Pods did not become ready"
+  fi
+  if ! control_result="$(kube -n default exec "$name" -- python -c "$probe" "$api_ip")"; then
+    control_result=probe_failed
+  fi
+  if ! sandbox_result="$(kube -n fred-sandbox exec "$name" -- python -c "$probe" "$api_ip")"; then
+    sandbox_result=probe_failed
+  fi
+  kube -n default delete "pod/$name" --wait=false >/dev/null
+  kube -n fred-sandbox delete "pod/$name" --wait=false >/dev/null
+  [[ "$control_result" == reachable && "$sandbox_result" == blocked ]] \
+    || die "CNI did not enforce sandbox egress isolation (control=$control_result, sandbox=$sandbox_result)"
+  say "NetworkPolicy blocks sandbox egress; control Pod reaches the Kubernetes API"
+}
+
 create_credentials() {
   umask 077
   if [[ ! -s "$cache/broker-token" ]]; then openssl rand -hex 32 | tr -d '\n' > "$cache/broker-token"; fi
@@ -160,6 +214,7 @@ install_workloads() {
   printf '%s\n' "$broker_image" > "$cache/broker-image"
 
   kube apply -f "$repo_root/k3d/agent-sandbox/foundation.yaml"
+  verify_network_policy "$python_image"
   install_sig
   create_credentials
   sed "s|REPLACE_WITH_APPROVED_PYTHON_IMAGE_DIGEST|$python_image|g" \
