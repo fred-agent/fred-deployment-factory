@@ -9,6 +9,7 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+REGISTRATION = "fred-deployment-factory/registration"
 FAKE = """#!/usr/bin/env python3
 import json, os, sys
 from pathlib import Path
@@ -16,6 +17,8 @@ name = Path(sys.argv[0]).name
 args = sys.argv[1:]
 with open(os.environ["CALLS"], "a") as f:
     f.write(json.dumps([name, *args]) + "\\n")
+if name == "helmfile" and ("template" in args or "sync" in args):
+    Path(os.environ["CALLS"] + ".registrations").write_text(Path(os.environ["K3D_REGISTRATIONS"]).read_text())
 if name == "helmfile" and "template" in args:
     built = Path(os.environ["K3D_IMAGE_VALUES"]).read_text().strip() != "{}"
     if os.environ.get("FAIL_RENDER") == "1" or (os.environ.get("FAIL_FINAL_RENDER") == "1" and built):
@@ -28,7 +31,25 @@ if name == "helm" and "status" in args:
     print(json.dumps({"info": {"status": os.environ.get("RELEASE_STATUS", "deployed")}}))
 if name == "helm" and "history" in args:
     print("[]")
-if name == "kubectl" and "pvc" in args:
+if name == "kubectl" and "configmap" in args and "get" in args:
+    if "-l" in args:
+        print(os.environ.get("STORED_REGISTRATIONS", '{"items": []}'))
+    elif os.environ.get("SERVER_CONFIG"):
+        print(os.environ["SERVER_CONFIG"])
+    else:
+        sys.exit(1)
+if name == "kubectl" and "create" in args and "configmap" in args:
+    data = {}
+    for a in args:
+        if a.startswith(("--from-file=", "--from-literal=")):
+            key, value = a.split("=", 2)[1:]
+            data[key] = Path(value).read_text() if a.startswith("--from-file=") else value
+    print(json.dumps({"apiVersion": "v1", "kind": "ConfigMap",
+                      "metadata": {"name": args[args.index("configmap") + 1]}, "data": data}))
+if name == "kubectl" and "apply" in args:
+    with open(os.environ["CALLS"] + ".applied", "a") as f:
+        f.write(sys.stdin.read().replace("\\n", " ") + "\\n")
+if name == "kubectl" and "pvc" in args and not os.environ.get("NO_VOLUMES"):
     print(json.dumps({"items": [{"metadata": {"name": "data", "annotations": {"meta.helm.sh/release-name": "app-a"}}}]}))
 """
 HOOK = """#!/bin/bash
@@ -90,7 +111,8 @@ class K3dAppTests(unittest.TestCase):
             (self.defined / hook).chmod(0o755)
 
     def run_app(self, mode: str = "deploy", **env: str) -> tuple[subprocess.CompletedProcess, list]:
-        (self.root / "calls").unlink(missing_ok=True)
+        for log in ("calls", "calls.applied", "calls.registrations"):
+            (self.root / log).unlink(missing_ok=True)
         result = subprocess.run(
             ["bash", str(self.factory / "bin/k3d-app.sh"), mode],
             cwd=self.root,
@@ -280,6 +302,63 @@ class K3dAppTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("owns volumes", result.stderr)
         self.assertFalse(any("destroy" in c for c in calls))
+
+    def stored(self, **registrations: str) -> str:
+        return json.dumps({"items": [
+            {"metadata": {"labels": {REGISTRATION: name}}, "data": {"registration.yaml": text}}
+            for name, text in registrations.items()
+        ]})
+
+    def test_registrations_reach_the_helmfiles_and_fred_serves_them_first(self) -> None:
+        own = "publishers:\n  - {client_id: kb-mine, prefix: mine}\n"
+        (self.app / "registration.yaml").write_text(own)
+        # Fred's definition: its helmfile reads the registrations.
+        server = self.factory / "k3d-apps/server"
+        server.mkdir(parents=True)
+        (server / "helmfile.yaml.gotmpl").write_text("# reads K3D_REGISTRATIONS\nreleases: []\n")
+        deployed = json.dumps({"data": {"APP": "server", "DIR": "", "RELEASE": "", "VALUES": "",
+                                        "FRED_LIBS": "pypi", "FRED_REPO": ""}})
+        stored = self.stored(other="publishers: []\n", **{"some-app": "stale\n"})
+        result, calls = self.run_app(STORED_REGISTRATIONS=stored, SERVER_CONFIG=deployed)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        # Every stored registration, its own file in place of its stored one.
+        seen = json.loads((self.root / "calls.registrations").read_text())
+        self.assertEqual(seen, {"other": "publishers: []\n", "some-app": own})
+        applied = [json.loads(line) for line in (self.root / "calls.applied").read_text().splitlines()]
+        self.assertEqual([a["metadata"]["name"] for a in applied],
+                         ["fred-registration-some-app", "fred-registrations-server"])
+        self.assertEqual(applied[0]["metadata"]["labels"], {REGISTRATION: "some-app"})
+        self.assertEqual(applied[0]["data"], {"registration.yaml": own})
+        self.assertEqual(applied[1]["data"]["APP"], "server")
+        # Registered, then Fred redeployed as last deployed, then the application synced.
+        syncs = [i for i, c in enumerate(calls) if "sync" in c]
+        self.assertEqual([calls[i][2] for i in syncs],
+                         [str(server / "helmfile.yaml.gotmpl"), str(self.app / "helmfile.yaml.gotmpl")])
+        self.assertLess(next(i for i, c in enumerate(calls) if "apply" in c), syncs[0])
+        self.assertIn("Redeploy Fred as last deployed", result.stdout)
+
+        # Unchanged: nothing registered, Fred untouched.
+        result, calls = self.run_app(STORED_REGISTRATIONS=self.stored(**{"some-app": own}), SERVER_CONFIG=deployed)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(any("apply" in c for c in calls))
+        self.assertEqual(len([c for c in calls if "sync" in c]), 1)
+
+        # Fred not deployed by this engine yet: registered, and said so.
+        result, calls = self.run_app(STORED_REGISTRATIONS=stored)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Fred serves it from its next deploy", result.stdout)
+
+        # Validating reads no cluster: its own registration only.
+        result, calls = self.run_app("validate", STORED_REGISTRATIONS=stored)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads((self.root / "calls.registrations").read_text()), {"some-app": own})
+
+    def test_uninstall_unregisters(self) -> None:
+        result, calls = self.run_app("uninstall", NO_VOLUMES="1", STORED_REGISTRATIONS=self.stored(**{"some-app": "x: 1\n"}))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        delete = next(c for c in calls if "delete" in c)
+        self.assertEqual(delete[3:6], ["delete", "configmap", "fred-registration-some-app"])
+        self.assertLess(next(i for i, c in enumerate(calls) if "destroy" in c), calls.index(delete))
 
 
 if __name__ == "__main__":

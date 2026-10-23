@@ -3,7 +3,7 @@
 # documents the format).
 clients:
   # Named after the prefix it publishes under: Fred binds the prefix to the
-  # client listed for it in knowledge_bases.publishers. values.yaml reads its
+  # client registered for it (registration.yaml). values.yaml reads its
   # secret by secretKeyRef.
   - id: kb-fred.webdav
     secret: KEYCLOAK_KB_FRED_WEBDAV_CLIENT_SECRET # pragma: allowlist secret (Secret key name, not a credential)

@@ -7,8 +7,7 @@
 # Only what k3d decides lives here; the chart's defaults already name the
 # services of a default Fred install (postgres, temporal:7233,
 # control-plane-backend:8222, fred-agents), which is what k3d runs. Fred learns
-# about the application from its own values (k3d-apps/fred/values.yaml:
-# application_sources and FRONTEND_APPLICATIONS_JSON).
+# about the application from its registration.yaml.
 #
 # Posture as on fredlab: no security profile, no delegation; the worker has its
 # own `fred-evaluation-worker` identity with app/service_agent only.

@@ -1,0 +1,20 @@
+# Registers the evaluation application with the Fred of this instance
+# (docs/LOCAL-DEVELOPMENT.md → "Registering with Fred"). It shows up once a
+# platform admin enables `evaluation` for a team (Admin > Features, filter "app").
+registrations:
+  applications:
+    evaluation:
+      ui_prefix: /apps/evaluation
+      version: 1.2.0
+      icon: fact_check
+      display_name:
+        en: "Evaluation"
+        fr: "Évaluation"
+      description:
+        en: "Evaluate agents against versioned test sets."
+        fr: "Évaluer les agents sur des jeux de tests versionnés."
+      enabled: true
+      gateway:                   # address: what the frontend gateway proxies to
+        ui_upstream: http://fred-evaluator-ui.fred.svc.cluster.local:8080
+        service_upstream: http://fred-evaluator-api.fred.svc.cluster.local:8336
+        service_required: true

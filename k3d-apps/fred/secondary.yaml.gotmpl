@@ -1,4 +1,5 @@
-# Fred alone in the second cluster. The default Swift values remain unchanged.
+# Fred alone in the second cluster (registrations.yaml.gotmpl registers nothing there).
+# The default Swift values remain unchanged.
 x-security: &security
   m2m:
     realm_url: {{ requiredEnv "K3D_REALM_URL" | quote }}
@@ -9,11 +10,6 @@ x-security: &security
 
 applications:
   frontend:
-    env:
-      - name: VITE_BACKEND_URL_KNOWLEDGE
-        value: {{ requiredEnv "K3D_PUBLIC_URL" | quote }}
-      - name: FRONTEND_APPLICATIONS_JSON
-        value: "[]"
     configuration:
       config_json:
         backend_url_api: {{ requiredEnv "K3D_PUBLIC_URL" | quote }}
@@ -39,9 +35,6 @@ applications:
         frontend:
           feature_flags:
             enableApplications: false
-        application_sources: []
-      knowledge_bases:
-        publishers: []
 
   control-plane-worker:
     configuration:

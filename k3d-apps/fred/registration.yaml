@@ -1,0 +1,8 @@
+# Registers with the Fred of this instance what Fred's own definition decides
+# (docs/LOCAL-DEVELOPMENT.md → "Registering with Fred"): a Fred values file
+# holding only `registrations`.
+registrations:
+  knowledgeBasePublishers:
+    # fred-samples' Knowledge Bases, run from their checkout, share this client.
+    kb-fred.samples:
+      prefix: fred.samples

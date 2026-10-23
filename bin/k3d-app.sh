@@ -19,6 +19,9 @@ set -Eeuo pipefail
 #   identities.yaml       optional: its service identities in Keycloak (bin/k3d-identities)
 #   build                 optional: builds its images, writes $K3D_APP_OUT/images.txt
 #                         (one reference per line) and $K3D_APP_OUT/images.yaml (Helm values)
+#   registration.yaml     optional: what it registers with Fred, stored in the cluster;
+#                         every registration reaches the helmfiles as K3D_REGISTRATIONS,
+#                         and a changed one redeploys Fred, as last deployed, first
 #   prepare, finish       optional: run before and after its releases are synced
 # This script owns the cluster side: the context, the identities, the image
 # import, release recovery and the sync. It never changes the current kubectl context.
@@ -98,6 +101,26 @@ if [[ ! -e "$build_dir/build" || ! -f "$K3D_APP_OUT/images.yaml" ]]; then
 fi
 export K3D_IMAGE_VALUES="$K3D_APP_OUT/images.yaml"
 
+# Registrations with Fred: one ConfigMap per application, so none restates another.
+# K3D_REGISTRATIONS is a JSON object, registration name → registration.yaml text:
+# those stored in the namespace (none when validating), this application's own file
+# in place of its stored one.
+registration="$app/registration.yaml"
+# Named after APP, or the application's directory (the checkout's, for its deploy/k3d).
+registration_name="${APP:-$(basename "${app%/deploy/k3d}")}"
+registration_name="$(printf '%s' "$registration_name" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9-' '-')"
+registration_label="fred-deployment-factory/registration"
+export K3D_REGISTRATIONS="$K3D_APP_OUT/registrations.json"
+stored='{}'
+write_registrations() {
+  if [[ -f "$registration" ]]; then
+    jq --arg name "$registration_name" --rawfile text "$registration" '.[$name] = $text' <<<"$stored" >"$K3D_REGISTRATIONS"
+  else
+    printf '%s\n' "$stored" >"$K3D_REGISTRATIONS"
+  fi
+}
+write_registrations
+
 info "Environment: $ENV, context: $KUBE_CONTEXT, namespace: $K3D_NAMESPACE"
 
 describe() {
@@ -168,6 +191,30 @@ fi
 command -v kubectl >/dev/null || fail "kubectl is required"
 kubectl --context "$KUBE_CONTEXT" get secret fred-secrets -n "$K3D_NAMESPACE" -o name >/dev/null 2>&1 \
   || fail "no Secret fred-secrets in context '$KUBE_CONTEXT', namespace '$K3D_NAMESPACE': run 'make k3d-up ENV=$ENV' first"
+stored="$(kubectl --context "$KUBE_CONTEXT" get configmap -n "$K3D_NAMESPACE" -l "$registration_label" -o json \
+  | jq -c --arg label "$registration_label" \
+    'reduce .items[] as $c ({}; .[$c.metadata.labels[$label]] = $c.data["registration.yaml"])')" \
+  || fail "cannot read the registrations with Fred in namespace '$K3D_NAMESPACE'"
+[[ -n "$stored" ]] || stored='{}'
+write_registrations
+# Fred's definition serves the registrations (its helmfile reads K3D_REGISTRATIONS). How it
+# was last deployed is kept in the cluster, so a changed registration redeploys it the
+# same way, without a build (the images of its last one).
+server_config="fred-registrations-server"
+serves_registrations() { grep -qs K3D_REGISTRATIONS "$app"/*.gotmpl; }
+serve_registrations() {
+  local how
+  how="$(kubectl --context "$KUBE_CONTEXT" get configmap "$server_config" -n "$K3D_NAMESPACE" -o json 2>/dev/null \
+    | jq -r '.data | to_entries[] | "\(.key)=\(.value)"')" || how=""
+  if [[ -z "$how" ]]; then
+    warn "Fred serves it from its next deploy: make k3d-app APP=fred (as you deploy it)"
+    return 0
+  fi
+  local -a deployed
+  mapfile -t deployed <<<"$how"
+  step "Redeploy Fred as last deployed (${deployed[*]}), without a build, to serve the registrations"
+  env "${deployed[@]}" K3D_REUSE_IMAGES=1 "$here/bin/k3d-app.sh" deploy || fail "Fred could not serve the registrations"
+}
 
 # ── Uninstall: the releases go, the data stays in the infrastructure ─────────
 if [[ "$mode" == uninstall ]]; then
@@ -178,6 +225,14 @@ if [[ "$mode" == uninstall ]]; then
   done < <(releases)
   step "Uninstall the releases of $app"
   "${state[@]}" destroy --skip-deps
+  if serves_registrations; then
+    kubectl --context "$KUBE_CONTEXT" delete configmap "$server_config" -n "$K3D_NAMESPACE" --ignore-not-found >/dev/null
+  fi
+  if [[ "$(jq --arg name "$registration_name" 'has($name)' <<<"$stored")" == true ]]; then
+    step "Unregister '$registration_name' from Fred"
+    kubectl --context "$KUBE_CONTEXT" delete configmap "fred-registration-$registration_name" -n "$K3D_NAMESPACE" >/dev/null
+    serves_registrations || serve_registrations
+  fi
   ok "Uninstalled; the data stays in the infrastructure"
   exit 0
 fi
@@ -186,7 +241,10 @@ fi
 # Check and render before building: a mistake costs seconds, not a build.
 identities --check
 render
-if [[ -e "$build_dir/build" ]]; then
+if [[ -n "${K3D_REUSE_IMAGES:-}" && -e "$build_dir/build" ]]; then
+  [[ "$(cat "$K3D_IMAGE_VALUES")" != '{}' ]] \
+    || fail "no earlier build to redeploy without one: run make k3d-app with the same APP and DIR"
+elif [[ -e "$build_dir/build" ]]; then
   rm -f "$K3D_APP_OUT/images.txt" "$K3D_APP_OUT/images.yaml"
   # Product Makefiles accept IMAGE_TAG. Avoid sharing mutable build tags across checkouts.
   IMAGE_TAG="k3d-$K3D_CLUSTER-$build_key" hook build "$build_dir"
@@ -202,6 +260,17 @@ if [[ -f "$app/identities.yaml" ]]; then
   identities
 fi
 hook prepare
+# Registered and served before the sync: a Knowledge Base's publish Job needs Fred to
+# know its client already.
+if [[ -f "$registration" \
+    && "$(jq -r --arg name "$registration_name" '.[$name] // ""' <<<"$stored")" != "$(cat "$registration")" ]]; then
+  step "Register '$registration_name' with Fred (registration.yaml)"
+  kubectl --context "$KUBE_CONTEXT" create configmap "fred-registration-$registration_name" -n "$K3D_NAMESPACE" \
+    --from-file=registration.yaml="$registration" --dry-run=client -o json \
+    | jq --arg label "$registration_label" --arg name "$registration_name" '.metadata.labels[$label] = $name' \
+    | kubectl --context "$KUBE_CONTEXT" apply -f - >/dev/null
+  serves_registrations || serve_registrations
+fi
 # A release left pending (Ctrl+C) or a first install that failed: Helm refuses
 # both. Go back to the last deployed revision, or start over when there is none.
 while read -r release ns; do
@@ -246,4 +315,11 @@ if ! "${state[@]}" sync --skip-deps --wait --timeout "$timeout_s" "${values[@]}"
 fi
 kill "$watcher" 2>/dev/null || true
 ok "Releases synced"
+if serves_registrations; then
+  kubectl --context "$KUBE_CONTEXT" create configmap "$server_config" -n "$K3D_NAMESPACE" \
+    --from-literal=APP="${APP:-}" --from-literal=DIR="${checkout:-${dir:-}}" --from-literal=RELEASE="${RELEASE:-}" \
+    --from-literal=VALUES="${value_files[*]}" --from-literal=FRED_LIBS="$FRED_LIBS" \
+    --from-literal=FRED_REPO="${FRED_REPO:-}" --dry-run=client -o json \
+    | kubectl --context "$KUBE_CONTEXT" apply -f - >/dev/null
+fi
 hook finish

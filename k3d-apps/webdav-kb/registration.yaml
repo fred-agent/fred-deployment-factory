@@ -1,0 +1,7 @@
+# Lets the WebDAV Knowledge Base publish under its prefix on the Fred of this
+# instance (docs/LOCAL-DEVELOPMENT.md → "Registering with Fred"). It shows up once
+# a platform admin enables it for a team (Admin > Features > Knowledge Bases).
+registrations:
+  knowledgeBasePublishers:
+    kb-fred.webdav:
+      prefix: fred.webdav

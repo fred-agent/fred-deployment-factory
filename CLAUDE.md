@@ -41,10 +41,13 @@ outside it. Do not reintroduce cloud-specific material here.
   (`fred-model-credentials`, `fred-web-research-credentials`), never written by a hook. The
   apps read each one by `secretKeyRef`. Never a literal value in a values file, never a
   credential taken from the environment or a checkout.
-- **Applications register with Fred like any application**: `application_sources` in the
-  control-plane values and the frontend gateway's `FRONTEND_APPLICATIONS_JSON`, both in
-  `k3d-apps/fred/values.yaml`; an application defined elsewhere adds its entries with a values
-  file passed in `VALUES` (Helm replaces lists: repeat the entries it keeps). No ad hoc wiring.
+- **Applications register with Fred, each with its own entry only**: its `registration.yaml`,
+  a Fred values file holding only `registrations` (an application's catalog entry and
+  gateway, a Knowledge Base's publisher, keyed by id), stored by `make k3d-app` in a
+  ConfigMap `fred-registration-<name>`. Fred's
+  `k3d-apps/fred/registrations.yaml.gotmpl` builds the three lists from all of them; a changed
+  registration redeploys Fred, as last deployed, before the application syncs. No values
+  file names another application's entry, and none is passed in `VALUES` to register.
 - **Identities: k3d takes them from the applications, Docker keeps its own.** On k3d, the
   platform's identities (realm `app`, the `app` client and its roles, Fred's backend
   clients for now) are in `k3d/files/scripts/keycloak-post-install-k8s.sh`; an application's

@@ -408,10 +408,10 @@ first account keeps the role. Then turn the tools and agent templates on in
 **Admin > Capabilities** (select all).
 
 **6. The evaluation application** (optional, this repo): deploys its published chart and
-images next to Fred (`DIR=../fred-agent-evaluator` to build a checkout instead). Fred
-already knows the application (`application_sources` in `k3d-apps/fred/values.yaml`); it
-shows up once a platform admin enables `evaluation` for a team in **Admin > Features**
-(filter "app").
+images next to Fred (`DIR=../fred-agent-evaluator` to build a checkout instead), and
+registers it with Fred (`k3d-apps/fred-evaluator/registration.yaml`, see "Registering with
+Fred"); it shows up once a platform admin enables `evaluation` for a team in
+**Admin > Features** (filter "app").
 
 ```bash
 make k3d-app APP=fred-evaluator
@@ -419,9 +419,9 @@ make k3d-app APP=fred-evaluator
 
 **7. The Knowledge Bases** (optional, this repo): `APP=webdav-kb` deploys the WebDAV
 Knowledge Base's published chart and image (`DIR=../webdav-knowledge-base` to build a
-checkout instead). Fred already lets it publish (`knowledge_bases.publishers` in
-`k3d-apps/fred/values.yaml`); it shows up once a platform admin enables it for a team in
-**Admin > Features > Knowledge Bases**.
+checkout instead), and registers its publisher with Fred
+(`k3d-apps/webdav-kb/registration.yaml`); it shows up once a platform admin enables it for
+a team in **Admin > Features > Knowledge Bases**.
 
 ```bash
 make k3d-app APP=webdav-kb
@@ -546,6 +546,7 @@ An application is defined by the files below, in one of two places:
 | `helmfile.yaml.gotmpl` | yes | Its releases: its charts, its k3d values, then `K3D_IMAGE_VALUES` when set. Ordinary Helmfile, no `exec`; one hook only, for a checkout's chart with dependencies (a Knowledge Base's on Fred's `knowledge-base`): `bin/k3d-chart-stage` copies it to `$K3D_APP_OUT/chart` and fetches them there, from `FRED_REPO` with `FRED_LIBS=local` |
 | `values.yaml` | by convention | Its k3d values, every block labelled `address`, `secret`, `posture`, `choice`, `models` or `sizing` |
 | `identities.yaml` | no | Its service clients in Keycloak, the `fred-secrets` key of each one's secret, and the roles granted (below) |
+| `registration.yaml` | no | What it registers with Fred: its own entry only (below, "Registering with Fred") |
 | `build` | no | Builds its images; writes `$K3D_APP_OUT/images.txt` (one reference per line, tagged by content) and `$K3D_APP_OUT/images.yaml` (the Helm values selecting them) |
 | `prepare` | no | Runs before the sync (read-only checks: Fred, its operator Secret exists; the evaluator, Fred runs). Never writes a credential |
 | `finish` | no | Runs after the sync (Fred: its Grafana dashboards, how to log in) |
@@ -580,8 +581,8 @@ infrastructure services by name (`postgres:5432`,
 `opensearch:9200`, `openfga:9080`, `temporal:7233`, `seaweedfs:8333`); the OIDC issuer
 from `K3D_REALM_URL` (realm `app`); and the credentials
 of `fred-secrets` (`k3d/templates/secret.yaml`), plus the operator's own Secrets
-(`fred-model-credentials`), read by `secretKeyRef`, never copied into a values file. Fred learns about an application through its own k3d values
-(`application_sources`, `FRONTEND_APPLICATIONS_JSON`).
+(`fred-model-credentials`), read by `secretKeyRef`, never copied into a values file. Fred learns about an application through its
+`registration.yaml` (below).
 
 **Identities.** The application says what it needs; this repository decides how:
 
@@ -607,6 +608,51 @@ which shares its Keycloak functions with `bin/k3d-identities` (`keycloak-lib.sh`
 Docker Compose does not read these files: it is the fast loop to debug an app, and
 `docker/keycloak/keycloak-post-install.sh` gives the apps fixed identities with local
 default secrets.
+
+**Registering with Fred.** Fred serves an application through two lists that must agree,
+the control plane's `application_sources` and the frontend gateway's
+`FRONTEND_APPLICATIONS_JSON`, and lets a Knowledge Base publish through
+`knowledge_bases.publishers`. Helm replaces lists, so no values file may hold a share of
+them: each application declares its own entry, and only its own, as a Fred values file
+holding only `registrations` (the shape the fred chart takes from ThalesGroup/fred#3211
+on), keyed by `app_id` or `client_id`:
+
+```yaml
+# deploy/k3d/registration.yaml
+registrations:
+  applications:
+    acme-forecast:                 # the app_id
+      ui_prefix: /apps/acme-forecast
+      version: 1.0.0
+      icon: insights
+      display_name: { en: "Forecast", fr: "Prévisions" }
+      description: { en: "...", fr: "..." }
+      enabled: true
+      gateway:                     # what the frontend gateway proxies to
+        ui_upstream: http://acme-forecast-ui.fred.svc.cluster.local:8080
+        service_upstream: http://acme-forecast-api.fred.svc.cluster.local:8000
+        service_required: true
+  knowledgeBasePublishers:         # a Knowledge Base's client and the prefix it owns
+    kb-fred.opentext:
+      prefix: fred.opentext
+```
+
+`make k3d-app` stores it, before the sync, in a ConfigMap `fred-registration-<name>`
+(`<name>`: `APP`, or the application's directory) labelled
+`fred-deployment-factory/registration`, and passes every stored registration to the
+helmfiles as `K3D_REGISTRATIONS` (a JSON object, name → `registration.yaml` text; when
+validating, the application's own only). Fred's `k3d-apps/fred/registrations.yaml.gotmpl`
+merges them into `registrations` for a chart that takes it (a checkout with #3211, or a
+published release from 3.9.0), and otherwise builds the three lists an earlier chart takes;
+`k3d-apps/fred/helmfile.yaml.gotmpl` decides which. It refuses a key other than
+`registrations.applications` and `registrations.knowledgeBasePublishers`, an application
+without `gateway.ui_upstream`, and an `app_id` or a `client_id` registered twice. When the registration
+changed, `make k3d-app` first redeploys Fred as it was last deployed (`APP`, `DIR`,
+`RELEASE`, `VALUES`, kept in the ConfigMap `fred-registrations-server`), without a build,
+so that Fred knows a Knowledge Base's client before its publish Job runs. A Fred not yet
+deployed this way serves it from its next `make k3d-app APP=fred`. `make k3d-app-uninstall`
+removes the registration the same way. Registration alone grants nothing: a platform admin
+enables an application or a Knowledge Base per team (**Admin > Features**).
 
 Once built, the standard Helmfile commands work on their own:
 
@@ -865,7 +911,7 @@ operator's choice; the factory does not modify source branches.
 
 Fred keeps its original `k3d-apps/fred/values.yaml` for the default Swift mode.
 Only `ENV=secondary` adds `k3d-apps/fred/secondary.yaml.gotmpl`: environment URLs and
-empty application/Knowledge Base registrations, for testing Fred alone.
+applications off, for testing Fred alone; nothing is registered there.
 `DIR` selects the source checkout; `ENV` never changes branches or selects a
 different application architecture.
 
