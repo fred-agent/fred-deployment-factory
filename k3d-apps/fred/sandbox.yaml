@@ -1,0 +1,64 @@
+# Code-only sandbox overlay for a Fred checkout that includes code_sandbox.
+# Helm replaces lists, so the existing fred-agents environment is repeated here.
+applications:
+  frontend:
+    env:
+      - { name: VITE_BACKEND_URL_KNOWLEDGE, value: "http://localhost:8088" }
+  fred-agents:
+    extraEnvVars:
+      - { name: COLUMNS, value: "250" }
+      - name: FRED_POSTGRES_PASSWORD
+        valueFrom:
+          secretKeyRef: { name: fred-secrets, key: POSTGRES_FRED_PASSWORD, optional: false }
+      - name: OPENSEARCH_PASSWORD
+        valueFrom:
+          secretKeyRef: { name: fred-secrets, key: OPENSEARCH_ADMIN_PASSWORD, optional: false }
+      - name: OPENFGA_API_TOKEN
+        valueFrom:
+          secretKeyRef: { name: fred-secrets, key: OPENFGA_API_TOKEN, optional: false }
+      - name: MINIO_SECRET_KEY
+        valueFrom:
+          secretKeyRef: { name: fred-secrets, key: SEAWEEDFS_ADMIN_PASSWORD, optional: false }
+      - name: OPENAI_API_KEY
+        valueFrom:
+          secretKeyRef: { name: fred-model-credentials, key: OPENAI_API_KEY, optional: false }
+      - name: WEB_RESEARCH_PROVIDER_KEY
+        valueFrom:
+          secretKeyRef: { name: fred-web-research-credentials, key: WEB_RESEARCH_PROVIDER_KEY, optional: true }
+      - name: KEYCLOAK_AGENTIC_CLIENT_SECRET
+        valueFrom:
+          secretKeyRef: { name: fred-secrets, key: KEYCLOAK_AGENTIC_CLIENT_SECRET, optional: false }
+      - name: FRED_SANDBOX_BROKER_URL
+        value: https://fred-sandbox-broker.fred-sandbox-system.svc.cluster.local
+      - name: FRED_SANDBOX_BROKER_TOKEN
+        valueFrom:
+          secretKeyRef: { name: fred-sandbox-broker-client, key: token, optional: false }
+      - { name: SSL_CERT_FILE, value: /etc/fred/sandbox-ca/ca.crt }
+    extraVolumes:
+      - name: node-ca
+        hostPath: { path: /etc/ssl/certs/ca-certificates.crt, type: File }
+      - name: sandbox-ca
+        configMap: { name: fred-sandbox-broker-ca }
+    extraVolumeMounts:
+      - { name: node-ca, mountPath: /etc/fred/node-ca/ca-certificates.crt, readOnly: true }
+      - { name: sandbox-ca, mountPath: /etc/fred/sandbox-ca, readOnly: true }
+
+registrations:
+  applications:
+    evaluation:
+      ui_prefix: /apps/evaluation
+      version: 1.2.0
+      icon: fact_check
+      display_name: { en: Evaluation, fr: Évaluation }
+      description:
+        en: Evaluate agents against versioned test sets.
+        fr: Évaluer les agents sur des jeux de tests versionnés.
+      enabled: true
+      gateway:
+        ui_upstream: http://fred-evaluator-ui.fred.svc.cluster.local:8080
+        service_upstream: http://fred-evaluator-api.fred.svc.cluster.local:8336
+        service_required: true
+  knowledgeBasePublishers:
+    kb-fred.samples: { prefix: fred.samples }
+    kb-fred.webdav: { prefix: fred.webdav }
+    kb-fred.opentext: { prefix: fred.opentext }

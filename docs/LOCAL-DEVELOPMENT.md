@@ -614,6 +614,60 @@ Once built, the standard Helmfile commands work on their own:
 helmfile -f k3d-apps/fred/helmfile.yaml.gotmpl --kube-context k3d-fred -n fred template --skip-deps
 ```
 
+### Agent code sandbox on k3d
+
+Use a Fred checkout containing `apps/sandbox-broker` and `deploy/sandbox/agent-sandbox.yaml`.
+This local bootstrap currently requires an x86_64 host and `yq` v4 for the Fred values overlay.
+Create the cluster with its own registry and a kubelet limit of 64 PIDs per Pod:
+
+```bash
+make k3d-up ENV=secondary K3D_AGENT_SANDBOX=true
+make k3d-sandbox-up ENV=secondary FRED_REPO=../fred
+make k3d-sandbox-smoke ENV=secondary
+```
+
+The sandbox command installs the checksum-pinned gVisor release on each k3d node, then
+the pinned SIG Agent Sandbox controller and four CRDs. It pushes the approved
+`python:3.12-slim` image and the broker built from `FRED_REPO` to the cluster's registry,
+using digest references in the SandboxTemplate and broker Deployment. The namespace has
+a deny-all NetworkPolicy, Restricted Pod Security, a resource quota, and broker RBAC.
+The `SandboxWarmPool` has zero replicas. The smoke command executes Python and Bash
+through the live HTTPS broker and checks that the Pod runs under gVisor with the
+registry image. Broker credentials and its local CA stay in `.cache/agent-sandbox/`
+and Kubernetes Secrets, not in Git.
+
+`k3d-create` skips an existing cluster. If it was created without
+`K3D_AGENT_SANDBOX=true`, the sandbox command fails because its registry is missing.
+Recreate only a disposable environment after backing up anything needed; deleting a
+cluster deletes its data. For a standalone test with no Fred infrastructure:
+
+```bash
+k3d cluster create fred-sandbox-test --servers 1 --agents 0 --wait \
+  --kubeconfig-switch-context=false \
+  --registry-create fred-sandbox-test-registry \
+  --k3s-arg '--kubelet-arg=pod-max-pids=64@server:*'
+K3D_CLUSTER=fred-sandbox-test KUBE_CONTEXT=k3d-fred-sandbox-test \
+  FRED_REPO=../fred bin/k3d-agent-sandbox.sh up
+K3D_CLUSTER=fred-sandbox-test KUBE_CONTEXT=k3d-fred-sandbox-test \
+  bin/k3d-agent-sandbox.sh smoke
+k3d cluster delete fred-sandbox-test
+```
+
+After the full infrastructure is ready, create `fred-model-credentials` as above and
+deploy the same Fred checkout with the code sandbox values:
+
+```bash
+make k3d-app ENV=secondary K3D_AGENT_SANDBOX=true APP=fred DIR=../fred \
+  VALUES=k3d-apps/fred/sandbox.yaml
+```
+
+The sandbox flag adapts the factory's instance values to the current Fred
+checkout's registration contract. The overlay supplies the broker URL, its
+token Secret and the trusted CA to `fred-agents`. Enable `code_sandbox` for
+the intended team in Fred's admin UI.
+The mounted corpus and attachment view is a separate opt-in path; this setup starts
+with code execution only.
+
 ## Work on unreleased fred
 
 fred publishes its Python libraries (PyPI) and its charts (`oci://ghcr.io/thalesgroup/fred-helm`)

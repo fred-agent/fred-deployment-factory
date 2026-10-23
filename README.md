@@ -119,6 +119,12 @@ access grants, plus the test agent, document capability and configured model
 allowed for the test team. Browser login alone does not establish these
 prerequisites. Make selects the URLs; it does not enable permissions.
 
+**Agent code sandbox:** create the cluster with `K3D_AGENT_SANDBOX=true`, then run
+`make k3d-sandbox-up FRED_REPO=../fred` and `make k3d-sandbox-smoke`.
+The [local development guide](docs/LOCAL-DEVELOPMENT.md#agent-code-sandbox-on-k3d)
+shows how to deploy a Fred checkout with the sandbox overlay and how to rebuild
+an isolated test cluster from zero.
+
 | URL | What | Login |
 | --- | --- | --- |
 | <http://localhost:8088> | Fred and its applications | your account |

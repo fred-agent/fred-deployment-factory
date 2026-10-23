@@ -1,0 +1,78 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fred-sandbox-broker
+  namespace: fred-sandbox-system
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels: { app: fred-sandbox-broker }
+  template:
+    metadata:
+      labels: { app: fred-sandbox-broker }
+    spec:
+      serviceAccountName: fred-sandbox-broker
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: broker
+          image: "@BROKER_IMAGE@"
+          imagePullPolicy: IfNotPresent
+          ports:
+            - { name: https, containerPort: 8443 }
+          env:
+            - { name: SANDBOX_BACKEND, value: agent_sandbox }
+            - { name: SANDBOX_ISOLATION, value: gvisor }
+            - { name: SANDBOX_RUNTIME_NAME, value: gvisor }
+            - { name: SANDBOX_IMAGE, value: "@PYTHON_IMAGE@" }
+            - { name: SANDBOX_NAMESPACE, value: fred-sandbox }
+            - { name: SANDBOX_AGENT_POOL_NAME, value: fred-code }
+            - { name: SANDBOX_NETWORK_POLICY_VERIFIED, value: "true" }
+            - { name: SANDBOX_PID_LIMIT_VERIFIED, value: "true" }
+            - { name: SANDBOX_MAX_SANDBOXES, value: "8" }
+            - { name: SANDBOX_WARM_POOL_SIZE, value: "0" }
+            - { name: SANDBOX_COLD_START_ON_MISS, value: "true" }
+            - name: SANDBOX_BROKER_TOKEN
+              valueFrom:
+                secretKeyRef: { name: fred-sandbox-broker-auth, key: token }
+            - { name: HOME, value: /tmp }
+          volumeMounts:
+            - { name: tls, mountPath: /tls, readOnly: true }
+            - { name: scratch, mountPath: /tmp }
+          startupProbe:
+            httpGet: { path: /healthz, port: https, scheme: HTTPS }
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            httpGet: { path: /healthz, port: https, scheme: HTTPS }
+          resources:
+            requests: { cpu: 100m, memory: 128Mi }
+            limits: { cpu: 500m, memory: 512Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+      volumes:
+        - name: tls
+          secret:
+            secretName: fred-sandbox-broker-tls
+            defaultMode: 288
+        - name: scratch
+          emptyDir: { sizeLimit: 16Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fred-sandbox-broker
+  namespace: fred-sandbox-system
+spec:
+  type: ClusterIP
+  selector: { app: fred-sandbox-broker }
+  ports:
+    - { name: https, port: 443, targetPort: https }

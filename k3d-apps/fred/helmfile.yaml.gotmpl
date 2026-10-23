@@ -14,7 +14,7 @@ releases:
     version: {{ env "RELEASE" | default $pinned | quote }}
     {{- end }}
     values:
-      - values.yaml
+      - {{ env "K3D_APP_BASE_VALUES" | default "values.yaml" | quote }}
       {{- if eq (env "ENV") "secondary" }}
       - secondary.yaml.gotmpl
       {{- end }}
