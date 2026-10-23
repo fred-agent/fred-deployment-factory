@@ -627,14 +627,22 @@ make k3d-sandbox-smoke ENV=secondary
 ```
 
 The sandbox command installs the checksum-pinned gVisor release on each k3d node, then
-the pinned SIG Agent Sandbox controller and four CRDs. It pushes the approved
+the checksum-pinned SIG Agent Sandbox manifest and four CRDs. The controller
+image is pinned by digest. The command also installs the
+checksum-pinned rclone CSI chart in the privileged `fred-sandbox-csi` namespace,
+and applies Fred's `fred-sandbox-webdav` StorageClass. Custom RBAC limits the CSI
+controller's Secret reads to `fred-sandbox`. Broker file-mount RBAC is deferred
+until Fred's file-backed profile is enabled.
+The CSI node plugin needs FUSE and privileged host mount access; it does not run
+inside sandbox Pods. The command pushes the approved
 `python:3.12-slim` image and the broker built from `FRED_REPO` to the cluster's registry,
 using digest references in the SandboxTemplate and broker Deployment. The namespace has
 a deny-all NetworkPolicy, Restricted Pod Security, a resource quota, and broker RBAC.
 It checks CNI enforcement with a control Pod before starting the broker.
 The `SandboxWarmPool` has zero replicas. The smoke command executes Python and Bash
-through the live HTTPS broker and checks that the Pod runs under gVisor with the
-registry image. Broker credentials and its local CA stay in `.cache/agent-sandbox/`
+through the live HTTPS broker, checks that the Pod runs under gVisor with the
+registry image, and mounts a disposable read-only WebDAV file into another gVisor
+Pod through rclone CSI. Broker credentials and its local CA stay in `.cache/agent-sandbox/`
 and Kubernetes Secrets, not in Git.
 
 `k3d-create` skips an existing cluster. If it was created without
@@ -666,8 +674,10 @@ The sandbox flag adapts the factory's instance values to the current Fred
 checkout's registration contract. The overlay supplies the broker URL, its
 token Secret and the trusted CA to `fred-agents`. Enable `code_sandbox` for
 the intended team in Fred's admin UI.
-The mounted corpus and attachment view is a separate opt-in path; this setup starts
-with code execution only.
+The driver is installed, but the mounted corpus and attachment view remains opt-in.
+It needs the Knowledge Flow gateway, its own secret and TLS trust, and Fred's file
+mount profile before a conversation can select documents. The CSI smoke uses a
+disposable local test source; it does not prove corpus authorization or Kata support.
 
 ## Work on unreleased fred
 

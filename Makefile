@@ -511,11 +511,11 @@ k3d-up: k3d-create ## Deploy infrastructure into the selected cluster (ENV=swift
 	run_step "Show namespace status $(K3D_NAMESPACE)" \
 	  $(KUBECTL) get pods,svc -n "$(K3D_NAMESPACE)"
 
-k3d-sandbox-up: ## Install gVisor, SIG Agent Sandbox, registry images and broker into the selected k3d cluster
+k3d-sandbox-up: ## Install gVisor, SIG Agent Sandbox, rclone CSI, registry images and broker into the selected k3d cluster
 	@K3D_CLUSTER="$(K3D_CLUSTER)" KUBE_CONTEXT="$(KUBE_CONTEXT)" \
 	  FRED_REPO="$(if $(FRED_REPO),$(FRED_REPO),../fred)" bin/k3d-agent-sandbox.sh up
 
-k3d-sandbox-smoke: ## Execute Python and Bash through the live sandbox broker
+k3d-sandbox-smoke: ## Execute Python and Bash and verify a read-only CSI mount under gVisor
 	@K3D_CLUSTER="$(K3D_CLUSTER)" KUBE_CONTEXT="$(KUBE_CONTEXT)" \
 	  bin/k3d-agent-sandbox.sh smoke
 

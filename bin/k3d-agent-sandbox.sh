@@ -10,6 +10,9 @@ gvisor_version=20261012.0
 gvisor_sha512=ce2e1aeb853c104e854dea6644333a1dba0fbc9dd1646af97e1d013fdf810da6d4176dd96f2139d7b055e5382117c0d7c4567ebd64ed9bef47fdd15f80fd67ab
 sig_version=v1.0.6
 sig_sha256=e6fa909d82392b201ef80003dd91390450266ba356caa9be04a1c89c3caa65dc
+sig_controller_digest=sha256:14c479c9e89ca87d05dfcf597840473c0196d6e6eec622a7959e72108d75b24e
+rclone_csi_version=0.5.0
+rclone_csi_sha256=7f13aba9a7d38041fbb1e1e32de2d7d8b258a37b52f3cb155b2159dd50eaad4e
 python_source=python:3.12-slim@sha256:a0f57064cbdcd6285fa45f51237ab0b35ea8ebaed06a1f5973e89e19dfb86704
 registry="$cluster-registry"
 
@@ -21,7 +24,7 @@ preflight() {
   [[ "$cluster" =~ ^[a-z0-9][a-z0-9-]*$ ]] || die "Invalid k3d cluster name: $cluster"
   [[ "$context" == "k3d-$cluster" ]] || die "Context must be k3d-$cluster"
   [[ "$(uname -m)" == x86_64 ]] || die "The pinned gVisor archive and Python image currently require x86_64"
-  for command in docker kubectl k3d curl sha512sum sha256sum openssl tar git python3; do
+  for command in docker kubectl k3d helm curl sha512sum sha256sum openssl tar git python3; do
     command -v "$command" >/dev/null || die "$command is required"
   done
   k3d cluster get "$cluster" >/dev/null 2>&1 || die "Cluster $cluster does not exist"
@@ -97,12 +100,45 @@ install_sig() {
   local manifest="$cache/agent-sandbox-with-extensions-$sig_version.yaml"
   fetch_verified "https://github.com/kubernetes-sigs/agent-sandbox/releases/download/$sig_version/sandbox-with-extensions.yaml" \
     "$manifest" "$sig_sha256" sha256sum
-  kube apply -f "$manifest"
+  local controller_tag="registry.k8s.io/agent-sandbox/agent-sandbox-controller:$sig_version"
+  local pinned_manifest="$cache/agent-sandbox-with-extensions-$sig_version.pinned.yaml"
+  [[ "$(grep -Fc "$controller_tag" "$manifest")" == 1 ]] \
+    || die "Expected one SIG controller image in the verified manifest"
+  sed "s|$controller_tag|$controller_tag@$sig_controller_digest|" "$manifest" > "$pinned_manifest"
+  kube apply -f "$pinned_manifest"
   kube rollout status deployment/agent-sandbox-controller -n agent-sandbox-system --timeout=180s
   for crd in sandboxes.agents.x-k8s.io sandboxclaims.extensions.agents.x-k8s.io \
     sandboxtemplates.extensions.agents.x-k8s.io sandboxwarmpools.extensions.agents.x-k8s.io; do
     kube wait --for=condition=Established "crd/$crd" --timeout=120s
   done
+}
+
+install_rclone_csi() {
+  local chart="$cache/csi-driver-rclone-$rclone_csi_version.tgz"
+  if ! printf '%s  %s\n' "$rclone_csi_sha256" "$chart" | sha256sum -c - >/dev/null 2>&1; then
+    rm -f "$chart"
+    helm pull oci://ghcr.io/veloxpack/charts/csi-driver-rclone \
+      --version "$rclone_csi_version" --destination "$cache"
+    printf '%s  %s\n' "$rclone_csi_sha256" "$chart" | sha256sum -c - >/dev/null \
+      || die "Checksum mismatch for the rclone CSI chart"
+  fi
+  kube apply -f "$repo_root/k3d/agent-sandbox/rclone-csi-namespace.yaml"
+  kube apply -f "$repo_root/k3d/agent-sandbox/rclone-csi-rbac.yaml"
+  helm lint "$chart" -f "$repo_root/k3d/agent-sandbox/rclone-csi-values.yaml" >/dev/null
+  helm upgrade --install csi-rclone "$chart" --kube-context "$context" \
+    --namespace fred-sandbox-csi -f "$repo_root/k3d/agent-sandbox/rclone-csi-values.yaml"
+  kube apply -f "$repo_root/k3d/agent-sandbox/rclone-csi-rbac.yaml"
+  kube -n fred-sandbox-csi rollout status daemonset/csi-rclone-node --timeout=180s
+  kube -n fred-sandbox-csi rollout status deployment/csi-rclone-controller --timeout=180s
+  kube get csidriver rclone.csi.veloxpack.io >/dev/null
+  kube auth can-i get secrets -n fred-sandbox \
+    --as=system:serviceaccount:fred-sandbox-csi:csi-rclone-controller-sa | grep -qx yes \
+    || die "CSI controller cannot read sandbox mount Secrets"
+  [[ "$(kube auth can-i get secrets -n default \
+    --as=system:serviceaccount:fred-sandbox-csi:csi-rclone-controller-sa || true)" == no ]] \
+    || die "CSI controller can read Secrets outside the sandbox namespace"
+  kube apply -f "$fred_repo/deploy/sandbox/rclone-webdav-storageclass.yaml"
+  say "rclone CSI and Fred's per-workload file StorageClass are ready"
 }
 
 verify_network_policy() {
@@ -216,6 +252,7 @@ install_workloads() {
   kube apply -f "$repo_root/k3d/agent-sandbox/foundation.yaml"
   verify_network_policy "$python_image"
   install_sig
+  install_rclone_csi
   create_credentials
   sed "s|REPLACE_WITH_APPROVED_PYTHON_IMAGE_DIGEST|$python_image|g" \
     "$fred_repo/deploy/sandbox/agent-sandbox.yaml" | kube apply -f -
@@ -269,7 +306,88 @@ smoke() {
     || die "Sandbox Pod exposes a Kubernetes token or cluster management binary"
   say "Sandbox Pod uses gVisor and the local registry image"
   say "Warm pool remains at zero"
+  smoke_csi
 }
+
+smoke_csi() (
+  local name image config
+  name="fred-csi-probe-$(openssl rand -hex 4)"
+  image="$(cat "$cache/python-image")"
+  config="$cache/$name.conf"
+  trap 'kube -n fred-sandbox delete "pod/$name" "pvc/$name" "secret/$name" --ignore-not-found --wait=false >/dev/null 2>&1 || true; kube -n default delete "pod/$name" "service/$name" "configmap/$name" --ignore-not-found --wait=false >/dev/null 2>&1 || true; rm -f "$config"' EXIT
+
+  kube -n default create configmap "$name" \
+    --from-file=server.py="$repo_root/k3d/agent-sandbox/csi-smoke-server.py" \
+    --dry-run=client -o yaml | kube apply -f - >/dev/null
+  kube apply -f - >/dev/null <<EOF
+apiVersion: v1
+kind: Pod
+metadata: { name: $name, namespace: default, labels: { app: $name } }
+spec:
+  automountServiceAccountToken: false
+  securityContext: { runAsNonRoot: true, runAsUser: 65534, seccompProfile: { type: RuntimeDefault } }
+  containers:
+    - name: server
+      image: $image
+      command: [python, /srv/server.py]
+      ports: [{ containerPort: 8080 }]
+      readinessProbe: { httpGet: { path: /sample.txt, port: 8080 } }
+      securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: [ALL] } }
+      resources: { requests: { cpu: 10m, memory: 16Mi }, limits: { cpu: 100m, memory: 64Mi } }
+      volumeMounts: [{ name: source, mountPath: /srv, readOnly: true }]
+  volumes: [{ name: source, configMap: { name: $name } }]
+---
+apiVersion: v1
+kind: Service
+metadata: { name: $name, namespace: default }
+spec:
+  selector: { app: $name }
+  ports: [{ port: 8080, targetPort: 8080 }]
+EOF
+  kube -n default wait "pod/$name" --for=condition=Ready --timeout=90s >/dev/null
+
+  printf '[fred]\ntype = webdav\nurl = http://%s.default.svc.cluster.local:8080/\nvendor = other\n' "$name" > "$config"
+  kube -n fred-sandbox create secret generic "$name" \
+    --from-literal=remote=fred --from-literal=remotePath=/ \
+    --from-file=configData="$config" >/dev/null
+  kube apply -f - >/dev/null <<EOF
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata: { name: $name, namespace: fred-sandbox }
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: fred-sandbox-webdav
+  resources: { requests: { storage: 1Gi } }
+---
+apiVersion: v1
+kind: Pod
+metadata: { name: $name, namespace: fred-sandbox }
+spec:
+  runtimeClassName: gvisor
+  automountServiceAccountToken: false
+  securityContext: { runAsNonRoot: true, runAsUser: 65534, runAsGroup: 65534, fsGroup: 65534, seccompProfile: { type: RuntimeDefault } }
+  containers:
+    - name: reader
+      image: $image
+      command: [sleep, "600"]
+      securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: [ALL] } }
+      resources: { requests: { cpu: 10m, memory: 16Mi }, limits: { cpu: 100m, memory: 64Mi } }
+      volumeMounts: [{ name: inputs, mountPath: /inputs, readOnly: true }]
+  volumes: [{ name: inputs, persistentVolumeClaim: { claimName: $name, readOnly: true } }]
+EOF
+  kube -n fred-sandbox wait "pod/$name" --for=condition=Ready --timeout=180s >/dev/null
+  kube -n fred-sandbox exec "$name" -- python -c 'from pathlib import Path
+p = Path("/inputs/sample.txt")
+assert p.read_text() == "sandbox-csi-smoke\n"
+try:
+    p.write_text("forbidden")
+except OSError:
+    pass
+else:
+    raise AssertionError("CSI mount is writable")' \
+    || die "The gVisor CSI read-only mount probe failed"
+  say "rclone CSI mounted a read-only WebDAV file inside gVisor"
+)
 
 render_fred_values() {
   command -v yq >/dev/null || die "yq v4 is required for the sandbox Fred values"
