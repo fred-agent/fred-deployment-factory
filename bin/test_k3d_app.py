@@ -237,6 +237,9 @@ class K3dAppTests(unittest.TestCase):
                 self.assertEqual(sum(path.read_text().strip() == "{}" for path in images), 1)
 
     def test_app_with_dir_builds_the_checkout(self) -> None:
+        # A checkout keeping only its build: this repository's definition runs.
+        helmfile = self.app / "helmfile.yaml.gotmpl"
+        helmfile.unlink()
         result, calls = self.run_app(APP="my-app")
         self.assertEqual(result.returncode, 0, result.stderr)
         checkout = str(self.root / "some app")
@@ -247,6 +250,15 @@ class K3dAppTests(unittest.TestCase):
         for call in calls:
             if call[0] in ("prepare", "finish"):
                 self.assertEqual([call[2], call[5]], [str(self.defined), checkout])
+
+        # A checkout supplying its own helmfile: its definition and hooks take precedence.
+        helmfile.write_text("releases: []\n")
+        result, calls = self.run_app(APP="my-app")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        hooks = [c for c in calls if c[0] in ("prepare", "finish")]
+        self.assertTrue(hooks)
+        for call in hooks:
+            self.assertEqual([call[2], call[5]], [str(self.app), checkout])
 
     def test_app_refuses_what_it_cannot_deploy(self) -> None:
         for env, message in (
