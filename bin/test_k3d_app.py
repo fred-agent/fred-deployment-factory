@@ -246,7 +246,7 @@ class K3dAppTests(unittest.TestCase):
         self.assertIn(["import", "app:k3d-1"], calls)
         for call in calls:
             if call[0] in ("prepare", "finish"):
-                self.assertEqual([call[2], call[5]], [str(self.defined), checkout])
+                self.assertEqual([call[2], call[5]], [str(self.app), checkout])
 
     def test_app_refuses_what_it_cannot_deploy(self) -> None:
         for env, message in (
