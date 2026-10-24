@@ -20,7 +20,25 @@ require_file "$cache/python-image"
 require_file "$model_key_file"
 require_file "$fred_repo/deploy/sandbox/agent-sandbox-files.yaml"
 require_file "$fred_repo/libs/fred-runtime/fred_runtime/skills/summarize-document/SKILL.md"
+require_file "$fred_repo/libs/fred-runtime/fred_runtime/skills/tabular-evidence/SKILL.md"
 python3 -c 'import yaml' >/dev/null || { printf 'Python PyYAML is required\n' >&2; exit 1; }
+mapfile -t cluster_nodes < <(kube get nodes -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}')
+((${#cluster_nodes[@]} > 0)) || { printf 'No k3d nodes found\n' >&2; exit 1; }
+for node in "${cluster_nodes[@]}"; do
+node_mounts="$(docker inspect "$node" --format '{{json .Mounts}}')"
+python3 - "$node" "$node_mounts" "$fred_repo/libs/fred-runtime/fred_runtime/skills" <<'CHECK_SKILL_MOUNTS'
+import json
+import sys
+from pathlib import Path
+
+mounts = {item['Destination']: Path(item['Source']).resolve() for item in json.loads(sys.argv[2])}
+expected = {
+    '/opt/fred-platform-skills': Path(sys.argv[3]).resolve(),
+}
+if any(mounts.get(destination) != path for destination, path in expected.items()):
+    raise SystemExit(f'{sys.argv[1]}: recreate k3d with K3D_FRED_SKILLS_DIR=<Fred checkout>/libs/fred-runtime/fred_runtime/skills')
+CHECK_SKILL_MOUNTS
+done
 kube get namespace fred-sandbox >/dev/null
 kube get namespace fred >/dev/null
 image="$(cat "$cache/python-image")"
@@ -72,13 +90,6 @@ kube -n fred create configmap fred-sandbox-file-gateway-code \
 kube -n fred create configmap fred-platform-skills-source-code \
   --from-file=skill-webdav-server.py="$source/skill-webdav-server.py" \
   --dry-run=client -o yaml | kube apply -f -
-kube -n fred create configmap fred-platform-summarize-document \
-  --from-file=SKILL.md="$fred_repo/libs/fred-runtime/fred_runtime/skills/summarize-document/SKILL.md" \
-  --dry-run=client -o yaml | kube apply -f -
-kube -n fred create configmap fred-platform-tabular-evidence \
-  --from-file=SKILL.md="$source/tabular-evidence/SKILL.md" \
-  --from-file=analyze.py="$source/tabular-evidence/analyze.py" \
-  --dry-run=client -o yaml | kube apply -f -
 
 sed "s|REPLACE_WITH_APPROVED_PYTHON_IMAGE_DIGEST|$image|g" \
   "$source/file-gateway.yaml" | kube apply -f -
@@ -87,6 +98,7 @@ if [[ "$trust_changed" == true ]]; then
 fi
 sed "s|REPLACE_WITH_APPROVED_PYTHON_IMAGE_DIGEST|$image|g" \
   "$source/skills-source.yaml" | kube apply -f -
+kube -n fred rollout restart deployment/fred-platform-skills-source
 kube -n fred rollout status deployment/fred-sandbox-file-gateway --timeout=180s
 kube -n fred rollout status deployment/fred-platform-skills-source --timeout=180s
 
@@ -147,7 +159,17 @@ agents += [
     {'name': 'FRED_SANDBOX_FILE_MOUNTS_ENABLED', 'value': 'true'},
 ]
 env = {'name': 'SANDBOX_FILE_GATEWAY_SECRET', 'valueFrom': {'secretKeyRef': secret}}
-values = {'applications': {'fred-agents': {'extraEnvVars': agents}}}
+base_agents = yaml.safe_load(Path(sys.argv[1]).read_text())['applications']['fred-agents']
+values = {'applications': {'fred-agents': {
+    'extraEnvVars': agents,
+    'extraVolumes': base_agents['extraVolumes'] + [
+        {'name': 'platform-skills', 'hostPath': {'path': '/opt/fred-platform-skills', 'type': 'Directory'}},
+    ],
+    'extraVolumeMounts': base_agents['extraVolumeMounts'] + [
+        {'name': 'platform-skills', 'mountPath': '/skills', 'readOnly': True},
+    ],
+    'configuration': {'skills': {'directory': '/skills'}},
+}}}
 for app in ('knowledge-flow-backend', 'knowledge-flow-worker'):
     values['applications'][app] = {'extraEnvVars': base[app]['extraEnvVars'] + [env]}
 Path(sys.argv[3]).write_text(yaml.safe_dump(values, sort_keys=False))

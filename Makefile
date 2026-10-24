@@ -75,6 +75,7 @@ IMAGE_PULL_RETRY_DELAY ?= 5
 K3D_USE_CILIUM ?= false
 CILIUM_VERSION ?= 1.16.5
 K3D_AGENT_SANDBOX ?= false
+K3D_FRED_SKILLS_DIR ?=
 SANDBOX_CSI_VALUES ?=
 SANDBOX_PYTHON_PROFILE ?= slim
 ifeq ($(K3D_AGENT_SANDBOX),true)
@@ -82,6 +83,13 @@ K3D_SANDBOX_CREATE_ARGS := --registry-create $(K3D_CLUSTER)-registry \
 	--k3s-arg "--kubelet-arg=pod-max-pids=512@server:*;agent:*"
 else
 K3D_SANDBOX_CREATE_ARGS :=
+endif
+ifneq ($(K3D_FRED_SKILLS_DIR),)
+K3D_SKILLS_CREATE_ARGS := \
+	--volume "$(abspath $(K3D_FRED_SKILLS_DIR)):/opt/fred-platform-skills@server:*" \
+	--volume "$(abspath $(K3D_FRED_SKILLS_DIR)):/opt/fred-platform-skills@agent:*"
+else
+K3D_SKILLS_CREATE_ARGS :=
 endif
 # Mount a host CA bundle into k3d nodes — required in corporate SSL-inspection environments (e.g. Zscaler).
 # Set to your system CA bundle, e.g.: K3D_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
@@ -372,6 +380,7 @@ k3d-create: k3d-disk-check ## Create a local k3d cluster (set K3D_USE_CILIUM=tru
 	    k3d cluster create "$(K3D_CLUSTER)" \
 	    $(K3D_CLUSTER_CREATE_BASE_ARGS) \
 	    $(K3D_CA_VOLUME_ARG) \
+	    $(K3D_SKILLS_CREATE_ARGS) \
 	    --k3s-arg '--flannel-backend=none@server:*' \
 	    --k3s-arg '--disable-network-policy@server:*'; \
 	  run_step "Install Cilium $(CILIUM_VERSION)" cilium --context "$(KUBE_CONTEXT)" install --version "$(CILIUM_VERSION)"; \
@@ -380,7 +389,8 @@ k3d-create: k3d-disk-check ## Create a local k3d cluster (set K3D_USE_CILIUM=tru
 	  run_step "Create k3d cluster '$(K3D_CLUSTER)' (default k3s networking)" \
 	    k3d cluster create "$(K3D_CLUSTER)" \
 	    $(K3D_CLUSTER_CREATE_BASE_ARGS) \
-	    $(K3D_CA_VOLUME_ARG); \
+	    $(K3D_CA_VOLUME_ARG) \
+	    $(K3D_SKILLS_CREATE_ARGS); \
 	fi
 
 k3d-up: k3d-create ## Deploy infrastructure into the selected cluster (ENV=swift or ENV=secondary)

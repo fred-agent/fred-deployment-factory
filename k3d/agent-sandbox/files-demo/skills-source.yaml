@@ -32,15 +32,12 @@ spec:
             limits: { cpu: 100m, memory: 64Mi }
           volumeMounts:
             - { name: server, mountPath: /app, readOnly: true }
-            - { name: skill, mountPath: /skills/summarize-document, readOnly: true }
-            - { name: tabular-evidence, mountPath: /skills/tabular-evidence, readOnly: true }
+            - { name: skills, mountPath: /skills, readOnly: true }
       volumes:
         - name: server
           configMap: { name: fred-platform-skills-source-code }
-        - name: skill
-          configMap: { name: fred-platform-summarize-document }
-        - name: tabular-evidence
-          configMap: { name: fred-platform-tabular-evidence }
+        - name: skills
+          hostPath: { path: /opt/fred-platform-skills, type: Directory }
 ---
 apiVersion: v1
 kind: Service

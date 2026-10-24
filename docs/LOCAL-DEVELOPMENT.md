@@ -622,7 +622,8 @@ Create the cluster with its own registry and a kubelet limit of 512 PIDs per Pod
 The limit also applies to Keycloak and OpenSearch, which need more than 64:
 
 ```bash
-make k3d-up ENV=secondary K3D_AGENT_SANDBOX=true FRED_REPO=../fred
+make k3d-up ENV=secondary K3D_AGENT_SANDBOX=true FRED_REPO=../fred \
+  K3D_FRED_SKILLS_DIR=../fred/libs/fred-runtime/fred_runtime/skills
 make k3d-sandbox-smoke ENV=secondary
 ```
 
@@ -690,9 +691,9 @@ make k3d-app ENV=secondary K3D_AGENT_SANDBOX=true APP=fred DIR=../fred \
   VALUES="k3d-apps/fred/sandbox-secondary.yaml .cache/agent-sandbox/fred-secondary/files-demo/fred-values.yaml"
 ```
 
-`k3d-sandbox-files-demo` creates the private CA and TLS-only internal gateway, mounts that CA into rclone CSI, creates an approved read-only `/skills` PVC, configures the broker's `rclone_csi` profile, and writes the final Fred values overlay under `.cache/agent-sandbox/`. It is idempotent on the same cluster. The gateway forwards only read methods to Knowledge Flow's sandbox mount endpoint. Knowledge Flow authorizes each listing and read. The sandbox sees `/inputs/corpus`, `/inputs/attachments`, and `/skills` with no selection tool. The fixture serves `summarize-document` and `tabular-evidence`; the latter calls a Python script on an authorized CSV under `/inputs`. New authorized corpus documents and conversation attachments appear after the short CSI directory cache refresh; the sandbox Pod is not restarted.
+`k3d-sandbox-files-demo` creates the private CA and TLS-only internal gateway, mounts that CA into rclone CSI, creates an approved read-only `/skills` PVC, configures the broker's `rclone_csi` profile, and writes the final Fred values overlay under `.cache/agent-sandbox/`. It requires the skill directory bind installed by `k3d-up` above; an existing cluster without that bind must be recreated. The agent pod mounts the same source directory read-only and loads its `/` skill catalog from `/skills`. The trusted skill WebDAV source reads that directory on each request, and rclone CSI mounts it read-only in the sandbox. No ConfigMap of skill contents is generated. Fred's `tabular-evidence` skill supplies the Python demo. The file gateway forwards only read methods to Knowledge Flow's sandbox mount endpoint. Knowledge Flow authorizes each listing and read. The sandbox sees `/inputs/corpus`, `/inputs/attachments`, and `/skills` with no selection tool. A newly added source file becomes visible in `/skills` after the short CSI directory cache refresh; the current runtime catalog used by `/` refreshes when the agent pod restarts. New authorized corpus documents and conversation attachments also appear after the CSI cache refresh; the sandbox Pod is not restarted.
 
-The sandbox flag adapts the factory's instance values to the current Fred checkout's registration contract. The secondary overlay leaves application and Knowledge Base registrations empty, matching the secondary cluster's disabled optional apps. Enable `code_sandbox` for the intended team in Fred's admin UI. The local Python gateway and skill source are test fixtures; a production cluster should provide an operator-managed TLS gateway and approved skill source. The smoke command proves CSI mechanics, while a conversation test must still prove corpus and attachment authorization.
+The sandbox flag adapts the factory's instance values to the current Fred checkout's registration contract. The secondary overlay leaves application and Knowledge Base registrations empty, matching the secondary cluster's disabled optional apps. Enable `code_sandbox` for the intended team in Fred's admin UI. The hostPath bind and single-process Python skill source are local test fixtures, not a production file service. In production, put approved skills on operator-managed shared storage, writable only by the publishing operator, and mount that source read-only in the agent pod and through CSI in the sandbox. Restrict publication to skills approved for every user of the sandbox profile. The smoke command proves CSI mechanics, while a conversation test must still prove corpus and attachment authorization.
 
 ## Work on unreleased fred
 
