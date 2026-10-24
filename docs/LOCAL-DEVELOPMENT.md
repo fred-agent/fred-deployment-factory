@@ -627,6 +627,14 @@ make k3d-up ENV=secondary K3D_AGENT_SANDBOX=true FRED_REPO=../fred \
 make k3d-sandbox-smoke ENV=secondary
 ```
 
+For a destructive reproducibility check, run `make k3d-wipe ENV=secondary`
+first; it deletes that cluster and all its volumes. Then run the `k3d-up`,
+`k3d-sandbox-smoke`, `k3d-sandbox-files-demo`, `k3d-app` and `k3d-health`
+targets in this section, in that order. Set `SANDBOX_PYTHON_PROFILE=documents`
+on `k3d-up` when the document libraries are needed from the first install.
+The setup targets create the CSI and SIG resources and render the required
+values; no manual PV rename or `kubectl apply` is part of this local recipe.
+
 With `K3D_AGENT_SANDBOX=true`, `k3d-up` installs the checksum-pinned gVisor release on each k3d node, then
 the checksum-pinned SIG Agent Sandbox manifest and four CRDs. The controller
 image is pinned by digest. The command also installs the
