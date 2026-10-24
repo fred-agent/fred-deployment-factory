@@ -1,0 +1,21 @@
+spec:
+  template:
+    spec:
+      containers:
+        - name: broker
+          env:
+            - { name: SANDBOX_MOUNT_PROVIDER, value: rclone_csi }
+            - { name: SANDBOX_FILE_STORAGE_CLASS, value: fred-sandbox-webdav }
+            - { name: SANDBOX_FILE_GATEWAY_URL, value: "https://fred-sandbox-file-gateway.fred.svc.cluster.local/knowledge-flow/v1/sandbox-mount" }
+            - { name: SANDBOX_FILE_GATEWAY_REVOKE_URL, value: "http://knowledge-flow-backend.fred.svc.cluster.local:8000/knowledge-flow/v1/sandbox-mount" }
+            - name: SANDBOX_FILE_GATEWAY_SECRET
+              valueFrom:
+                secretKeyRef: { name: fred-sandbox-file-gateway, key: secret }
+            - { name: SANDBOX_AGENT_POOL_NAME, value: fred-code-files-skills }
+            - { name: SANDBOX_SKILLS_VOLUME, value: fred-platform-skills }
+            - { name: SSL_CERT_FILE, value: /etc/kflow-gateway-ca/ca.crt }
+          volumeMounts:
+            - { name: kflow-gateway-ca, mountPath: /etc/kflow-gateway-ca, readOnly: true }
+      volumes:
+        - name: kflow-gateway-ca
+          configMap: { name: real-kflow-gateway-ca }

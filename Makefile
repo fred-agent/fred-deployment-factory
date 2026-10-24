@@ -75,9 +75,11 @@ IMAGE_PULL_RETRY_DELAY ?= 5
 K3D_USE_CILIUM ?= false
 CILIUM_VERSION ?= 1.16.5
 K3D_AGENT_SANDBOX ?= false
+SANDBOX_CSI_VALUES ?=
+SANDBOX_PYTHON_PROFILE ?= slim
 ifeq ($(K3D_AGENT_SANDBOX),true)
 K3D_SANDBOX_CREATE_ARGS := --registry-create $(K3D_CLUSTER)-registry \
-	--k3s-arg "--kubelet-arg=pod-max-pids=64@server:*;agent:*"
+	--k3s-arg "--kubelet-arg=pod-max-pids=512@server:*;agent:*"
 else
 K3D_SANDBOX_CREATE_ARGS :=
 endif
@@ -509,15 +511,31 @@ k3d-up: k3d-create ## Deploy infrastructure into the selected cluster (ENV=swift
 	  fail "Helm deployment failed. Review diagnostics above." "$$rc"; \
 	fi; \
 	run_step "Show namespace status $(K3D_NAMESPACE)" \
-	  $(KUBECTL) get pods,svc -n "$(K3D_NAMESPACE)"
+	  $(KUBECTL) get pods,svc -n "$(K3D_NAMESPACE)"; \
+	if [ "$(K3D_AGENT_SANDBOX)" = "true" ]; then \
+	  run_step "Install agent sandbox runtime, CSI and broker" \
+	    env K3D_CLUSTER="$(K3D_CLUSTER)" KUBE_CONTEXT="$(KUBE_CONTEXT)" \
+	      FRED_REPO="$(if $(FRED_REPO),$(FRED_REPO),../fred)" \
+	      SANDBOX_CSI_VALUES="$(SANDBOX_CSI_VALUES)" \
+	      SANDBOX_PYTHON_PROFILE="$(SANDBOX_PYTHON_PROFILE)" \
+	      bin/k3d-agent-sandbox.sh up; \
+	fi
 
 k3d-sandbox-up: ## Install gVisor, SIG Agent Sandbox, rclone CSI, registry images and broker into the selected k3d cluster
 	@K3D_CLUSTER="$(K3D_CLUSTER)" KUBE_CONTEXT="$(KUBE_CONTEXT)" \
-	  FRED_REPO="$(if $(FRED_REPO),$(FRED_REPO),../fred)" bin/k3d-agent-sandbox.sh up
+	  FRED_REPO="$(if $(FRED_REPO),$(FRED_REPO),../fred)" \
+	  SANDBOX_CSI_VALUES="$(SANDBOX_CSI_VALUES)" \
+	  SANDBOX_PYTHON_PROFILE="$(SANDBOX_PYTHON_PROFILE)" bin/k3d-agent-sandbox.sh up
 
 k3d-sandbox-smoke: ## Execute Python and Bash and verify a read-only CSI mount under gVisor
 	@K3D_CLUSTER="$(K3D_CLUSTER)" KUBE_CONTEXT="$(KUBE_CONTEXT)" \
 	  bin/k3d-agent-sandbox.sh smoke
+
+.PHONY: k3d-sandbox-files-demo
+k3d-sandbox-files-demo: ## Configure the local read-only corpus and skills CSI demo after k3d-up
+	@K3D_CLUSTER="$(K3D_CLUSTER)" KUBE_CONTEXT="$(KUBE_CONTEXT)" \
+	  FRED_REPO="$(FRED_REPO)" MODEL_API_KEY_FILE="$(MODEL_API_KEY_FILE)" \
+	  bin/k3d-agent-sandbox-files-demo.sh
 
 ##@ k3d: applications (k3d-apps/<APP>/ here, or a repository's deploy/k3d/; bin/k3d-app.sh)
 # APP: an application defined in k3d-apps/ (fred, fred-evaluator): its published release,

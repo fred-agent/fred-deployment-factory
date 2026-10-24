@@ -317,17 +317,30 @@ applications:
       default_profile_by_capability:
         chat: default.chat.mistral-small
       profiles:
-        # Medium is the non-reasoning profile on purpose: a reasoning model
-        # emits its content as `thinking` blocks, which breaks structured output
-        # and the tool loop.
+        - profile_id: default.chat.mistral-large4
+          capability: chat
+          model_display_name: "Mistral Large 4"
+          supports_thinking: true
+          model:
+            provider: openai
+            name: mistral-large-4
+            settings:
+              base_url: https://api.mistral.ai/v1
+              max_retries: 2
+              reasoning_effort: high
+              top_p: 1.0
         - profile_id: default.chat.mistral-medium
           capability: chat
           model_display_name: "Mistral Medium 3.5"
+          supports_thinking: true
           model:
             provider: openai
             name: mistral-medium-latest
             settings:
               base_url: https://api.mistral.ai/v1
+              max_retries: 2
+              reasoning_effort: high
+              top_p: 1.0
         # supports_thinking declares the aptitude, it does not switch reasoning
         # on: that stays the platform admin's per-model toggle.
         - profile_id: default.chat.mistral-small
@@ -340,6 +353,7 @@ applications:
             name: mistral-small-latest
             settings:
               base_url: https://api.mistral.ai/v1
+              max_retries: 2
               reasoning_effort: high
         # The Test agent's deterministic model, served inside the fred-agents
         # pod (streamed text, structured output, tool calls): no LLM, no cost.

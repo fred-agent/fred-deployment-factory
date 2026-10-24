@@ -1,0 +1,18 @@
+controller:
+  nodeSelector:
+    node-role.kubernetes.io/control-plane: "true"
+  extraVolumes:
+    - name: kflow-gateway-ca
+      configMap: { name: real-kflow-gateway-ca }
+  extraVolumeMounts:
+    - { name: kflow-gateway-ca, mountPath: /etc/rclone/ca, readOnly: true }
+  extraEnv:
+    - { name: SSL_CERT_FILE, value: /etc/rclone/ca/ca.crt }
+node:
+  extraVolumes:
+    - name: kflow-gateway-ca
+      configMap: { name: real-kflow-gateway-ca }
+  extraVolumeMounts:
+    - { name: kflow-gateway-ca, mountPath: /etc/rclone/ca, readOnly: true }
+  extraEnv:
+    - { name: SSL_CERT_FILE, value: /etc/rclone/ca/ca.crt }

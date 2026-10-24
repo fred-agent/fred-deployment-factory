@@ -1,0 +1,41 @@
+# Code-only sandbox overlay for the secondary k3d cluster.
+# Helm replaces lists, so the existing fred-agents environment is repeated here.
+applications:
+  fred-agents:
+    extraEnvVars:
+      - { name: COLUMNS, value: "250" }
+      - name: FRED_POSTGRES_PASSWORD
+        valueFrom:
+          secretKeyRef: { name: fred-secrets, key: POSTGRES_FRED_PASSWORD, optional: false }
+      - name: OPENSEARCH_PASSWORD
+        valueFrom:
+          secretKeyRef: { name: fred-secrets, key: OPENSEARCH_ADMIN_PASSWORD, optional: false }
+      - name: OPENFGA_API_TOKEN
+        valueFrom:
+          secretKeyRef: { name: fred-secrets, key: OPENFGA_API_TOKEN, optional: false }
+      - name: MINIO_SECRET_KEY
+        valueFrom:
+          secretKeyRef: { name: fred-secrets, key: SEAWEEDFS_ADMIN_PASSWORD, optional: false }
+      - name: OPENAI_API_KEY
+        valueFrom:
+          secretKeyRef: { name: fred-model-credentials, key: OPENAI_API_KEY, optional: false }
+      - name: WEB_RESEARCH_PROVIDER_KEY
+        valueFrom:
+          secretKeyRef: { name: fred-web-research-credentials, key: WEB_RESEARCH_PROVIDER_KEY, optional: true }
+      - name: KEYCLOAK_AGENTIC_CLIENT_SECRET
+        valueFrom:
+          secretKeyRef: { name: fred-secrets, key: KEYCLOAK_AGENTIC_CLIENT_SECRET, optional: false }
+      - name: FRED_SANDBOX_BROKER_URL
+        value: https://fred-sandbox-broker.fred-sandbox-system.svc.cluster.local
+      - name: FRED_SANDBOX_BROKER_TOKEN
+        valueFrom:
+          secretKeyRef: { name: fred-sandbox-broker-client, key: token, optional: false }
+      - { name: SSL_CERT_FILE, value: /etc/fred/sandbox-ca/ca.crt }
+    extraVolumes:
+      - name: node-ca
+        hostPath: { path: /etc/ssl/certs/ca-certificates.crt, type: File }
+      - name: sandbox-ca
+        configMap: { name: fred-sandbox-broker-ca }
+    extraVolumeMounts:
+      - { name: node-ca, mountPath: /etc/fred/node-ca/ca-certificates.crt, readOnly: true }
+      - { name: sandbox-ca, mountPath: /etc/fred/sandbox-ca, readOnly: true }

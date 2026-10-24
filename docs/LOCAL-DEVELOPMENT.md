@@ -617,16 +617,16 @@ helmfile -f k3d-apps/fred/helmfile.yaml.gotmpl --kube-context k3d-fred -n fred t
 ### Agent code sandbox on k3d
 
 Use a Fred checkout containing `apps/sandbox-broker` and `deploy/sandbox/agent-sandbox.yaml`.
-This local bootstrap currently requires an x86_64 host and `yq` v4 for the Fred values overlay.
-Create the cluster with its own registry and a kubelet limit of 64 PIDs per Pod:
+This local bootstrap currently requires an x86_64 host, `yq` v4 and Python PyYAML for the Fred values overlay.
+Create the cluster with its own registry and a kubelet limit of 512 PIDs per Pod.
+The limit also applies to Keycloak and OpenSearch, which need more than 64:
 
 ```bash
-make k3d-up ENV=secondary K3D_AGENT_SANDBOX=true
-make k3d-sandbox-up ENV=secondary FRED_REPO=../fred
+make k3d-up ENV=secondary K3D_AGENT_SANDBOX=true FRED_REPO=../fred
 make k3d-sandbox-smoke ENV=secondary
 ```
 
-The sandbox command installs the checksum-pinned gVisor release on each k3d node, then
+With `K3D_AGENT_SANDBOX=true`, `k3d-up` installs the checksum-pinned gVisor release on each k3d node, then
 the checksum-pinned SIG Agent Sandbox manifest and four CRDs. The controller
 image is pinned by digest. The command also installs the
 checksum-pinned rclone CSI chart in the privileged `fred-sandbox-csi` namespace,
@@ -644,9 +644,27 @@ through the live HTTPS broker, checks that the Pod runs under gVisor with the
 registry image, and mounts a disposable read-only WebDAV file into another gVisor
 Pod through rclone CSI. Broker credentials and its local CA stay in `.cache/agent-sandbox/`
 and Kubernetes Secrets, not in Git.
+For document analysis, replace the slim guest image with a pinned image containing
+`openpyxl`, `pypdf`, `python-docx`, `python-pptx`, `pandas` and `duckdb`, installed with `uv` from
+this repository's `k3d/agent-sandbox/python-documents.Dockerfile`:
+
+```bash
+make k3d-sandbox-up ENV=secondary FRED_REPO=../fred SANDBOX_PYTHON_PROFILE=documents
+make k3d-sandbox-smoke ENV=secondary
+```
+
+This rebuilds only the sandbox components. The default `slim` profile remains
+available for a smaller execution image. Both profiles are pushed to the local
+registry by digest; neither is selected by the agent or by code inside the guest.
+If the file gateway uses a private CA, create its CA ConfigMap in `fred-sandbox-csi`
+and pass an operator-owned Helm values overlay with `SANDBOX_CSI_VALUES=<path>`.
+The overlay can mount that CA into the controller and node plugin and set
+`SSL_CERT_FILE`; it is reapplied on every `k3d-up` so a restart keeps TLS trust.
 
 `k3d-create` skips an existing cluster. If it was created without
-`K3D_AGENT_SANDBOX=true`, the sandbox command fails because its registry is missing.
+`K3D_AGENT_SANDBOX=true`, the sandbox step fails because its registry is missing.
+`make k3d-sandbox-up` remains available to reconcile the sandbox components without
+redeploying the infrastructure release.
 Recreate only a disposable environment after backing up anything needed; deleting a
 cluster deletes its data. For a standalone test with no Fred infrastructure:
 
@@ -654,7 +672,7 @@ cluster deletes its data. For a standalone test with no Fred infrastructure:
 k3d cluster create fred-sandbox-test --servers 1 --agents 0 --wait \
   --kubeconfig-switch-context=false \
   --registry-create fred-sandbox-test-registry \
-  --k3s-arg '--kubelet-arg=pod-max-pids=64@server:*'
+  --k3s-arg '--kubelet-arg=pod-max-pids=512@server:*'
 K3D_CLUSTER=fred-sandbox-test KUBE_CONTEXT=k3d-fred-sandbox-test \
   FRED_REPO=../fred bin/k3d-agent-sandbox.sh up
 K3D_CLUSTER=fred-sandbox-test KUBE_CONTEXT=k3d-fred-sandbox-test \
@@ -662,22 +680,19 @@ K3D_CLUSTER=fred-sandbox-test KUBE_CONTEXT=k3d-fred-sandbox-test \
 k3d cluster delete fred-sandbox-test
 ```
 
-After the full infrastructure is ready, create `fred-model-credentials` as above and
-deploy the same Fred checkout with the code sandbox values:
+After the full infrastructure is ready, configure the reproducible local file gateway, private CA, approved skills volume and broker profile. This step reads the model key from a local file and creates Kubernetes Secrets; neither the key nor the generated CA is committed:
 
 ```bash
+make k3d-sandbox-files-demo ENV=secondary FRED_REPO=../fred \
+  MODEL_API_KEY_FILE=/path/to/local/model-api-key
 make k3d-app ENV=secondary K3D_AGENT_SANDBOX=true APP=fred DIR=../fred \
-  VALUES=k3d-apps/fred/sandbox.yaml
+  FRED_LIBS=local FRED_REPO=../fred \
+  VALUES="k3d-apps/fred/sandbox-secondary.yaml .cache/agent-sandbox/fred-secondary/files-demo/fred-values.yaml"
 ```
 
-The sandbox flag adapts the factory's instance values to the current Fred
-checkout's registration contract. The overlay supplies the broker URL, its
-token Secret and the trusted CA to `fred-agents`. Enable `code_sandbox` for
-the intended team in Fred's admin UI.
-The driver is installed, but the mounted corpus and attachment view remains opt-in.
-It needs the Knowledge Flow gateway, its own secret and TLS trust, and Fred's file
-mount profile before a conversation can select documents. The CSI smoke uses a
-disposable local test source; it does not prove corpus authorization or Kata support.
+`k3d-sandbox-files-demo` creates the private CA and TLS-only internal gateway, mounts that CA into rclone CSI, creates an approved read-only `/skills` PVC, configures the broker's `rclone_csi` profile, and writes the final Fred values overlay under `.cache/agent-sandbox/`. It is idempotent on the same cluster. The gateway forwards only read methods to Knowledge Flow's sandbox mount endpoint. Knowledge Flow authorizes each listing and read. The sandbox sees `/inputs/corpus`, `/inputs/attachments`, and `/skills` with no selection tool. The fixture serves `summarize-document` and `tabular-evidence`; the latter calls a Python script on an authorized CSV under `/inputs`. New authorized corpus documents and conversation attachments appear after the short CSI directory cache refresh; the sandbox Pod is not restarted.
+
+The sandbox flag adapts the factory's instance values to the current Fred checkout's registration contract. The secondary overlay leaves application and Knowledge Base registrations empty, matching the secondary cluster's disabled optional apps. Enable `code_sandbox` for the intended team in Fred's admin UI. The local Python gateway and skill source are test fixtures; a production cluster should provide an operator-managed TLS gateway and approved skill source. The smoke command proves CSI mechanics, while a conversation test must still prove corpus and attachment authorization.
 
 ## Work on unreleased fred
 

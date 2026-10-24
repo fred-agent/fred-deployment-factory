@@ -1,0 +1,50 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fred-sandbox-file-gateway
+  namespace: fred
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: fred-sandbox-file-gateway }
+  template:
+    metadata:
+      labels: { app: fred-sandbox-file-gateway }
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: gateway
+          image: REPLACE_WITH_APPROVED_PYTHON_IMAGE_DIGEST
+          command: [python, /app/cluster-file-gateway.py]
+          ports: [{ name: https, containerPort: 8443 }]
+          readinessProbe: { tcpSocket: { port: 8443 } }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          resources:
+            requests: { cpu: 20m, memory: 32Mi }
+            limits: { cpu: 250m, memory: 128Mi }
+          volumeMounts:
+            - { name: code, mountPath: /app, readOnly: true }
+            - { name: tls, mountPath: /tls, readOnly: true }
+      volumes:
+        - name: code
+          configMap: { name: fred-sandbox-file-gateway-code }
+        - name: tls
+          secret: { secretName: fred-sandbox-file-gateway-tls }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fred-sandbox-file-gateway
+  namespace: fred
+spec:
+  type: ClusterIP
+  selector: { app: fred-sandbox-file-gateway }
+  ports: [{ name: https, port: 443, targetPort: 8443 }]

@@ -119,8 +119,12 @@ access grants, plus the test agent, document capability and configured model
 allowed for the test team. Browser login alone does not establish these
 prerequisites. Make selects the URLs; it does not enable permissions.
 
-**Agent code sandbox:** create the cluster with `K3D_AGENT_SANDBOX=true`, then run
-`make k3d-sandbox-up FRED_REPO=../fred` and `make k3d-sandbox-smoke`.
+**Agent code sandbox:** `make k3d-up K3D_AGENT_SANDBOX=true FRED_REPO=../fred`
+installs the runtime, CSI and broker. Then run `make k3d-sandbox-smoke`.
+For the local read-only corpus and skill mounts, run `make k3d-sandbox-files-demo`
+with a Fred checkout and local model key file before deploying Fred.
+Set `SANDBOX_PYTHON_PROFILE=documents` on `k3d-sandbox-up` to build the
+[document analysis image](k3d/agent-sandbox/python-documents.Dockerfile) from this repository.
 The [local development guide](docs/LOCAL-DEVELOPMENT.md#agent-code-sandbox-on-k3d)
 shows how to deploy a Fred checkout with the sandbox overlay and how to rebuild
 an isolated test cluster from zero.

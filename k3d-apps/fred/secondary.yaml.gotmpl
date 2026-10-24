@@ -12,8 +12,10 @@ applications:
     env:
       - name: VITE_BACKEND_URL_KNOWLEDGE
         value: {{ requiredEnv "K3D_PUBLIC_URL" | quote }}
+{{ if ne (env "K3D_AGENT_SANDBOX") "true" }}
       - name: FRONTEND_APPLICATIONS_JSON
         value: "[]"
+{{ end }}
     configuration:
       config_json:
         backend_url_api: {{ requiredEnv "K3D_PUBLIC_URL" | quote }}
@@ -39,9 +41,11 @@ applications:
         frontend:
           feature_flags:
             enableApplications: false
+{{ if ne (env "K3D_AGENT_SANDBOX") "true" }}
         application_sources: []
       knowledge_bases:
         publishers: []
+{{ end }}
 
   control-plane-worker:
     configuration:

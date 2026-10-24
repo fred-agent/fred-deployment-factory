@@ -55,8 +55,8 @@ install_gvisor() {
   mapfile -t nodes < <(docker ps --format '{{.Names}}' | grep -E "^k3d-$cluster-(agent|server)-[0-9]+$" | sort)
   ((${#nodes[@]} > 0)) || die "No running k3d nodes for $cluster"
   for node in "${nodes[@]}"; do
-    docker inspect "$node" --format '{{json .Config.Cmd}}' | grep -q -- '--kubelet-arg=pod-max-pids=64' \
-      || die "$node lacks the required pod-max-pids=64 kubelet setting"
+    docker inspect "$node" --format '{{json .Config.Cmd}}' | grep -q -- '--kubelet-arg=pod-max-pids=512' \
+      || die "$node lacks the required pod-max-pids=512 kubelet setting"
     local installed_version installed_hash
     installed_version="$(docker exec "$node" /usr/local/bin/runsc --version 2>/dev/null | head -1 || true)"
     installed_hash="$(docker exec "$node" sha256sum /var/lib/rancher/k3s/agent/etc/containerd/config.toml.tmpl 2>/dev/null | cut -d' ' -f1 || true)"
@@ -115,6 +115,15 @@ install_sig() {
 
 install_rclone_csi() {
   local chart="$cache/csi-driver-rclone-$rclone_csi_version.tgz"
+  local values=(-f "$repo_root/k3d/agent-sandbox/rclone-csi-values.yaml")
+  if [[ -z "${SANDBOX_CSI_VALUES:-}" && -s "$cache/files-demo/gateway-ca.crt" ]] && \
+      kube -n fred-sandbox-csi get configmap real-kflow-gateway-ca >/dev/null 2>&1; then
+    SANDBOX_CSI_VALUES="$repo_root/k3d/agent-sandbox/files-demo/rclone-csi-ca-values.yaml"
+  fi
+  if [[ -n "${SANDBOX_CSI_VALUES:-}" ]]; then
+    [[ -f "$SANDBOX_CSI_VALUES" ]] || die "SANDBOX_CSI_VALUES does not exist: $SANDBOX_CSI_VALUES"
+    values+=(-f "$SANDBOX_CSI_VALUES")
+  fi
   if ! printf '%s  %s\n' "$rclone_csi_sha256" "$chart" | sha256sum -c - >/dev/null 2>&1; then
     rm -f "$chart"
     helm pull oci://ghcr.io/veloxpack/charts/csi-driver-rclone \
@@ -124,9 +133,9 @@ install_rclone_csi() {
   fi
   kube apply -f "$repo_root/k3d/agent-sandbox/rclone-csi-namespace.yaml"
   kube apply -f "$repo_root/k3d/agent-sandbox/rclone-csi-rbac.yaml"
-  helm lint "$chart" -f "$repo_root/k3d/agent-sandbox/rclone-csi-values.yaml" >/dev/null
+  helm lint "$chart" "${values[@]}" >/dev/null
   helm upgrade --install csi-rclone "$chart" --kube-context "$context" \
-    --namespace fred-sandbox-csi -f "$repo_root/k3d/agent-sandbox/rclone-csi-values.yaml"
+    --namespace fred-sandbox-csi "${values[@]}"
   kube apply -f "$repo_root/k3d/agent-sandbox/rclone-csi-rbac.yaml"
   kube -n fred-sandbox-csi rollout status daemonset/csi-rclone-node --timeout=180s
   kube -n fred-sandbox-csi rollout status deployment/csi-rclone-controller --timeout=180s
@@ -239,8 +248,21 @@ install_workloads() {
   local port python_image broker_image broker_tag
   port="$(registry_port)"
   say "Pull and push the approved Python image"
-  docker pull --platform linux/amd64 "$python_source" >/dev/null
-  python_image="$(push_image "$python_source" python 3.12-slim "$port")"
+  case "${SANDBOX_PYTHON_PROFILE:-slim}" in
+    slim)
+      docker pull --platform linux/amd64 "$python_source" >/dev/null
+      python_image="$(push_image "$python_source" python 3.12-slim "$port")"
+      ;;
+    documents)
+      [[ -f "$repo_root/k3d/agent-sandbox/python-documents.Dockerfile" ]] \
+        || die "The approved document Python image Dockerfile is unavailable"
+      docker build --platform linux/amd64 \
+        -f "$repo_root/k3d/agent-sandbox/python-documents.Dockerfile" \
+        -t fred-sandbox-python:documents "$repo_root"
+      python_image="$(push_image fred-sandbox-python:documents python 3.12-documents "$port")"
+      ;;
+    *) die "Unsupported SANDBOX_PYTHON_PROFILE" ;;
+  esac
   broker_tag="$(git -C "$fred_repo" rev-parse --short=12 HEAD)"
   say "Build and push the broker from $fred_repo"
   docker build -f "$fred_repo/apps/sandbox-broker/Dockerfile" \
@@ -259,6 +281,21 @@ install_workloads() {
   sed -e "s|@BROKER_IMAGE@|$broker_image|g" \
       -e "s|@PYTHON_IMAGE@|$python_image|g" \
       "$repo_root/k3d/agent-sandbox/broker.yaml" | kube apply -f -
+  if [[ -s "$cache/files-demo/template.yaml" ]] && \
+      kube -n fred-sandbox get pvc fred-platform-skills >/dev/null 2>&1 && \
+      kube -n fred-sandbox get secret fred-platform-skills >/dev/null 2>&1 && \
+      kube -n fred-sandbox-system get configmap real-kflow-gateway-ca >/dev/null 2>&1; then
+    python3 - "$cache/files-demo/template.yaml" "$python_image" <<'PY' | kube apply -f -
+import sys
+import yaml
+with open(sys.argv[1], encoding="utf-8") as source:
+    objects = list(yaml.safe_load_all(source))
+objects[0]["spec"]["podTemplate"]["spec"]["containers"][0]["image"] = sys.argv[2]
+print(yaml.safe_dump_all(objects, sort_keys=False))
+PY
+    kube -n fred-sandbox-system patch deployment fred-sandbox-broker \
+      --type=strategic --patch-file "$repo_root/k3d/agent-sandbox/files-demo/broker-files.patch.yaml"
+  fi
   kube rollout restart deployment/fred-sandbox-broker -n fred-sandbox-system
   kube rollout status deployment/fred-sandbox-broker -n fred-sandbox-system --timeout=180s
   say "Python image: $python_image"
@@ -346,9 +383,9 @@ spec:
 EOF
   kube -n default wait "pod/$name" --for=condition=Ready --timeout=90s >/dev/null
 
-  printf '[fred]\ntype = webdav\nurl = http://%s.default.svc.cluster.local:8080/\nvendor = other\n' "$name" > "$config"
+  printf '[%s]\ntype = webdav\nurl = http://%s.default.svc.cluster.local:8080/\nvendor = other\n' "$name" "$name" > "$config"
   kube -n fred-sandbox create secret generic "$name" \
-    --from-literal=remote=fred --from-literal=remotePath=/ \
+    --from-literal="remote=$name" --from-literal=remotePath=/ \
     --from-file=configData="$config" >/dev/null
   kube apply -f - >/dev/null <<EOF
 apiVersion: v1
@@ -399,7 +436,8 @@ render_fred_values() {
 
 case "${1:-}" in
   up) preflight; install_gvisor; install_workloads ;;
+  csi) preflight; install_rclone_csi ;;
   smoke) preflight; smoke ;;
   render-fred-values) render_fred_values ;;
-  *) die "Usage: $0 {up|smoke|render-fred-values}" ;;
+  *) die "Usage: $0 {up|csi|smoke|render-fred-values}" ;;
 esac
