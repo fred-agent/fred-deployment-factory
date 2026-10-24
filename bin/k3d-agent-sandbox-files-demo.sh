@@ -110,7 +110,6 @@ if [[ "$trust_changed" == true ]]; then
   kube -n fred-sandbox-csi rollout status daemonset/csi-rclone-node --timeout=180s
   kube -n fred-sandbox-csi rollout status deployment/csi-rclone-controller --timeout=180s
 fi
-kube apply -f "$fred_repo/deploy/sandbox/rclone-webdav-storageclass.yaml"
 kube apply -f "$fred_repo/deploy/sandbox/file-mount-rbac.yaml"
 cat > "$demo/skills-rclone.conf" <<'EOF'
 [fred-platform-skills]

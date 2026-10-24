@@ -32,10 +32,7 @@ applications:
           secretKeyRef: { name: fred-sandbox-broker-client, key: token, optional: false }
       - { name: SSL_CERT_FILE, value: /etc/fred/sandbox-ca/ca.crt }
     extraVolumes:
-      - name: node-ca
-        hostPath: { path: /etc/ssl/certs/ca-certificates.crt, type: File }
       - name: sandbox-ca
         configMap: { name: fred-sandbox-broker-ca }
     extraVolumeMounts:
-      - { name: node-ca, mountPath: /etc/fred/node-ca/ca-certificates.crt, readOnly: true }
       - { name: sandbox-ca, mountPath: /etc/fred/sandbox-ca, readOnly: true }

@@ -136,7 +136,6 @@ install_rclone_csi() {
   helm lint "$chart" "${values[@]}" >/dev/null
   helm upgrade --install csi-rclone "$chart" --kube-context "$context" \
     --namespace fred-sandbox-csi "${values[@]}"
-  kube apply -f "$repo_root/k3d/agent-sandbox/rclone-csi-rbac.yaml"
   kube -n fred-sandbox-csi rollout status daemonset/csi-rclone-node --timeout=180s
   kube -n fred-sandbox-csi rollout status deployment/csi-rclone-controller --timeout=180s
   kube get csidriver rclone.csi.veloxpack.io >/dev/null
