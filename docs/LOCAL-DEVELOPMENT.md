@@ -654,8 +654,9 @@ registry image, and mounts a disposable read-only WebDAV file into another gViso
 Pod through rclone CSI. Broker credentials and its local CA stay in `.cache/agent-sandbox/`
 and Kubernetes Secrets, not in Git.
 For document analysis, replace the slim guest image with a pinned image containing
-`openpyxl`, `pypdf`, `python-docx`, `python-pptx`, `pandas` and `duckdb`, installed with `uv` from
-this repository's `k3d/agent-sandbox/python-documents.Dockerfile`:
+`openpyxl`, `pypdf`, `python-docx`, `python-pptx`, `pandas` and `duckdb`, installed with `uv`.
+This repository's `k3d/agent-sandbox/python-documents.Dockerfile` also installs
+`ripgrep` for focused searches in mounted text files:
 
 ```bash
 make k3d-sandbox-up ENV=secondary FRED_REPO=../fred SANDBOX_PYTHON_PROFILE=documents
