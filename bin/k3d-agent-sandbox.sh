@@ -314,18 +314,18 @@ smoke() {
     sleep 1
   done
   grep -q '"allocated"' "$cache/health.json" || die "Broker health check failed"
-  for language in python bash; do
+  for scenario in python bash; do
     local code
-    if [[ "$language" == python ]]; then code='print(7319)'; else code='printf 7319'; fi
+    if [[ "$scenario" == python ]]; then code="python -c 'print(7319)'"; else code='printf 7319'; fi
     output="$(curl -fsS --cacert "$cache/ca.crt" \
       -H "Authorization: Bearer $(cat "$cache/broker-token")" \
       -H "X-Fred-Sandbox-Session: $session" \
       -H 'Content-Type: application/json' \
-      -d "{\"language\":\"$language\",\"code\":\"$code\"}" \
+      -d "{\"code\":\"$code\"}" \
       https://localhost:$port/v1/execute)"
     printf '%s' "$output" | python3 -c 'import json,sys; r=json.load(sys.stdin); assert r["exit_code"] == 0 and r["stdout"].strip() == "7319", r' \
-      || die "$language execution failed"
-    say "$language execution passed"
+      || die "$scenario execution failed"
+    say "$scenario execution passed"
   done
   kube -n fred-sandbox get sandboxwarmpool fred-code -o jsonpath='{.spec.replicas}' | grep -qx 0 \
     || die "Warm pool is not zero"
