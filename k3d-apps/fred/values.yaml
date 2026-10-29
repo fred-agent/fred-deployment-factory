@@ -162,7 +162,6 @@ x-kf-storage: &kf-storage
       max_selected_datasets: 50
 
 x-kf-mcp: &kf-mcp                          # choice (as on fredlab)
-  opensearch_ops_enabled: true
   filesystem_read_default_limit: 100
   filesystem_read_max_limit: 500
   filesystem_read_default_max_chars: 20000
