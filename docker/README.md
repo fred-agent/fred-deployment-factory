@@ -8,7 +8,6 @@ This project helps to deploy the following support services:
 - **Keycloak** – for authentication and identity management
 - **SeaweedFS** – for S3-compatible object storage
 - **OpenSearch** – for search and analytics capabilities (including vector store capabilities)
-- **OpenFGA** – for relationship-based and fine-grained authorization
 - **k3d** - for setting up a dummy kubernetes cluster (used by Fred project only for development purposes)
 - **Kubernetes MCP Server** - so that AI agents can interact with Kubernetes clusters
 - **Temporal** - for job orchestration
@@ -53,7 +52,6 @@ Here are **examples** of custom deployment params you can modify:
 - ``KEYCLOAK_KNOWLEDGE_FLOW_CLIENT_SECRET``
 - ``KEYCLOAK_CONTROL_PLANE_CLIENT_SECRET``
 - ``KEYCLOAK_FORCE_RELOGIN``
-- ``OPENFGA_STORE_NAME``
 - ``TEMPORAL_UI_PORT``
 - ``SEAWEEDFS_ADMIN_USER``
 - ``SEAWEEDFS_ADMIN_PASSWORD``
@@ -77,7 +75,6 @@ OpenSearch is already configured to be connected to Keycloak. This is a graph to
 graph TB
 A(keycloak) --> E(postgres)
 C(opensearch) --> A(keycloak)
-I(openfga) --> E(postgres)
 H(temporal) --> A(keycloak)
 H(temporal) --> E(postgres)
 F(k8s mcp) --> G(kubernetes)
@@ -103,10 +100,10 @@ The Keycloak post-install script is idempotent and enforces:
   accounts, including `fred-evaluation-worker`, gets `app:service_agent` (the evaluation worker
   gets `service_agent` only, no `realm-management` role - least privilege, RFC EVAL-AUTH). No
   group-scoped role (`query-groups`/`view-groups`) is ever granted - no app calls a Keycloak
-  group-admin API (AUTHZ-05/06: OpenFGA is the sole authorization source).
+  group-admin API (Fred is the sole authorization source).
 - client roles: only `app:service_agent` exists on the `app` client - the legacy
   `admin`/`editor`/`viewer` roles were removed from the tracked realm import entirely (AUTHZ-07);
-  team and platform roles live in OpenFGA, never as Keycloak app roles or groups
+  team and platform roles live in Fred, never as Keycloak app roles or groups
 - an **empty realm import**: `.users` and `.groups` are both `[]` in the tracked
   `app-realm.json.template`. Keycloak auto-creates each confidential client's
   `service-account-<clientId>` user at import time (`serviceAccountsEnabled=true`), and the
@@ -115,18 +112,8 @@ The Keycloak post-install script is idempotent and enforces:
   registers through Keycloak's own registration screen.
 - forced user re-login after a Keycloak wipe (`KEYCLOAK_FORCE_RELOGIN=auto` or `true`)
 
-- OpenFGA
-```
-docker compose -f docker/docker-compose-openfga.yml -p openfga up -d
-bash docker/openfga/openfga-post-install.sh
-```
-
-The OpenFGA post-install script is idempotent and enforces:
-- store `OPENFGA_STORE_NAME` (default: `fred`)
-- no authorization model: each Fred service publishes its own model to the store at startup.
-- an **empty store**: zero tuples. There is no demo identity config left in this repo to seed
-  from - `fred-deployment-factory` is pure infrastructure now. The very first `platform_admin`
-  goes through `POST /bootstrap/platform-admin` (AUTHZ-07) - see the root README.
+The very first `platform_admin` goes through `POST /bootstrap/platform-admin` (AUTHZ-07) -
+see the root README.
 
 ### Platform and demo-data provisioning now lives in `fred`
 
@@ -148,7 +135,7 @@ owned entirely by `fred`/control-plane-backend's declarative platform-import fea
 
 See `docs/swift/rfc/PLATFORM-IMPORT-RFC.md` §10 in the `fred` monorepo for the full contract.
 
-<!-- TODO: Need to check how we can specify hard dependency between Keycloak and depending services (OpenSearch, Temporal, OpenFGA) -->
+<!-- TODO: Need to check how we can specify hard dependency between Keycloak and depending services (OpenSearch, Temporal) -->
 
 - SeaweedFS
 ```
@@ -196,7 +183,6 @@ docker compose -f docker/docker-compose-grafana.yml -p grafana up -d
 Prometheus starts with self-scraping enabled and can load additional static targets from `docker/prometheus/targets/*.yml`.
 It also scrapes the native metrics endpoints exposed in Docker Compose mode for:
 - `Keycloak` on `app-keycloak:9000/metrics`
-- `OpenFGA` on `openfga:2112/metrics`
 - `ClickHouse` on `app-clickhouse:9363/metrics`
 - `Temporal` on `app-temporal:9090/metrics`
 - `SeaweedFS` on `app-seaweedfs:9327/metrics`
@@ -207,18 +193,17 @@ Grafana is pre-provisioned with a Prometheus datasource pointing to `http://app-
 
 > :key: For development purposes, the password for nominative or service accounts is `Azerty123_`
 
-`make docker-up` alone creates **no** nominative account - the Keycloak realm and the OpenFGA
-store are both empty. To get working accounts, either:
+`make docker-up` alone creates **no** nominative account - the Keycloak realm is empty. To get working accounts, either:
 
 - self-register through Keycloak's own registration screen, then complete the AUTHZ-07
   `/bootstrap` flow to become the first `platform_admin`; or
 - upload `fred`'s demo-provisioning bundle from **Admin → Migration** (see "Platform and
   demo-data provisioning now lives in `fred`" above), which creates the same example accounts
-  this repo used to seed directly - e.g. ``alice`` (OpenFGA ``platform_admin``), ``gabriel``
-  (OpenFGA ``platform_observer``), ``bob`` (OpenFGA ``team_editor`` for ``northbridge`` and
-  ``fredlab``), ``marc`` (OpenFGA ``team_admin`` for ``fredlab``) - all with the standard
+  this repo used to seed directly - e.g. ``alice`` (``platform_admin``), ``gabriel``
+  (``platform_observer``), ``bob`` (``team_editor`` for ``northbridge`` and
+  ``fredlab``), ``marc`` (``team_admin`` for ``fredlab``) - all with the standard
   `Azerty123_` password. Keycloak only ever carries the identity (username/email/password);
-  every authorization role lives in OpenFGA, never as a Keycloak app role or group.
+  every authorization role lives in Fred, never as a Keycloak app role or group.
 
 Hereunder, these are the information to connect to each service with their _local service accounts_.
 
@@ -228,13 +213,6 @@ Hereunder, these are the information to connect to each service with their _loca
 - Service accounts:
   - `admin`
 - Realm: `app`
-
-### OpenFGA
-
-- APIs:
-  - http://$(DOCKER_COMPOSE_HOST_FQDN):3000/playground (Playground UI)
-  - http://$(DOCKER_COMPOSE_HOST_FQDN):9080 (HTTP API)
-  - grpc://$(DOCKER_COMPOSE_HOST_FQDN):9081 (gRPC API)
 
 ### ClickHouse
 

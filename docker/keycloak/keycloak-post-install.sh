@@ -577,12 +577,10 @@ ensure_delegation_client
 ensure_user_client_role "$agentic_service_user" fred-delegation delegation_caller
 
 # AUTHZ-05/06: Swift never represents a team as a Keycloak group - a team is a
-# team_metadata row + OpenFGA relations, created later via the control-plane
-# APIs. No groups claim is required or consumed by any Swift authorization
-# path, so the app client never gets the groups-scope default scope. Detach it
-# if a prior hand-provisioned or legacy run left it attached; its absence is
-# the expected, not an error, state. Mirrors the same posture in
-# ../openfga/openfga-post-install.sh.
+# Fred record, created later via the control-plane APIs. No groups claim is
+# required or consumed by any authorization path, so the app client never gets
+# the groups-scope default scope. Detach it if a prior hand-provisioned or
+# legacy run left it attached; its absence is the expected, not an error, state.
 ensure_app_default_scope_detached "$app_client_uuid"
 
 if should_force_relogin; then

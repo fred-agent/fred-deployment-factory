@@ -5,8 +5,7 @@ DOCKER_COMPOSE_BASE := docker compose -f docker/docker-compose-
 
 # `make docker-up` has exactly one mode: a fresh, empty deployment (empty
 # Keycloak realm — clients + service accounts only, no demo users, no demo
-# groups; empty OpenFGA store whose model each Fred service publishes, no
-# tuples) bootstrapped via AUTHZ-07's root-admin endpoint
+# groups) bootstrapped via AUTHZ-07's root-admin endpoint
 # (`POST /bootstrap/platform-admin`) + declarative provisioning. There is no
 # fork and no demo-seeding knob — identity and role provisioning are owned by
 # fred/control-plane-backend, not this repo.
@@ -24,7 +23,7 @@ endif
 
 # Service groups for `docker-up`. The base group is always launched; the
 # extended group is appended only when STACK=extended.
-DOCKER_BASE_SERVICES := postgres-up keycloak-up seaweedfs-up opensearch-up openfga-up temporal-up
+DOCKER_BASE_SERVICES := postgres-up keycloak-up seaweedfs-up opensearch-up temporal-up
 DOCKER_EXTENDED_SERVICES := clickhouse-up langfuse-up prometheus-up grafana-up
 ifeq ($(STACK),extended)
 DOCKER_UP_SERVICES := $(DOCKER_BASE_SERVICES) $(DOCKER_EXTENDED_SERVICES)
@@ -35,7 +34,7 @@ endif
 # Compose projects for `docker-start` / `docker-stop`, in dependency order.
 # postgres and keycloak are started first and awaited individually, so they are
 # not repeated here.
-DOCKER_REST_PROJECTS_BASE := seaweedfs opensearch openfga temporal
+DOCKER_REST_PROJECTS_BASE := seaweedfs opensearch temporal
 DOCKER_REST_PROJECTS_EXTENDED := clickhouse langfuse prometheus grafana
 ifeq ($(STACK),extended)
 DOCKER_REST_PROJECTS := $(DOCKER_REST_PROJECTS_BASE) $(DOCKER_REST_PROJECTS_EXTENDED)
@@ -87,7 +86,8 @@ endif
 K3D_HELM_VALUES = --set stack=$(STACK) --set-string host.fqdn="$(K3D_HOST_NAME)" \
 	--set-string keycloak.hostname="$(K3D_KEYCLOAK_HOST)" --set keycloak.publicPort=$(K3D_HOST_PORT_KEYCLOAK) \
 	--set host.frontendPort=$(K3D_HOST_PORT_FRONTEND) --set host.dashboardsPort=$(K3D_HOST_PORT_OPENSEARCH_DASHBOARDS) \
-	--set temporal.uiPort=$(K3D_HOST_PORT_TEMPORAL_UI)
+	--set temporal.uiPort=$(K3D_HOST_PORT_TEMPORAL_UI) \
+	--set postgres.applicationBootstrap=$(if $(filter secondary,$(ENV)),true,false)
 
 # Kubelet disk thresholds in absolute sizes. The defaults are percentages of the
 # host disk (image GC above 85% used, eviction under 15% free): on a developer
@@ -111,8 +111,6 @@ K3D_CLUSTER_CREATE_BASE_ARGS := \
 	-p "$(K3D_HOST_PORT_CLICKHOUSE_NATIVE):30902@server:0" \
 	-p "$(K3D_HOST_PORT_OPENSEARCH):30920@server:0" \
 	-p "$(K3D_HOST_PORT_OPENSEARCH_DASHBOARDS):30561@server:0" \
-	-p "$(K3D_HOST_PORT_OPENFGA_HTTP):30908@server:0" \
-	-p "$(K3D_HOST_PORT_OPENFGA_GRPC):30981@server:0" \
 	-p "$(K3D_HOST_PORT_TEMPORAL_FRONTEND):30723@server:0" \
 	-p "$(K3D_HOST_PORT_TEMPORAL_UI):30233@server:0" \
 	-p "$(K3D_HOST_PORT_PROMETHEUS):30090@server:0" \
@@ -207,15 +205,6 @@ grafana-up: prometheus-up
 	@echo "Launching Grafana..."
 	$(DOCKER_COMPOSE_BASE)grafana.yml -p grafana up -d
 
-openfga-post-install:
-	@echo "Running OpenFGA post-install..."
-	bash docker/openfga/openfga-post-install.sh
-
-openfga-up: keycloak-up
-	@echo "Launching OpenFGA..."
-	$(DOCKER_COMPOSE_BASE)openfga.yml -p openfga up -d
-	$(MAKE) openfga-post-install
-
 temporal-up: keycloak-up
 	@echo "Launching Temporal..."
 	$(DOCKER_COMPOSE_BASE)temporal.yml -p temporal up -d
@@ -224,15 +213,15 @@ preflight-check:
 	@echo "Running FRED preflight..."
 	bash bin/fred-preflight.sh
 
-docker-up: $(DOCKER_UP_SERVICES) ## Launch the Docker stack (empty realm + empty OpenFGA store; bootstrap the first platform_admin via POST /bootstrap/platform-admin)
-	@echo "Empty realm + empty OpenFGA store. Bootstrap the first platform_admin via"
+docker-up: $(DOCKER_UP_SERVICES) ## Launch the Docker stack (empty realm; bootstrap the first platform_admin via POST /bootstrap/platform-admin)
+	@echo "Empty realm. Bootstrap the first platform_admin via"
 	@echo "POST /bootstrap/platform-admin (AUTHZ-07) — see README."
 	$(MAKE) preflight-check
 	@echo "All Docker stack services are running."
 
 # Resume an existing stack — after a reboot, a Docker daemon restart, or
 # `make docker-stop`. Unlike `docker-up` this recreates nothing and re-runs no
-# post-install job, so realm/store/volume state is left exactly as it was.
+# post-install job, so realm/volume state is left exactly as it was.
 # Keycloak must answer OIDC discovery before opensearch-dashboards boots, or
 # the dashboards security plugin exits with "Failed when trying to obtain the
 # endpoints from your IdP".
@@ -289,7 +278,6 @@ all-down:
 	$(DOCKER_COMPOSE_BASE)temporal.yml -p temporal down
 	$(DOCKER_COMPOSE_BASE)clickhouse.yml -p clickhouse down
 	$(DOCKER_COMPOSE_BASE)opensearch.yml -p opensearch down
-	$(DOCKER_COMPOSE_BASE)openfga.yml -p openfga down
 	$(DOCKER_COMPOSE_BASE)seaweedfs.yml -p seaweedfs down
 	$(DOCKER_COMPOSE_BASE)keycloak.yml -p keycloak down
 	$(DOCKER_COMPOSE_BASE)postgres.yml -p postgres down
@@ -302,7 +290,6 @@ docker-wipe: all-down ## Stop Docker stack, delete containers & volumes
 	$(DOCKER_COMPOSE_BASE)temporal.yml -p temporal down -v
 	$(DOCKER_COMPOSE_BASE)clickhouse.yml -p clickhouse down -v
 	$(DOCKER_COMPOSE_BASE)opensearch.yml -p opensearch down -v
-	$(DOCKER_COMPOSE_BASE)openfga.yml -p openfga down -v
 	$(DOCKER_COMPOSE_BASE)seaweedfs.yml -p seaweedfs down -v
 	$(DOCKER_COMPOSE_BASE)keycloak.yml -p keycloak down -v
 	$(DOCKER_COMPOSE_BASE)postgres.yml -p postgres down -v
@@ -316,7 +303,6 @@ docker-destroy: all-down ## Stop Docker stack, delete containers/volumes/network
 	$(DOCKER_COMPOSE_BASE)temporal.yml -p temporal down -v --rmi all
 	$(DOCKER_COMPOSE_BASE)clickhouse.yml -p clickhouse down -v --rmi all
 	$(DOCKER_COMPOSE_BASE)opensearch.yml -p opensearch down -v --rmi all
-	$(DOCKER_COMPOSE_BASE)openfga.yml -p openfga down -v --rmi all
 	$(DOCKER_COMPOSE_BASE)seaweedfs.yml -p seaweedfs down -v --rmi all
 	$(DOCKER_COMPOSE_BASE)keycloak.yml -p keycloak down -v --rmi all
 	$(DOCKER_COMPOSE_BASE)postgres.yml -p postgres down -v --rmi all
@@ -538,19 +524,19 @@ k3d-health: ## What needs attention on k3d: pods, events, errors, 5xx, degraded 
 	@bin/k3d-observe health
 
 ##@ k3d service targets
-k3d-restart: ## Restart a k3d component: make k3d-restart COMPONENT=openfga
+k3d-restart: ## Restart a k3d component: make k3d-restart COMPONENT=temporal
 	@test -n "$(COMPONENT)" || (echo "ERROR: COMPONENT is required. Usage: make k3d-restart COMPONENT=<name>"; exit 1)
 	$(KUBECTL) rollout restart statefulset/$(COMPONENT) -n "$(K3D_NAMESPACE)" 2>/dev/null || \
 		$(KUBECTL) rollout restart deployment/$(COMPONENT) -n "$(K3D_NAMESPACE)"
 
-k3d-redeploy: ## Restart a k3d component and re-run its post-install job: make k3d-redeploy COMPONENT=openfga
+k3d-redeploy: ## Restart a k3d component and re-run its post-install job: make k3d-redeploy COMPONENT=keycloak
 	@test -n "$(COMPONENT)" || (echo "ERROR: COMPONENT is required. Usage: make k3d-redeploy COMPONENT=<name>"; exit 1)
 	$(KUBECTL) delete job $(COMPONENT)-post-install -n "$(K3D_NAMESPACE)" --ignore-not-found
 	$(KUBECTL) rollout restart statefulset/$(COMPONENT) -n "$(K3D_NAMESPACE)" 2>/dev/null || \
 		$(KUBECTL) rollout restart deployment/$(COMPONENT) -n "$(K3D_NAMESPACE)"
 	$(MAKE) k3d-up
 
-k3d-logs: ## Show logs for a service: make k3d-logs SVC=openfga-post-install
+k3d-logs: ## Show logs for a service: make k3d-logs SVC=keycloak-post-install
 	@if [ -z "$(SVC)" ]; then echo "Usage: make k3d-logs SVC=<name>"; exit 1; fi
 	@$(KUBECTL) logs -n "$(K3D_NAMESPACE)" -l app=$(SVC) --tail=100 2>/dev/null || \
 		$(KUBECTL) logs -n "$(K3D_NAMESPACE)" job/$(SVC) --tail=100 2>/dev/null || \
@@ -626,7 +612,7 @@ checkpoint-delete: ## Delete a named checkpoint (NAME=<name> required)
 # This repo only ships infrastructure; it keeps just the pure-infrastructure
 # regression guard below.
 
-check-pure-infrastructure: ## Offline guard: fail if a tracked artifact carries business/demo data, a dead OpenFGA seed, or dangling local validation/ wiring
+check-pure-infrastructure: ## Offline guard: fail if a tracked artifact carries business/demo data, or dangling local validation/ wiring
 	@echo "▶ Keycloak realm templates must ship zero users/groups and only the app:service_agent client role"
 	@for template in docker/keycloak/app-realm.json.template k3d/files/keycloak/app-realm.json.template; do \
 	  users="$$(jq '.users | length' "$$template")"; \
@@ -644,10 +630,6 @@ check-pure-infrastructure: ## Offline guard: fail if a tracked artifact carries 
 	@grep -qE '^LEGACY_APP_CLIENT_ROLES=\(admin editor viewer\)' bin/fred-preflight.sh || { echo "✗ bin/fred-preflight.sh must flag admin/editor/viewer as legacy via LEGACY_APP_CLIENT_ROLES"; exit 1; }
 	@grep -qE '^EXPECTED_SERVICE_APP_ROLE="service_agent"' bin/fred-preflight.sh || { echo "✗ bin/fred-preflight.sh must still require app:service_agent via EXPECTED_SERVICE_APP_ROLE"; exit 1; }
 	@echo "✓ fred-preflight.sh requires service_agent and forbids admin/editor/viewer as legacy"
-	@echo "▶ no dead OpenFGA seed in the k3d chart"
-	@test ! -f k3d/files/openfga/openfga-seed.json || { echo "✗ k3d/files/openfga/openfga-seed.json exists (business/demo data does not belong in this repo)"; exit 1; }
-	@! grep -q "openfga-seed" k3d/templates/configmaps.yaml || { echo "✗ k3d/templates/configmaps.yaml still publishes an openfga-seed key"; exit 1; }
-	@echo "✓ no OpenFGA seed shipped by the k3d chart"
 	@echo "▶ no Makefile wiring left pointing at the removed local validation/ harness"
 	@! grep -qE '^(VALIDATION_DIR|VALIDATION_VENV|VALIDATION_REPORT|VALIDATION_JUNIT_XML)[[:space:]]*\??=|^(validation-unit-tests|validate-auth-isolation-localhost|validate-auth-isolation-k3d|validation-report):' Makefile || { echo "✗ Makefile still defines local validation/ harness targets/vars - that harness moved to fred/validation"; exit 1; }
 	@echo "✓ no local validation/ harness wiring left in the Makefile"
@@ -657,7 +639,7 @@ BRANCH ?= swift
 ecosystem-audit: ## Do the sibling checkouts agree on Fred's libraries? Branch, constraints, locks, npm: make ecosystem-audit [BRANCH=swift]
 	@bin/ecosystem-audit --branch "$(BRANCH)" --fetch
 
-.PHONY: k3d-env k3d-health help network-create env-setup keycloak-post-install postgres-up keycloak-up seaweedfs-up opensearch-up clickhouse-up langfuse-up prometheus-up grafana-up openfga-post-install openfga-up temporal-up preflight-check docker-up docker-start docker-stop docker-down all-down docker-wipe docker-destroy k3d-create k3d-up k3d-restart k3d-redeploy k3d-logs k3d-down k3d-uninstall k3d-delete k3d-wipe k3d-status k3d-app k3d-disk-check k3d-app-validate k3d-app-uninstall k3d-airgap-on k3d-airgap-off k3d-airgap-status checkpoint-save checkpoint-restore docker-restart-from-checkpoint checkpoint-list checkpoint-delete check-pure-infrastructure ecosystem-audit keycloak-token-short keycloak-token-normal keycloak-token-status
+.PHONY: k3d-env k3d-health help network-create env-setup keycloak-post-install postgres-up keycloak-up seaweedfs-up opensearch-up clickhouse-up langfuse-up prometheus-up grafana-up temporal-up preflight-check docker-up docker-start docker-stop docker-down all-down docker-wipe docker-destroy k3d-create k3d-up k3d-restart k3d-redeploy k3d-logs k3d-down k3d-uninstall k3d-delete k3d-wipe k3d-status k3d-app k3d-disk-check k3d-app-validate k3d-app-uninstall k3d-airgap-on k3d-airgap-off k3d-airgap-status checkpoint-save checkpoint-restore docker-restart-from-checkpoint checkpoint-list checkpoint-delete check-pure-infrastructure ecosystem-audit keycloak-token-short keycloak-token-normal keycloak-token-status
 
 ##@ Optional ZITADEL identity-provider test
 ZITADEL_COMPOSE = docker compose --env-file docker/zitadel/.env -f docker/zitadel/compose.yaml -p fred-zitadel

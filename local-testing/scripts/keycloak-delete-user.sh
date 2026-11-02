@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
-# Removes the Keycloak account and every OpenFGA tuple that references the person
-# (as subject, or via their personal team object) except a suspension, which Fred
-# keeps so the person stays refused.
+# Removes the Keycloak account of a person; Fred's own records are left as they are.
 # Usage: ./keycloak-delete-user.sh <username>
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
@@ -14,26 +12,8 @@ user_id=$(kc_user_id_by_username "$USERNAME")
 
 if [ -z "$user_id" ]; then
   jq -n --arg username "$USERNAME" \
-    '{action: "noop", username: $username, reason: "not found in Keycloak", openfga_tuples_deleted: []}'
+    '{action: "noop", username: $username, reason: "not found in Keycloak"}'
   exit 0
-fi
-
-store_id=$(fga_store_id)
-if [ -z "$store_id" ]; then
-  echo "OpenFGA store '$OPENFGA_STORE_NAME' not found" >&2
-  exit 1
-fi
-
-all_tuples=$(fga_read_all_tuples "$store_id")
-deleted_tuples=$(jq -c --arg uid "$user_id" \
-  '[.[] | select((.user == "user:" + $uid or .object == "team:personal-" + $uid) and .relation != "suspended")]' \
-  <<<"$all_tuples")
-
-deleted_count=$(jq 'length' <<<"$deleted_tuples")
-if [ "$deleted_count" -gt 0 ]; then
-  write_body=$(jq -n --argjson tuples "$deleted_tuples" \
-    '{deletes: {tuple_keys: [$tuples[] | {user, relation, object}]}}')
-  fga_curl -X POST "$OPENFGA_URL/stores/$store_id/write" -d "$write_body" >/dev/null
 fi
 
 kc delete "users/$user_id" -r "$KC_REALM"
@@ -41,10 +21,8 @@ kc delete "users/$user_id" -r "$KC_REALM"
 jq -n \
   --arg username "$USERNAME" \
   --arg id "$user_id" \
-  --argjson tuples "$deleted_tuples" \
   '{
     action: "deleted",
     username: $username,
-    keycloak_id: $id,
-    openfga_tuples_deleted: $tuples
+    keycloak_id: $id
   }'

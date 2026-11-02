@@ -8,14 +8,11 @@ set -euo pipefail
 # It checks:
 # 1) Keycloak realm/clients, app role definitions, groups scope mapper,
 #    service-account rights
-# 2) OpenFGA store presence (each Fred service publishes and validates its own
-#    authorization model at startup)
-# 3) Langfuse endpoints + S3 bucket diagnostics
+# 2) Temporal UI, Langfuse endpoints + S3 bucket diagnostics
 #
-# `make docker-up` always produces an empty realm and an empty OpenFGA store
-# (AUTHZ-07): no demo users, no demo teams, no OpenFGA tuples. This script
-# therefore validates INFRASTRUCTURE shape only (clients, role definitions,
-# service accounts, the OpenFGA store) - it makes no assertion about specific
+# `make docker-up` always produces an empty realm (AUTHZ-07): no demo users, no
+# demo teams. This script therefore validates INFRASTRUCTURE shape only
+# (clients, role definitions, service accounts) - it makes no assertion about specific
 # users or team memberships, because none exist at docker-up time. The first
 # platform_admin is created afterward via POST /bootstrap/platform-admin
 # (control-plane, fred monorepo); any further identity/team provisioning is a
@@ -24,13 +21,10 @@ set -euo pipefail
 
 # Configuration (override with env vars if needed)
 KC="${KC:-http://localhost:8080}"
-FGA="${FGA:-http://localhost:9080}"
 REALM="${REALM:-app}"
-OPENFGA_STORE_NAME="${OPENFGA_STORE_NAME:-fred}"
 
 KC_ADMIN_USER="${KC_ADMIN_USER:-admin}"
 KC_ADMIN_PASS="${KC_ADMIN_PASS:-Azerty123_}"
-OPENFGA_TOKEN="${OPENFGA_TOKEN:-Azerty123_}"
 
 TEMPORAL_UI_HOST="${TEMPORAL_UI_HOST:-${DOCKER_COMPOSE_HOST_FQDN:-localhost}}"
 TEMPORAL_UI_PORT="${TEMPORAL_UI_PORT:-8233}"
@@ -61,15 +55,15 @@ STACK="${STACK:-base}"
 REQUIRED_CLIENTS=(app agentic knowledge-flow control-plane fred-evaluation-worker)
 EXPECTED_SERVICE_APP_ROLE="service_agent"
 # Pre-AUTHZ-05 user-facing app roles. The realm import (AUTHZ-07) never
-# defines them anymore - team and platform roles live in OpenFGA, never as
+# defines them anymore - team and platform roles live in Fred, never as
 # Keycloak app roles. Their presence on a from-scratch realm is a critical
 # regression, not a missing prerequisite.
 LEGACY_APP_CLIENT_ROLES=(admin editor viewer)
 EXPECTED_GROUPS_SCOPE_NAME="groups-scope"
 EXPECTED_GROUPS_MAPPER_NAME="groups"
 
-# No app calls a Keycloak group-admin API (AUTHZ-05/06: OpenFGA is the sole
-# authorization source), so no service account needs query-groups/view-groups -
+# No app calls a Keycloak group-admin API (Fred is the sole authorization
+# source), so no service account needs query-groups/view-groups -
 # see docs/swift/platform/KEYCLOAK.md.
 EXPECTED_AGENTIC_RM_ROLES="query-users view-users"
 EXPECTED_AGENTIC_ACCOUNT_ROLES=""
@@ -143,16 +137,6 @@ probe_http_status_with_retries() {
   done
 
   printf '%s' "${http_code}"
-}
-
-json_post() {
-  local url="$1"
-  local auth_token="$2"
-  local payload="$3"
-  curl -fsS -X POST "$url" \
-    -H "Authorization: Bearer $auth_token" \
-    -H "Content-Type: application/json" \
-    -d "$payload"
 }
 
 to_lower() {
@@ -263,14 +247,13 @@ ok "curl/jq available"
 
 printf "\n%s\n" "${BOLD}Context:${RESET}"
 info "Keycloak: ${KC} (realm=${REALM})"
-info "OpenFGA: ${FGA} (store=${OPENFGA_STORE_NAME})"
 info "Temporal UI: ${TEMPORAL_UI_URL}"
 info "Langfuse UI: ${LANGFUSE_UI_URL}"
 info "Langfuse worker: ${LANGFUSE_WORKER_URL}"
 info "Langfuse S3 endpoint (external check): ${LANGFUSE_S3_URL}"
 info "Langfuse buckets: event=${LANGFUSE_EVENT_BUCKET}, media=${LANGFUSE_MEDIA_BUCKET}, export=${LANGFUSE_EXPORT_BUCKET}"
 info "Mode: READ-ONLY (no write calls are executed)"
-info "Terminology: team = Keycloak group, permission = Keycloak client-role, ReBAC right = OpenFGA tuple"
+info "Terminology: team = Keycloak group, permission = Keycloak client-role"
 
 step "Authenticate to Keycloak admin API"
 ADM="$(
@@ -380,7 +363,7 @@ if [[ -n "${ADM}" ]]; then
   else
     legacy_app_roles_lines="$(printf '%s\n' "${LEGACY_APP_CLIENT_ROLES[@]}" | sort -u)"
     info "Token claim prerequisite: resource_access.app.roles comes from effective app client roles"
-    info "No groups claim is required or consumed by any Swift authorization path (AUTHZ-05/06 - OpenFGA is the sole authorization source)"
+    info "No groups claim is required or consumed by any Swift authorization path (Fred is the sole authorization source)"
 
     if app_client_roles="$(curl -fsS -H "Authorization: Bearer ${ADM}" "$KC/admin/realms/${REALM}/clients/${APP_CLIENT_UUID}/roles?first=0&max=200" 2>/dev/null | jq -r '.[].name' | sort -u)"; then
       info "App client roles: $(sorted_lines_to_csv "$app_client_roles")"
@@ -556,36 +539,6 @@ if [[ -n "${ADM}" ]]; then
   done
 fi
 
-STORE_ID=""
-ALL_TUPLES=""
-OPENFGA_STATUS="unknown"
-step "Resolve OpenFGA store"
-if stores_payload="$(curl -fsS -H "Authorization: Bearer ${OPENFGA_TOKEN}" "${FGA}/stores" 2>/dev/null)"; then
-  STORE_ID="$(jq -r --arg name "${OPENFGA_STORE_NAME}" '.stores[]? | select(.name==$name) | .id' <<<"$stores_payload")"
-  if [[ -n "${STORE_ID}" ]]; then
-    OPENFGA_STATUS="present"
-    ok "OpenFGA store id = ${STORE_ID}"
-    info "OpenFGA access model in this setup: API token grants access to stores/models/tuples"
-    if ! ALL_TUPLES="$(json_post "${FGA}/stores/${STORE_ID}/read" "${OPENFGA_TOKEN}" '{"page_size":100}' 2>/dev/null)"; then
-      ALL_TUPLES=""
-      mark_critical "Unable to read tuples from OpenFGA store '${OPENFGA_STORE_NAME}'"
-    fi
-  else
-    OPENFGA_STATUS="store-missing"
-    mark_critical "OpenFGA store '${OPENFGA_STORE_NAME}' not found"
-  fi
-else
-  OPENFGA_STATUS="unreachable"
-  mark_critical "Cannot reach OpenFGA API at ${FGA}"
-fi
-
-TOTAL_TUPLES=-1
-if [[ -n "${ALL_TUPLES}" ]]; then
-  step "Inspect OpenFGA tuples"
-  TOTAL_TUPLES="$(jq '.tuples | length' <<<"$ALL_TUPLES")"
-  ok "Current tuples in store: ${TOTAL_TUPLES}"
-fi
-
 TEMPORAL_UI_HTTP_CODE="000"
 step "Check Temporal UI endpoint"
 TEMPORAL_UI_HTTP_CODE="$(curl -sS -o /dev/null -w '%{http_code}' "${TEMPORAL_UI_URL}" || true)"
@@ -713,13 +666,6 @@ info "Service-account role gaps (agentic: realm-management + account + app:servi
 info "Service-account role gaps (knowledge-flow: realm-management + account + app:service_agent): ${KNOWLEDGE_FLOW_ROLE_GAPS}"
 info "Service-account role gaps (control-plane: realm-management + account + app:service_agent): ${CONTROL_PLANE_ROLE_GAPS}"
 info "Service-account role gaps (fred-evaluation-worker: least-privilege, only app:service_agent): ${EVAL_WORKER_ROLE_GAPS}"
-if [[ "${OPENFGA_STATUS}" == "present" ]]; then
-  info "OpenFGA store '${OPENFGA_STORE_NAME}': present (${STORE_ID})"
-elif [[ "${OPENFGA_STATUS}" == "store-missing" ]]; then
-  info "OpenFGA store '${OPENFGA_STORE_NAME}': missing"
-else
-  info "OpenFGA store '${OPENFGA_STORE_NAME}': not reachable (${FGA})"
-fi
 info "Temporal UI endpoint: ${TEMPORAL_UI_URL} (HTTP ${TEMPORAL_UI_HTTP_CODE})"
 if langfuse_expected; then
   info "Langfuse UI endpoint: ${LANGFUSE_UI_URL} (HTTP ${LANGFUSE_UI_HTTP_CODE})"
@@ -729,9 +675,6 @@ if langfuse_expected; then
   info "Langfuse S3 bucket gaps: ${LANGFUSE_S3_BUCKET_GAPS}"
 else
   info "Langfuse: skipped (base stack profile)"
-fi
-if [[ "${TOTAL_TUPLES}" -ge 0 ]]; then
-  info "OpenFGA tuples total: ${TOTAL_TUPLES}"
 fi
 
 printf "\n%s\n" "${BOLD}Readiness:${RESET}"

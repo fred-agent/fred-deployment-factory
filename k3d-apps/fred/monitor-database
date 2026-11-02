@@ -1,0 +1,134 @@
+#!/usr/bin/env python3
+"""Bootstrap Weaver's SQL owners from the Fred checkout, then set their passwords.
+
+The historical hook filename remains the checkout/factory entrypoint. Only the
+checkout owns SQL schema and grants. First installation requires a fresh volume.
+Passwords live in fred-secrets and travel through stdin, never argv or output.
+"""
+
+import argparse
+import base64
+import json
+import os
+from pathlib import Path
+import secrets
+import subprocess
+import sys
+from urllib.parse import quote
+
+PASSWORD_KEYS = {
+    "fred_cp": "POSTGRES_CP_PASSWORD",
+    "fred_kf": "POSTGRES_KF_PASSWORD",
+    "fred_runtime": "POSTGRES_RUNTIME_PASSWORD",
+    "fred_monitor": "POSTGRES_MONITOR_PASSWORD",
+}
+
+
+def run(command, *, body=None):
+    result = subprocess.run(command, input=body, text=True, capture_output=True)
+    if result.returncode:
+        raise RuntimeError(
+            f"Database provisioning {command[0]} operation failed (exit {result.returncode})"
+        )
+    return result.stdout
+
+
+def literal(value):
+    return "'" + value.replace("'", "''") + "'"
+
+
+def password_sql(passwords):
+    # PostgreSQL's standard statement/error logs must not contain credentials.
+    return (
+        "SET log_statement='none'; SET log_min_duration_statement=-1; SET log_min_duration_sample=-1; SET log_transaction_sample_rate=0; SET log_min_error_statement='panic'; SET standard_conforming_strings=on;\n"
+        + "\n".join(
+            f"ALTER ROLE {role} PASSWORD {literal(passwords[key])};"
+            for role, key in PASSWORD_KEYS.items()
+        )
+    )
+
+
+def provision(bootstrap):
+    context = os.environ["KUBE_CONTEXT"]
+    if not context.startswith("k3d-"):
+        raise RuntimeError("Database provisioning requires an explicit k3d context")
+    sql = Path(bootstrap).read_text()
+    namespace = os.environ.get("K3D_NAMESPACE", "fred")
+    kube = ["kubectl", "--context", context, "-n", namespace]
+    secret = json.loads(run([*kube, "get", "secret", "fred-secrets", "-o", "json"]))
+    data = secret["data"]
+    database = base64.b64decode(data["POSTGRES_FRED_DB"], validate=True).decode()
+    if not database:
+        raise RuntimeError("fred-secrets has no POSTGRES_FRED_DB")
+    passwords = {}
+    for key in PASSWORD_KEYS.values():
+        passwords[key] = (
+            base64.b64decode(data[key], validate=True).decode()
+            if key in data
+            else secrets.token_urlsafe(32)
+        )
+        if not passwords[key]:
+            raise RuntimeError("Empty component database password")
+    uri = f"postgresql://fred_monitor:{quote(passwords['POSTGRES_MONITOR_PASSWORD'], safe='')}@postgres:5432/{quote(database, safe='')}"
+    updates = {**passwords, "POSTGRES_MONITOR_DATABASE_URL": uri}
+    encoded = {
+        key: base64.b64encode(value.encode()).decode() for key, value in updates.items()
+    }
+    if any(data.get(key) != value for key, value in encoded.items()):
+        # Optimistic concurrency: a concurrent prepare cannot replace credentials silently.
+        patch = [
+            {
+                "op": "test",
+                "path": "/metadata/resourceVersion",
+                "value": secret["metadata"]["resourceVersion"],
+            },
+            *(
+                {"op": "add", "path": f"/data/{key}", "value": value}
+                for key, value in encoded.items()
+            ),
+        ]
+        run(
+            [
+                *kube,
+                "patch",
+                "secret",
+                "fred-secrets",
+                "--type=json",
+                "--patch-file=/dev/stdin",
+            ],
+            body=json.dumps(patch),
+        )
+    # Admin credentials remain in the PostgreSQL pod. The canonical script is unmodified.
+    run(
+        [
+            *kube,
+            "exec",
+            "-i",
+            "deployment/postgres",
+            "--",
+            "sh",
+            "-ec",
+            'export PGPASSWORD="$POSTGRES_PASSWORD"; exec psql -X -q -v ON_ERROR_STOP=1 -v database="$1" -U "$POSTGRES_USER" -d "$1"',
+            "postgres-bootstrap",
+            database,
+        ],
+        body=sql + "\n" + password_sql(passwords),
+    )
+    print(
+        "PostgreSQL owners provisioned; Control Plane migrations install cp_read view grants."
+    )
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--bootstrap", required=True, type=Path)
+    args = parser.parse_args()
+    try:
+        provision(args.bootstrap)
+    except (RuntimeError, KeyError, ValueError, OSError):
+        # Parsing and database errors may contain credentials, including in tracebacks.
+        print(
+            "Database provisioning failed; check k3d context, bootstrap source and administrator prerequisites",
+            file=sys.stderr,
+        )
+        sys.exit(1)

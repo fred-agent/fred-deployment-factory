@@ -17,8 +17,6 @@ K3D_HOST_PORT_CLICKHOUSE_HTTP="${K3D_HOST_PORT_CLICKHOUSE_HTTP:-8123}"
 K3D_HOST_PORT_CLICKHOUSE_NATIVE="${K3D_HOST_PORT_CLICKHOUSE_NATIVE:-9002}"
 K3D_HOST_PORT_OPENSEARCH="${K3D_HOST_PORT_OPENSEARCH:-9200}"
 K3D_HOST_PORT_OPENSEARCH_DASHBOARDS="${K3D_HOST_PORT_OPENSEARCH_DASHBOARDS:-5601}"
-K3D_HOST_PORT_OPENFGA_HTTP="${K3D_HOST_PORT_OPENFGA_HTTP:-9080}"
-K3D_HOST_PORT_OPENFGA_GRPC="${K3D_HOST_PORT_OPENFGA_GRPC:-9081}"
 K3D_HOST_PORT_TEMPORAL_FRONTEND="${K3D_HOST_PORT_TEMPORAL_FRONTEND:-7233}"
 K3D_HOST_PORT_TEMPORAL_UI="${K3D_HOST_PORT_TEMPORAL_UI:-8233}"
 K3D_HOST_PORT_PROMETHEUS="${K3D_HOST_PORT_PROMETHEUS:-9090}"
@@ -113,7 +111,6 @@ BASE_DEPLOYMENTS=(
   postgres
   keycloak
   seaweedfs
-  openfga
   opensearch
   opensearch-dashboards
   temporal
@@ -128,7 +125,6 @@ EXTENDED_DEPLOYMENTS=(
 
 BASE_JOBS=(
   opensearch-post-install
-  openfga-post-install
   temporal-post-install
 )
 
@@ -290,8 +286,6 @@ render_services() {
   check_http "seaweedfs-master" "http://127.0.0.1:${K3D_HOST_PORT_SEAWEEDFS_MASTER}/dir/status"
   check_http "opensearch" "https://127.0.0.1:${K3D_HOST_PORT_OPENSEARCH}/"
   check_http "opensearch-dashboards" "http://127.0.0.1:${K3D_HOST_PORT_OPENSEARCH_DASHBOARDS}/login"
-  check_http "openfga-http" "http://127.0.0.1:${K3D_HOST_PORT_OPENFGA_HTTP}/healthz"
-  check_tcp "openfga-grpc" "127.0.0.1" "$K3D_HOST_PORT_OPENFGA_GRPC"
   check_tcp "temporal-frontend" "127.0.0.1" "$K3D_HOST_PORT_TEMPORAL_FRONTEND"
   check_http "temporal-ui" "http://127.0.0.1:${K3D_HOST_PORT_TEMPORAL_UI}/"
 

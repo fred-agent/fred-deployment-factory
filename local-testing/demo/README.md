@@ -23,7 +23,7 @@ From this repo, with the local stack up (`make docker-up`):
 Reads the 15 usernames straight from `fred`'s `users.json` (assumes a sibling `../../../fred`
 checkout — override with `SWIFT_SRC=/path/to/fred`) and creates each one in Keycloak via
 [`../scripts/keycloak-add-user.sh`](../scripts/keycloak-add-user.sh), password `Azerty123_`
-(matching what the bundle expects), no OpenFGA tuples yet. Idempotent — re-running reports
+(matching what the bundle expects), no Fred roles yet. Idempotent — re-running reports
 already-existing usernames instead of failing.
 
 Skip this if you've already self-registered/created these identities another way — the import
@@ -78,7 +78,7 @@ Canonical version, kept current: `fred`'s own
 | `priya` | — | `team_admin` + `team_editor` + `team_analyst` of fredlab | cumulative-roles matrix (AUTHZ-06) |
 | `oscar`, `nina`, `quinn` | — | none | identity-only floor/control users |
 
-**Want a bigger, statistically-varied dataset instead** (many users per role, OpenFGA call
+**Want a bigger, statistically-varied dataset instead** (many users per role, authorization call
 volume at scale)? See [`../bench/README.md`](../bench/README.md).
 
 ## Verify it end-to-end

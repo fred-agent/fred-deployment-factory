@@ -78,6 +78,22 @@ class HookTests(unittest.TestCase):
                     self.assertEqual(call[1:3], ["--context", "k3d-test"])
             return result, calls
 
+    def test_secondary_leaves_vector_bootstrap_to_the_application(self) -> None:
+        root = Path(__file__).resolve().parents[2]
+        self.assertIn(
+            "postgres.applicationBootstrap=$(if $(filter secondary,$(ENV)),true,false)",
+            (root / "Makefile").read_text(),
+        )
+        template = (root / "k3d/templates/postgres-init-configmap.yaml").read_text()
+        self.assertIn(
+            'if not (dig "applicationBootstrap" false .Values.postgres)', template
+        )
+        # The independent tabular database keeps its extension.
+        self.assertIn(
+            "\\connect {{ .Values.auth.postgresTabularDb }}\n    CREATE EXTENSION IF NOT EXISTS vector;",
+            template,
+        )
+
     def test_prepare_only_reads_the_operator_secret(self) -> None:
         result, calls = self.run_hook("prepare")
         self.assertEqual(result.returncode, 0, result.stderr)

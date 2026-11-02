@@ -49,9 +49,6 @@ services:
       POSTGRES_EVALUATION_USER: ${POSTGRES_EVALUATION_USER:-evaluation}
       POSTGRES_EVALUATION_PASSWORD: ${POSTGRES_EVALUATION_PASSWORD:-Azerty123_}
       POSTGRES_EVALUATION_DB: ${POSTGRES_EVALUATION_DB:-evaluation}
-      POSTGRES_OPENFGA_USER: ${POSTGRES_OPENFGA_USER:-openfga}
-      POSTGRES_OPENFGA_PASSWORD: ${POSTGRES_OPENFGA_PASSWORD:-Azerty123_}
-      POSTGRES_OPENFGA_DBNAME: ${POSTGRES_OPENFGA_DBNAME:-openfga}
       POSTGRES_TEMPORAL_USER: ${POSTGRES_TEMPORAL_USER:-temporal}
       POSTGRES_TEMPORAL_PASSWORD: ${POSTGRES_TEMPORAL_PASSWORD:-Azerty123_}
       POSTGRES_TEMPORAL_DBNAME: ${POSTGRES_TEMPORAL_DBNAME:-temporal}
@@ -88,12 +85,6 @@ services:
           --user "$$POSTGRES_LANGFUSE_USER" \
           --password "$$POSTGRES_LANGFUSE_PASSWORD" \
           --database "$$POSTGRES_LANGFUSE_DB"
-        create_env.sh \
-          --admin "$$POSTGRES_ADMIN_USER" \
-          --host "app-postgres" \
-          --user "$$POSTGRES_OPENFGA_USER" \
-          --password "$$POSTGRES_OPENFGA_PASSWORD" \
-          --database "$$POSTGRES_OPENFGA_DBNAME"
         create_env.sh \
           --admin "$$POSTGRES_ADMIN_USER" \
           --host "app-postgres" \

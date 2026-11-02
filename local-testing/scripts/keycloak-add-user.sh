@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Simulates a brand-new SSO login: creates a user in Keycloak only (fresh id),
-# with no OpenFGA tuples — i.e. known to Keycloak, not yet known to Fred.
+# i.e. known to Keycloak, not yet known to Fred.
 #
 # Usage:
 #   ./keycloak-add-user.sh <username>                 single user (original behaviour)
@@ -118,8 +118,7 @@ if [ "${1:-}" = "--count" ]; then
       requested: $requested,
       created: $created,
       skipped_existing: $skipped_existing,
-      overwritten: $overwritten,
-      known_to_openfga: false
+      overwritten: $overwritten
     }'
   exit 0
 fi
@@ -164,6 +163,5 @@ jq -n \
     email: $email,
     first_name: $first_name,
     last_name: $last_name,
-    known_to_keycloak: true,
-    known_to_openfga: false
+    known_to_keycloak: true
   }'

@@ -1,6 +1,6 @@
-# Bench scenario — OpenFGA at scale
+# Bench scenario — authorization at scale
 
-3000 synthetic users across 100 teams, for load-testing and watching OpenFGA call
+3000 synthetic users across 100 teams, for load-testing and watching authorization call
 volume/latency under realistic team-membership fan-out (teams-list bootstrap, bundle import,
 capability checks, …) — rather than demoing a specific role.
 
@@ -39,7 +39,7 @@ gets a guaranteed `team_admin`; the rest of the ~3900 team memberships (avg. 1.3
 scatter randomly across `team_member` / `team_editor` / `team_analyst`, reproducibly (fixed
 seed — same command, same usernames/teams every time).
 
-The import itself writes one OpenFGA tuple per role grant, sequentially — expect this phase to
+The import itself writes one role grant at a time, sequentially — expect this phase to
 take a while at this scale; that's a separate, known characteristic of the bundle importer, not
 something wrong with this bench setup.
 

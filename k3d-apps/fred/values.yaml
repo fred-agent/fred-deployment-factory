@@ -30,8 +30,6 @@
 x-realm-url: &realm-url "http://keycloak:8080/realms/app"
 x-origins: &origins
   - "http://localhost:8088"
-x-rebac: &rebac
-  api_url: "http://openfga:9080"
 
 # ── secret ───────────────────────────────────────────────────────────────────
 # One entry per credential, reused in each application's extraEnvVars. The
@@ -45,10 +43,6 @@ x-env-opensearch: &env-opensearch
   name: OPENSEARCH_PASSWORD
   valueFrom:
     secretKeyRef: { name: fred-secrets, key: OPENSEARCH_ADMIN_PASSWORD, optional: false }
-x-env-openfga: &env-openfga
-  name: OPENFGA_API_TOKEN
-  valueFrom:
-    secretKeyRef: { name: fred-secrets, key: OPENFGA_API_TOKEN, optional: false }
 x-env-s3: &env-s3
   name: MINIO_SECRET_KEY
   valueFrom:
@@ -107,7 +101,6 @@ x-kf-security: &kf-security
   m2m: { realm_url: *realm-url }           # address
   user: { realm_url: *realm-url }          # address
   authorized_origins: *origins             # address
-  rebac: *rebac                            # address
   delegation:                              # posture: fred-agents calls in for a person
     accept_delegated_calls: true
     service_accounts_only: true
@@ -115,21 +108,6 @@ x-kf-security: &kf-security
 x-kf-scheduler: &kf-scheduler
   temporal:
     host: "temporal:7233"                  # address
-
-x-kf-content-storage: &kf-content-storage  # choice: S3 (SeaweedFS), shared by API and worker
-  type: minio
-  root_path: null
-  endpoint: http://seaweedfs:8333          # address
-  access_key: "admin"
-  bucket_name: "app-content"
-  secure: false
-
-x-kf-filesystem: &kf-filesystem            # choice: S3 (SeaweedFS)
-  type: minio
-  endpoint: http://seaweedfs:8333          # address
-  access_key: "admin"
-  bucket_name: "filesystem"
-  secure: false
 
 x-kf-storage: &kf-storage
   postgres:
@@ -142,11 +120,9 @@ x-kf-storage: &kf-storage
     pool_pre_ping: true
   opensearch:
     host: https://opensearch:9200          # address
-  resource_store: { type: postgres, duckdb_path: null }   # choice
-  tag_store: { type: postgres, duckdb_path: null }        # choice
-  metadata_store: { type: postgres, duckdb_path: null }   # choice
   vector_store:                            # choice
     type: opensearch
+    collection_name: null                  # drop the chart’s pgvector default
     # The API and the worker must use the same index, or every RAG query
     # searches an empty one.
     index: vector-index-mistral
@@ -160,12 +136,6 @@ x-kf-storage: &kf-storage
       duckdb_threads: 1
       duckdb_memory_limit: "256MB"
       max_selected_datasets: 50
-
-x-kf-mcp: &kf-mcp                          # choice (as on fredlab)
-  filesystem_read_default_limit: 100
-  filesystem_read_max_limit: 500
-  filesystem_read_default_max_chars: 20000
-  filesystem_read_absolute_max_chars: 50000
 
 x-kf-crossencoder-model: &kf-crossencoder-model   # choice: download from Hugging Face
   settings:
@@ -193,20 +163,19 @@ x-kf-vision-model: &kf-vision-model
   settings:
     base_url: https://api.mistral.ai/v1
 
-x-kf-configuration: &kf-configuration
-  app:
-    # choice: the control-plane displays this quota, knowledge-flow enforces it.
-    default_team_max_resources_storage_size: 5368709120
-    personal_max_resources_storage_size: 5368709120
+x-kf-api-configuration: &kf-api-configuration
   security: *kf-security
-  content_storage: *kf-content-storage
+  embedding_model: *kf-embedding-model
+  chat_model: *kf-chat-model
+  crossencoder_model: *kf-crossencoder-model
+  storage: *kf-storage
+  observability: *observability
+
+x-kf-worker-configuration: &kf-worker-configuration
   embedding_model: *kf-embedding-model
   chat_model: *kf-chat-model
   vision_model: *kf-vision-model
-  crossencoder_model: *kf-crossencoder-model
   storage: *kf-storage
-  mcp: *kf-mcp
-  filesystem: *kf-filesystem
   observability: *observability
 
 # ── control-plane (backend and worker) ───────────────────────────────────────
@@ -215,7 +184,6 @@ x-cp-security: &cp-security
   m2m: { realm_url: *realm-url }           # address
   user: { realm_url: *realm-url }          # address
   authorized_origins: *origins             # address
-  rebac: *rebac                            # address
   delegation:                              # posture
     accept_delegated_calls: true
     service_accounts_only: true
@@ -268,7 +236,6 @@ applications:
       - *env-columns                     # observability
       - *env-postgres
       - *env-opensearch
-      - *env-openfga
       - *env-s3
       - *env-model-key
       - *env-web-research-key
@@ -291,7 +258,6 @@ applications:
         m2m: { realm_url: *realm-url }     # address
         user: { realm_url: *realm-url }    # address
         authorized_origins: *origins       # address
-        rebac: *rebac                      # address
         delegation:                        # posture: speaks for a person to the other backends
           act_for_people: true
       ai:
@@ -388,14 +354,10 @@ applications:
 
   # ===========================================================================
   knowledge-flow-backend:
-    migration:
-      enabled: true                        # posture
-      extraEnvVars: [*env-postgres]
     extraEnvVars: &kf-env                  # secret
       - *env-columns                     # observability
       - *env-postgres
       - *env-opensearch
-      - *env-openfga
       - *env-s3
       - *env-model-key
       - name: KEYCLOAK_KNOWLEDGE_FLOW_CLIENT_SECRET
@@ -405,8 +367,7 @@ applications:
     extraVolumes: &kf-volumes [*node-ca-volume]          # posture
     extraVolumeMounts: &kf-volume-mounts [*node-ca-mount]
     configuration:
-      <<: *kf-configuration
-      scheduler: *kf-scheduler
+      <<: *kf-api-configuration
 
   knowledge-flow-worker:
     enabled: true                          # posture
@@ -423,7 +384,7 @@ applications:
     extraVolumes: *kf-volumes              # posture
     extraVolumeMounts: *kf-volume-mounts
     configuration:
-      <<: *kf-configuration
+      <<: *kf-worker-configuration
       scheduler:
         <<: *kf-scheduler
         # sizing: one pod serves the four roles (the chart's production layout
@@ -444,7 +405,6 @@ applications:
       - *env-columns                     # observability
       - *env-postgres
       - *env-opensearch
-      - *env-openfga
       - *env-s3
       - name: KEYCLOAK_CONTROL_PLANE_CLIENT_SECRET
         valueFrom:
@@ -475,7 +435,6 @@ applications:
       - *env-columns                     # observability
       - *env-postgres
       - *env-opensearch
-      - *env-openfga
       - *env-s3
       - name: KEYCLOAK_CONTROL_PLANE_CLIENT_SECRET
         valueFrom:

@@ -5,7 +5,7 @@ or to host the auth/isolation validation release gate, which now lives in the si
 monorepo's own `validation/README.md` (run `make integration-test-docker` or
 `make integration-test-k3d` from that checkout after preparing the test prerequisites). Fred itself
 can run on just ChromaDB + SQLite + the local filesystem; this repo gives the fuller
-experience (real Postgres, Keycloak, OpenFGA, OpenSearch, Temporal, plus optional
+experience (real Postgres, Keycloak, OpenSearch, Temporal, plus optional
 Prometheus / Grafana / ClickHouse / Langfuse).
 
 Two ways to run it:
@@ -53,7 +53,7 @@ make docker-start    # resume them, in dependency order
 ```
 
 `docker-start` is not `docker-up`: it recreates no container and re-runs no
-post-install job, so the Keycloak realm, the OpenFGA store and every volume come
+post-install job, so the Keycloak realm and every volume come
 back untouched. Use it whenever the stack exists but is down; use `docker-up`
 only to build the stack from nothing. Services carry `restart: unless-stopped`,
 so after a host reboot they come back on their own — unless you stopped them
@@ -69,7 +69,7 @@ make docker-destroy    # containers, volumes, network, and images
 
 Extended-profile endpoints: Prometheus `:9090`, Grafana `:3002`, ClickHouse `:8123/play`,
 Langfuse `:3001`. Per-service targets also exist (`make keycloak-up`, `make opensearch-up`,
-`make openfga-up`, `make temporal-up`, …).
+`make temporal-up`, …).
 
 ## Full bootstrap walkthrough: from `docker-up` to a validated platform
 
@@ -105,7 +105,7 @@ checkout, not this repo.
 **0. Infra up** (this repo)
 
 ```bash
-make docker-up   # Keycloak, Postgres, OpenFGA, OpenSearch, Temporal — infra only, zero business data
+make docker-up   # Keycloak, Postgres, OpenSearch, Temporal — infra only, zero business data
 ```
 
 **1. Prepare the three backends' `.env` files** (`fred` repo root)
@@ -115,7 +115,7 @@ make setup-env
 ```
 
 Creates each backend's `.env` from its `.env.template` if missing, fills in every
-blank secret placeholder (Keycloak client secrets, `OPENFGA_API_TOKEN`, Postgres/
+blank secret placeholder (Keycloak client secrets, Postgres/
 OpenSearch/MinIO passwords) with the same fixed local value this repo seeds
 everywhere (`Azerty123_`), points `CONFIG_FILE` at `configuration_prod.yaml` in all
 three — the one config each app ships that actually matches deployed behaviour (real
@@ -134,8 +134,8 @@ app at a time? `make run-control-plane`, `make run-fred-agents`,
 
 **3. Become `platform_admin` — the AUTHZ-07 root bootstrap** (second terminal, `fred/apps/control-plane-backend`)
 
-Fred never creates accounts in Keycloak, on purpose: **Keycloak authenticates, Fred/
-OpenFGA authorizes** (`docs/swift/platform/REBAC.md` in the `fred` repo) — the same
+Fred never creates accounts in Keycloak, on purpose: **Keycloak authenticates, Fred
+authorizes** (`docs/swift/platform/REBAC.md` in the `fred` repo) — the same
 boundary a real SSO deployment has, so a compromised or buggy Fred can never mint
 identities in your corporate IdP. That means the one unavoidable manual step: self-
 register a user through **Keycloak's own** registration screen — no Fred frontend
@@ -191,7 +191,7 @@ See the `fred` monorepo's `validation/README.md` for who's who and why, or this 
 Import runs async (returns a `task_id`); give it a few seconds before moving on.
 
 Want a much larger, statistically-varied dataset instead (3000 users / 100 teams, for
-OpenFGA-at-scale testing)? See [`local-testing/bench/README.md`](../local-testing/bench/README.md).
+authorization-at-scale testing)? See [`local-testing/bench/README.md`](../local-testing/bench/README.md).
 
 **5. (merged into step 2)** Every app — `fred-agents`, `knowledge-flow-backend`,
 `frontend` — is already running: `make run` in step 2 started all four together.
@@ -397,7 +397,7 @@ To test the PyMuPDF variant of knowledge-flow (the `knowledge-flow-backend-pymup
 and the PyMuPDF processors in every profile), add `VALUES=k3d-apps/fred/pymupdf.yaml`;
 redeploy without it to go back. Published releases only.
 
-To deploy your own `fred` checkout instead, add `DIR=../fred`: its chart, and the four
+To deploy your own `fred` checkout instead, add `DIR=../fred`: its chart, and the application
 images its `deploy/k3d/build` builds and copies into the cluster, with the same values.
 
 **5. First login, in Fred.** Open <http://localhost:8088>. Fred sends you to the Keycloak
@@ -438,7 +438,7 @@ make k3d-app APP=webdav-kb
 | <http://localhost:5601> | OpenSearch Dashboards (`admin` / `FredOpensearch123!!`): Discover on `k3d-logs*` (every pod's output), `k3d-events*` (Kubernetes events), `app-logs-index*` |
 
 Other infrastructure host ports, for tools running on your machine: Postgres `:5432`,
-SeaweedFS S3 `:8333`, OpenSearch `:9200`, OpenFGA HTTP `:9080` / gRPC `:9081`, Temporal
+SeaweedFS S3 `:8333`, OpenSearch `:9200`, Temporal
 gRPC `:7233`. With `STACK=extended`, you also get ClickHouse `:8123`. Override any of
 them with `K3D_HOST_PORT_*`.
 
@@ -578,7 +578,7 @@ lint keeps the `null` deletion markers the fred schema refuses, so lint skips th
 
 What an application can rely on, the **platform contract**: the namespace `fred`; the
 infrastructure services by name (`postgres:5432`,
-`opensearch:9200`, `openfga:9080`, `temporal:7233`, `seaweedfs:8333`); the OIDC issuer
+`opensearch:9200`, `temporal:7233`, `seaweedfs:8333`); the OIDC issuer
 from `K3D_REALM_URL` (realm `app`); and the credentials
 of `fred-secrets` (`k3d/templates/secret.yaml`), plus the operator's own Secrets
 (`fred-model-credentials`), read by `secretKeyRef`, never copied into a values file. Fred learns about an application through its
@@ -713,13 +713,12 @@ What an application provides for it:
 ## What `docker-up` / `k3d-up` provisions
 
 One mode, no flags. Both backends provision the same thing: Keycloak with an **empty realm**
-(self-registration enabled), OpenFGA with an **empty store** whose authorization model each
-Fred service publishes at startup, Postgres, and Temporal - infrastructure only, zero business
-data. There are no demo users, no Keycloak groups, no app roles, and no OpenFGA tuples baked
-in by either backend. The imported Keycloak realm template never carries team groups, and no
+(self-registration enabled), Postgres, and Temporal - infrastructure only, zero business
+data. There are no demo users, no Keycloak groups and no app roles baked in by either
+backend. The imported Keycloak realm template never carries team groups, and no
 script in this repo ever creates a Keycloak group.
 
-Databases created: `fred` (Fred), `keycloak`, `data` (tabular/vector), `openfga`, `temporal`,
+Databases created: `fred` (Fred), `keycloak`, `data` (tabular/vector), `temporal`,
 `temporal_visibility`.
 
 Keycloak also gets the `fred-delegation` client with its `delegation_caller` role, granted
@@ -851,7 +850,6 @@ any cluster operation. Make command-line overrides remain available.
 | S3 | 8333 | 18333 |
 | OpenSearch | 9200 | 19200 |
 | OpenSearch Dashboards | 5601 | 15601 |
-| OpenFGA HTTP / gRPC | 9080 / 9081 | 19080 / 19081 |
 | Temporal frontend / UI | 7233 / 8233 | 17233 / 18233 |
 | Prometheus | 9090 | 19090 |
 | Grafana | 3002 | 13002 |
@@ -914,6 +912,36 @@ Only `ENV=secondary` adds `k3d-apps/fred/secondary.yaml.gotmpl`: environment URL
 applications off, for testing Fred alone; nothing is registered there.
 `DIR` selects the source checkout; `ENV` never changes branches or selects a
 different application architecture.
+
+### Weaver technical monitor
+
+With a Weaver checkout that includes `apps/monitor`, the normal command also
+builds/imports its image and enables the monitor alongside Fred:
+
+```bash
+make k3d-app-validate ENV=secondary APP=fred DIR=../fred
+make k3d-app ENV=secondary APP=fred DIR=../fred
+```
+
+Open <http://secondary.localhost:18088/admin/monitor> with a Fred platform-admin
+account. The monitor reads Kubernetes in the Fred namespace; it does not use
+OpenFGA or call Control Plane. Fred's surrounding UI still uses Control Plane
+for bootstrap and navigation authority.
+
+The checkout's prepare/finish hooks invoke this factory's
+`k3d-apps/fred/monitor-database`. It creates a random password once in the
+`monitor-database` Secret and provisions `fred_monitor` in the existing PostgreSQL
+instance. Its only table grant is `SELECT` on `public.platform_role_grant` in the
+Fred database; it is not a database owner and has a four-connection limit.
+The password is retained on repeat deploys and never printed. The finish hook
+applies the table grant after migrations on a fresh installation. Existing PVCs
+work without rerunning PostgreSQL initialization or rebuilding the infrastructure.
+An existing operator-managed Secret is refused rather than overwritten.
+
+The application chart owns the Deployment, Service and namespaced list-only Role.
+The frontend proxies `/monitor/` directly to it; no extra NodePort is needed.
+The factory's pinned published Fred release is unchanged. This feature requires
+the local Weaver checkout, whose build and chart contain the monitor.
 
 Satellite support in the secondary environment is out of scope. Existing evaluator and external
 application deployment commands remain available in the default Swift mode;

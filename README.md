@@ -10,7 +10,7 @@ There are two ways to run. Pick one per session:
 
 | | **Docker** | **k3d** |
 | --- | --- | --- |
-| What runs where | the infrastructure (Keycloak, Postgres, OpenFGA, OpenSearch, Temporal...) in containers; Fred and the applications from their checkouts, with `make run` | everything in a local Kubernetes cluster: the infrastructure, then Fred and each application deployed with its Helm chart |
+| What runs where | the infrastructure (Keycloak, Postgres, OpenSearch, Temporal...) in containers; Fred and the applications from their checkouts, with `make run` | everything in a local Kubernetes cluster: the infrastructure, then Fred and each application deployed with its Helm chart |
 | Use it to | debug an application quickly (breakpoints, reload) | test as production deploys: charts, images, identities, observability |
 
 **Once, for Docker:** in your `fred` checkout, run `make setup-env` (it creates each backend's
