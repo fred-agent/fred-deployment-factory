@@ -1,0 +1,192 @@
+#!/usr/bin/env python3
+"""Prepare Weaver's application boundary on existing k3d infrastructure.
+
+No infrastructure Helm upgrade, source database change, or credential rotation.
+The model credential remains operator-provided in the application namespace.
+"""
+
+import base64
+import json
+import os
+import re
+import secrets
+import subprocess
+
+
+def run(command, body=None):
+    result = subprocess.run(command, input=body, text=True, capture_output=True)
+    if result.returncode:
+        raise RuntimeError(
+            f"Instance preparation failed ({command[0]}, exit {result.returncode})"
+        )
+    return result.stdout
+
+
+def prepare():
+    context = os.environ["KUBE_CONTEXT"]
+    namespace = os.environ["K3D_NAMESPACE"]
+    infrastructure = os.environ["K3D_INFRA_NAMESPACE"]
+    database = os.environ["K3D_DATABASE"]
+    target = os.environ["K3D_TEMPORAL_NAMESPACE"]
+    if target == "default":
+        raise RuntimeError("Weaver requires a separate Temporal namespace")
+    if not context.startswith("k3d-") or namespace == infrastructure:
+        raise RuntimeError(
+            "An explicit k3d context and separate application namespace are required"
+        )
+    if not re.fullmatch(r"[a-z][a-z0-9_]{0,62}", database):
+        raise RuntimeError("Invalid application database name")
+    kube = ["kubectl", "--context", context]
+    infra = [*kube, "-n", infrastructure]
+    app = [*kube, "-n", namespace]
+    foundation = json.loads(
+        run([*infra, "get", "secret", "fred-secrets", "-o", "json"])
+    )["data"]
+    source_db = base64.b64decode(foundation["POSTGRES_FRED_DB"]).decode()
+    if database == source_db:
+        raise RuntimeError("Weaver must not use the infrastructure's Swift database")
+
+    # Component login roles are cluster-wide. Do not rotate credentials of another
+    # Weaver installation on this PostgreSQL server.
+    admin = [
+        *infra,
+        "exec",
+        "-i",
+        "deployment/postgres",
+        "--",
+        "sh",
+        "-ec",
+        'export PGPASSWORD="$POSTGRES_PASSWORD"; exec psql -X -qAt -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d postgres',
+    ]
+    bindings = run(
+        admin,
+        "SELECT DISTINCT d.datname FROM pg_db_role_setting s JOIN pg_database d ON d.oid=s.setdatabase JOIN pg_roles r ON r.oid=s.setrole WHERE r.rolname IN ('fred_cp','fred_kf','fred_runtime','fred_monitor');\n",
+    ).splitlines()
+    if any(name != database for name in bindings):
+        raise RuntimeError(
+            "Weaver component roles already belong to another database on this server"
+        )
+
+    def apply(resource):
+        run([*kube, "apply", "-f", "-"], json.dumps(resource))
+
+    owner = "fred-deployment-factory/instance"
+    current = run(
+        [*kube, "get", "namespace", namespace, "--ignore-not-found", "-o", "json"]
+    )
+    if (
+        current.strip()
+        and json.loads(current)["metadata"].get("labels", {}).get(owner) != "weaver"
+    ):
+        raise RuntimeError(
+            "Refusing to adopt an existing unmanaged application namespace"
+        )
+    apply(
+        {
+            "apiVersion": "v1",
+            "kind": "Namespace",
+            "metadata": {"name": namespace, "labels": {owner: "weaver"}},
+        }
+    )
+    # Stable short service names keep the product's deployment configuration portable.
+    services = {
+        "postgres",
+        "seaweedfs",
+        "opensearch",
+        "temporal",
+        "keycloak",
+        "prometheus",
+        os.environ["K3D_KEYCLOAK_HOST"],
+    }
+    for name in sorted(services):
+        apply(
+            {
+                "apiVersion": "v1",
+                "kind": "Service",
+                "metadata": {"name": name, "namespace": namespace},
+                "spec": {
+                    "type": "ExternalName",
+                    "externalName": f"{name}.{infrastructure}.svc.cluster.local",
+                },
+            }
+        )
+    stored = run(
+        [*app, "get", "secret", "fred-secrets", "--ignore-not-found", "-o", "json"]
+    )
+    existing = json.loads(stored) if stored.strip() else {}
+    data = existing.get("data", {})
+    if (
+        "POSTGRES_FRED_DB" in data
+        and base64.b64decode(data["POSTGRES_FRED_DB"]).decode() != database
+    ):
+        raise RuntimeError("An initialized instance cannot change database")
+    # Reuse the realm's existing clients without recreating or rotating them.
+    for key, value in foundation.items():
+        if key.startswith(("KC_BOOTSTRAP_", "KEYCLOAK_", "SEAWEEDFS_", "OPENSEARCH_")):
+            data.setdefault(key, value)
+    data["POSTGRES_FRED_DB"] = base64.b64encode(database.encode()).decode()
+    data.setdefault(
+        "CONTROL_PLANE_BOOTSTRAP_TOKEN",
+        base64.b64encode(secrets.token_urlsafe(48).encode()).decode(),
+    )
+    metadata = {"name": "fred-secrets", "namespace": namespace}
+    if existing:
+        metadata["resourceVersion"] = existing["metadata"]["resourceVersion"]
+    # Create wins once; subsequent updates reject a concurrent credential change.
+    run(
+        [*kube, "apply" if existing else "create", "-f", "-"],
+        json.dumps(
+            {
+                "apiVersion": "v1",
+                "kind": "Secret",
+                "metadata": metadata,
+                "type": "Opaque",
+                "data": data,
+            }
+        ),
+    )
+    # CREATE DATABASE cannot run inside a transaction. Identifiers are validated above;
+    # administrator credentials remain inside the infrastructure pod.
+    sql = f"SELECT 'CREATE DATABASE {database}' WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname='{database}')\\gexec\nREVOKE ALL ON DATABASE {database} FROM PUBLIC;\n"
+    run(
+        [
+            *infra,
+            "exec",
+            "-i",
+            "deployment/postgres",
+            "--",
+            "sh",
+            "-ec",
+            'export PGPASSWORD="$POSTGRES_PASSWORD"; exec psql -X -q -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d postgres',
+        ],
+        sql,
+    )
+    temporal = [
+        *infra,
+        "exec",
+        "deployment/temporal",
+        "-c",
+        "temporal",
+        "--",
+        "temporal",
+        "operator",
+        "namespace",
+    ]
+    registered = json.loads(run([*temporal, "list", "-o", "json"]))
+    if target not in {item["namespaceInfo"]["name"] for item in registered}:
+        run([*temporal, "create", "--namespace", target, "--retention", "3d"])
+    print(
+        f"Application namespace {namespace} prepared; database {database}; infrastructure {infrastructure}"
+    )
+
+
+if __name__ == "__main__":
+    try:
+        prepare()
+    except Exception as error:
+        # External tools may process secrets; never print their output or arguments.
+        raise SystemExit(
+            f"Instance preparation failed: {error}"
+            if isinstance(error, RuntimeError)
+            else f"Instance preparation failed ({type(error).__name__})"
+        ) from None

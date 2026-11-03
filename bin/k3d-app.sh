@@ -189,6 +189,13 @@ if [[ "$mode" == validate ]]; then
 fi
 
 command -v kubectl >/dev/null || fail "kubectl is required"
+if [[ "$mode" == deploy ]]; then
+  identities --check
+  render
+fi
+if [[ "$mode" == deploy && "$INSTANCE" == weaver ]]; then
+  "$here/bin/k3d-instance"
+fi
 kubectl --context "$KUBE_CONTEXT" get secret fred-secrets -n "$K3D_NAMESPACE" -o name >/dev/null 2>&1 \
   || fail "no Secret fred-secrets in context '$KUBE_CONTEXT', namespace '$K3D_NAMESPACE': run 'make k3d-up ENV=$ENV' first"
 stored="$(kubectl --context "$KUBE_CONTEXT" get configmap -n "$K3D_NAMESPACE" -l "$registration_label" -o json \
@@ -238,9 +245,7 @@ if [[ "$mode" == uninstall ]]; then
 fi
 
 # ── Deploy ───────────────────────────────────────────────────────────────────
-# Check and render before building: a mistake costs seconds, not a build.
-identities --check
-render
+# Configuration was checked before preparing the namespace or building.
 if [[ -n "${K3D_REUSE_IMAGES:-}" && -e "$build_dir/build" ]]; then
   [[ "$(cat "$K3D_IMAGE_VALUES")" != '{}' ]] \
     || fail "no earlier build to redeploy without one: run make k3d-app with the same APP and DIR"

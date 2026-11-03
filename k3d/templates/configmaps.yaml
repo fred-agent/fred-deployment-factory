@@ -57,6 +57,8 @@ data:
 {{ .Files.Get "files/scripts/wait_for_os_init.sh" | indent 4 }}
   create_indice.sh: |
 {{ .Files.Get "files/scripts/create_indice.sh" | indent 4 }}
+  openfga-post-install.sh: |
+{{ .Files.Get "files/scripts/openfga-post-install.sh" | indent 4 }}
   keycloak-lib.sh: |
 {{ .Files.Get "files/scripts/keycloak-lib.sh" | indent 4 }}
   keycloak-post-install-k8s.sh: |

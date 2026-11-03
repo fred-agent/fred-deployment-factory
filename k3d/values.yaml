@@ -37,6 +37,10 @@ auth:
   postgresTabularPassword: Azerty123_
   postgresTabularDb: data
 
+  postgresOpenfgaUser: openfga
+  postgresOpenfgaPassword: Azerty123_
+  postgresOpenfgaDb: openfga
+
   postgresTemporalUser: temporal
   postgresTemporalPassword: Azerty123_
   postgresTemporalDb: temporal
@@ -63,6 +67,10 @@ auth:
 
   opensearchAdminUser: admin
   opensearchAdminPassword: FredOpensearch123!!
+
+  openfgaApiToken: Azerty123_
+  openfgaStoreName: fred
+  openfgaSeedIncludeUsernameUsers: "true"
 
   grafanaAdminUser: admin
   grafanaAdminPassword: Azerty123_
@@ -110,6 +118,9 @@ service:
     clickhouseNative: 30902
     opensearch: 30920
     opensearchDashboards: 30561
+    openfgaHttp: 30908
+    openfgaGrpc: 30981
+    openfgaPlayground: 30000
     temporalFrontend: 30723
     temporalUi: 30233
     prometheus: 30090
@@ -133,9 +144,14 @@ images:
   alpine: mirror.gcr.io/alpine:3.21.3
   opensearch: mirror.gcr.io/opensearchproject/opensearch:2.19.3
   opensearchDashboards: mirror.gcr.io/opensearchproject/opensearch-dashboards:2.19.3
+  openfga: openfga/openfga:v1.11.0
   temporalServer: mirror.gcr.io/temporalio/server:1.28.0
   temporalAdminTools: mirror.gcr.io/temporalio/admin-tools:1.28
   temporalUi: mirror.gcr.io/temporalio/ui:2.38.3
   prometheus: prom/prometheus:v2.54.1
   grafana: grafana/grafana:11.1.4
   fluentBit: fluent/fluent-bit:4.0.3
+
+# Swift needs OpenFGA; Weaver-only infrastructure disables it explicitly.
+openfga:
+  enabled: true

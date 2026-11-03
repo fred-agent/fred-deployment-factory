@@ -55,6 +55,7 @@ def provision(bootstrap):
     sql = Path(bootstrap).read_text()
     namespace = os.environ.get("K3D_NAMESPACE", "fred")
     kube = ["kubectl", "--context", context, "-n", namespace]
+    infra = ["kubectl", "--context", context, "-n", os.environ.get("K3D_INFRA_NAMESPACE", namespace)]
     secret = json.loads(run([*kube, "get", "secret", "fred-secrets", "-o", "json"]))
     data = secret["data"]
     database = base64.b64decode(data["POSTGRES_FRED_DB"], validate=True).decode()
@@ -101,7 +102,7 @@ def provision(bootstrap):
     # Admin credentials remain in the PostgreSQL pod. The canonical script is unmodified.
     run(
         [
-            *kube,
+            *infra,
             "exec",
             "-i",
             "deployment/postgres",

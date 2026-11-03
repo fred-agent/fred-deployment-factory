@@ -1,22 +1,16 @@
 # Local development stack
 
-Run Fred's backing services on your laptop — for day-to-day development against a local Fred,
-or to host the auth/isolation validation release gate, which now lives in the sibling `fred`
-monorepo's own `validation/README.md` (run `make integration-test-docker` or
-`make integration-test-k3d` from that checkout after preparing the test prerequisites). Fred itself
-can run on just ChromaDB + SQLite + the local filesystem; this repo gives the fuller
-experience (real Postgres, Keycloak, OpenSearch, Temporal, plus optional
-Prometheus / Grafana / ClickHouse / Langfuse).
+The recommended starting point is **Weaver alone on k3d**, documented in the
+[README quick start](../README.md#quick-start-weaver-on-k3d). This file is the technical
+reference for infrastructure, application hooks and diagnostics.
 
-Two ways to run it:
+For **Swift alone or Swift + Weaver**, use the separate
+[migration lab](SWIFT-WEAVER-MIGRATION.md). It owns the migration commands and reset
+procedure. The Docker walkthrough and the Swift/published-release subsection below
+are legacy Swift workflows; they are not Weaver startup instructions. Weaver's
+current local deployment path is k3d.
 
-- **Docker Compose** (default, simplest). The infrastructure runs in containers and the Fred
-  apps run on your machine (`make run` in `fred`). Start at "Quick start" below.
-- **k3d**. The infrastructure and the Fred apps all run in a local Kubernetes cluster, with
-  the production Helm chart. Go straight to
-  ["k3d: the full stack in Kubernetes"](#k3d-the-full-stack-in-kubernetes).
-
-For the raw Compose internals (shared network, `.env`, per-service files) see
+For raw Compose internals (network, `.env`, per-service files), see
 [`../docker/README.md`](../docker/README.md).
 
 **Prerequisites (Compose):** Docker, Docker Compose (`docker compose`), `bash`.
@@ -327,14 +321,56 @@ each behind its own `enabled` flag; ClickHouse deploys only when `stack=extended
 
 ## k3d: the full stack in Kubernetes
 
-The infrastructure **and** the applications run in a local k3d cluster. This repository
-owns the infrastructure (`make k3d-up`, chart `k3d/`). Each application (Fred, the
-evaluation application, a knowledge base...) is deployed from **its own repository**, with
-its own chart and its own k3d values, by `make k3d-app DIR=<its checkout>` (see "The k3d
-application contract" below). Fred's k3d values keep the posture production uses (security
-profile `c3`, delegation, migration Job, every credential read from one Foundation Secret).
-The k3d stack is independent of the Docker Compose stack: don't run both at once, because
-they use the same host ports.
+The [Weaver quick start](../README.md#quick-start-weaver-on-k3d) is the normal
+installation path. The factory owns the shared foundation in namespace `fred`;
+Weaver owns its application chart/profile and runs in `fred-weaver`, using database
+`fred_weaver`. No Swift application is required for that layout. The legacy `fred`
+database and OpenFGA remain part of the current main foundation for compatibility.
+Weaver does not use OpenFGA. Do not run Compose on the same host ports.
+
+### Command selection and ownership
+
+`ENV` selects infrastructure, `INSTANCE` selects application placement, and `DIR`
+selects source code. These are independent of the Git branch name:
+
+| Argument | Current effect |
+| --- | --- |
+| `ENV=swift` (Make default) | Cluster `fred`, standard host ports; historical name |
+| `ENV=secondary` | Separate cluster `fred-secondary`, separate data and ports |
+| `INSTANCE=default` (Make default) | Infrastructure operations or Swift in `fred` |
+| `INSTANCE=weaver` | Weaver in `fred-weaver`, database/Temporal namespace `fred_weaver` / `fred-weaver` |
+| `APP=fred DIR=<Weaver checkout>` | Uses the checkout's Helmfile, chart, hooks and build |
+| `APP=fred DIR=<Swift checkout>` | Uses the factory's Swift-compatible Helmfile/values and the checkout's chart/build |
+| `APP=fred` without `DIR` | Uses the pinned published chart/images; does not select Weaver |
+
+Weaver is the documented primary workflow; the Make defaults and published release
+pin have not been changed by this documentation update. A future default Git branch
+switch does not change command semantics. Keep the explicit arguments in the quick
+start, including on redeploy. Never replace an existing Swift release with Weaver's
+chart in the same namespace/database.
+
+`k3d-app-validate` only lints/renders (possibly using cached image references).
+`k3d-instance` only prepares the application boundary. `k3d-app` builds/imports,
+prepares and installs/upgrades the application. None transfers business data.
+
+### Weaver database and monitor
+
+The checkout's prepare hook calls `k3d-apps/fred/monitor-database` (a historical name)
+with the checkout's `deploy/postgres/bootstrap.sql`. It provisions all four Weaver
+roles in the selected database, using the PostgreSQL administrator in the infrastructure
+namespace. Component passwords are retained in the application's `fred-secrets`;
+Control Plane SQLx migrations own schema and `cp_read` view grants. The monitor's
+configuration is supplied by the checkout, not by the pinned published chart.
+
+For the normal layout, open <http://weaver.localhost:8088/admin/monitor> as a Weaver
+platform administrator. The chart owns its namespaced read-only Kubernetes role.
+
+### Swift and published-release reference
+
+The following recipes apply to compatible **Swift/published releases**, including
+optional satellites. For the migration lab, prefer its explicit checkout-based
+[Swift installation steps](SWIFT-WEAVER-MIGRATION.md#a--install-swift-alone).
+Do not copy these unqualified commands into a Weaver namespace.
 
 **Prerequisites:** Docker, [`k3d`](https://k3d.io)
 (`curl -s https://raw.githubusercontent.com/k3d-io/k3d/main/install.sh | bash`), `kubectl`,
@@ -835,7 +871,18 @@ validation. Offline tests cover required claims and exclusive delegation roles.
 The Fred PR #2863 local ZITADEL walkthrough was declared successful by the developer on 2026-10-01; no exported administrator self-test report is attached. Fresh Kubernetes acceptance remains separate.
 
 
+## Swift and Weaver on one cluster
+
+The procedure now lives in the dedicated [migration lab](SWIFT-WEAVER-MIGRATION.md):
+**A** installs Swift alone; **B** adds empty Weaver on the same infrastructure.
+It includes credential handling, verification, sharing boundaries and a disposable-lab
+reset. Ordinary Weaver development starts in the [README](../README.md).
+
 ## Two persistent k3d environments
+
+This is an optional independent-cluster workflow, not the normal Weaver setup or
+the shared-infrastructure migration lab. Choose it only when you need two separate
+foundations.
 
 `ENV=swift` is the default and keeps the existing cluster `fred`. `ENV=secondary`
 selects `fred-secondary`. The literal profiles in `k3d/environments/*.env` are shared
@@ -913,35 +960,11 @@ applications off, for testing Fred alone; nothing is registered there.
 `DIR` selects the source checkout; `ENV` never changes branches or selects a
 different application architecture.
 
-### Weaver technical monitor
-
-With a Weaver checkout that includes `apps/monitor`, the normal command also
-builds/imports its image and enables the monitor alongside Fred:
-
-```bash
-make k3d-app-validate ENV=secondary APP=fred DIR=../fred
-make k3d-app ENV=secondary APP=fred DIR=../fred
-```
-
-Open <http://secondary.localhost:18088/admin/monitor> with a Fred platform-admin
-account. The monitor reads Kubernetes in the Fred namespace; it does not use
-OpenFGA or call Control Plane. Fred's surrounding UI still uses Control Plane
-for bootstrap and navigation authority.
-
-The checkout's prepare/finish hooks invoke this factory's
-`k3d-apps/fred/monitor-database`. It creates a random password once in the
-`monitor-database` Secret and provisions `fred_monitor` in the existing PostgreSQL
-instance. Its only table grant is `SELECT` on `public.platform_role_grant` in the
-Fred database; it is not a database owner and has a four-connection limit.
-The password is retained on repeat deploys and never printed. The finish hook
-applies the table grant after migrations on a fresh installation. Existing PVCs
-work without rerunning PostgreSQL initialization or rebuilding the infrastructure.
-An existing operator-managed Secret is refused rather than overwritten.
-
-The application chart owns the Deployment, Service and namespaced list-only Role.
-The frontend proxies `/monitor/` directly to it; no extra NodePort is needed.
-The factory's pinned published Fred release is unchanged. This feature requires
-the local Weaver checkout, whose build and chart contain the monitor.
+For the legacy standalone secondary Weaver deployment, the application stays in
+namespace/database `fred` on `fred-secondary`, with its own infrastructure. Use the
+Weaver checkout's `deploy/k3d/README.md` for that profile. It is distinct from
+`INSTANCE=weaver` on the main cluster. Monitor provisioning follows the
+[Weaver database contract](#weaver-database-and-monitor) above.
 
 Satellite support in the secondary environment is out of scope. Existing evaluator and external
 application deployment commands remain available in the default Swift mode;

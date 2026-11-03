@@ -1,13 +1,13 @@
 # CLAUDE.md — fred-deployment-factory
 
 Audience: AI coding assistants (and the engineer driving them). Read this first, then the
-README's "Quick start" and `docs/LOCAL-DEVELOPMENT.md`.
+README's "Quick start: Weaver on k3d" and `docs/LOCAL-DEVELOPMENT.md`.
 
 ## What this repo is
 
 The **local deployment** of Fred and its applications, in two forms:
 
-- **Docker Compose** — the backing services on the host (`make docker-up`); the Fred apps run
+- **Docker Compose (legacy Swift loop)** — the backing services on the host (`make docker-up`); the Fred apps run
   from a `fred` checkout (`make run` there). It is the fast loop to debug an app, not a
   second deployment: k3d is the one that deploys as production does.
 - **k3d** — everything in a local Kubernetes cluster: the infrastructure (`make k3d-up`, chart
@@ -24,8 +24,9 @@ outside it. Do not reintroduce cloud-specific material here.
 - **This instance owns its values; products own their charts and images.** Fred's open-source
   applications (Fred, the evaluation application) are defined here, in `k3d-apps/<APP>/`:
   helmfile (the published OCI chart, its version pinned and bumped by Renovate, `renovate.json`), k3d
-  values, identities, `prepare` and `finish`. Their repositories keep only `deploy/k3d/build`,
-  for `DIR`. Other applications (proprietary ones included) keep their whole definition in
+  values, identities, `prepare` and `finish`. Swift checkouts keep `deploy/k3d/build`
+  for `DIR`. Weaver owns its full `deploy/k3d/` profile; its Helmfile/hooks take precedence when supplied through `DIR`.
+  Other applications (proprietary ones included) keep their whole definition in
   their own `deploy/k3d/`. Both follow one contract (`docs/LOCAL-DEVELOPMENT.md` → "The k3d
   application contract"). This repository never copies a chart, and the engine
   (`bin/k3d-app.sh`) names no application.
@@ -72,7 +73,9 @@ outside it. Do not reintroduce cloud-specific material here.
 - **Render before deploying:** `helm lint` and `helm template` with the instance values; the
   fred chart validates its values against a strict schema.
 - **Secrets never enter git.** Local defaults (`Azerty123_`...) are for this local stack only.
-- **Keep docs lean** and in two places: the README's quick start, and
-  `docs/LOCAL-DEVELOPMENT.md` for the details.
+- **Keep docs lean:** the README is the Weaver-first quick start;
+  `docs/LOCAL-DEVELOPMENT.md` is the technical/legacy reference. The explicitly
+  separate `docs/SWIFT-WEAVER-MIGRATION.md` owns Swift-only and coexistence/replay
+  procedures. Link to it instead of duplicating migration commands in the README.
 - **Commits:** `type(scope): what changed` (e.g. `fix(k3d): ...`), one logical change each, no
   Claude co-author line.

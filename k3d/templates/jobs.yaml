@@ -95,6 +95,51 @@ spec:
           configMap:
             name: fred-scripts
             defaultMode: 0755
+{{- if .Values.openfga.enabled }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: openfga-post-install
+  labels:
+    {{- include "fred-stack.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-weight: "30"
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        {{- include "fred-stack.selectorLabels" . | nindent 8 }}
+    spec:
+      enableServiceLinks: false
+      restartPolicy: OnFailure
+      containers:
+        - name: openfga-post-install
+          image: {{ .Values.images.toolbox }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          envFrom:
+            - secretRef:
+                name: fred-secrets
+          env:
+            - name: OPENFGA_URL
+              value: http://openfga:9080
+          command:
+            - /bin/sh
+            - -ec
+            - |
+              /scripts/openfga-post-install.sh
+          volumeMounts:
+            - name: scripts
+              mountPath: /scripts
+      volumes:
+        - name: scripts
+          configMap:
+            name: fred-scripts
+            defaultMode: 0755
+{{- end }}
 {{- if eq (include "fred-stack.clickhouseEnabled" .) "true" }}
 ---
 apiVersion: batch/v1

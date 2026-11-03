@@ -56,7 +56,16 @@ include k3d/environments/$(ENV).env
 export ENV K3D_CLUSTER K3D_KEYCLOAK_HOST
 export $(filter K3D_HOST_%,$(.VARIABLES))
 KUBE_CONTEXT := k3d-$(K3D_CLUSTER)
-K3D_NAMESPACE ?= fred
+INSTANCE ?= default
+export INSTANCE
+K3D_INFRA_NAMESPACE ?= fred
+K3D_NAMESPACE ?= $(if $(filter weaver,$(INSTANCE)),fred-weaver,$(K3D_INFRA_NAMESPACE))
+export K3D_INFRA_NAMESPACE
+ifneq ($(INSTANCE),default)
+ifneq ($(filter k3d-create k3d-up k3d-down k3d-uninstall k3d-delete k3d-wipe k3d-redeploy,$(MAKECMDGOALS)),)
+$(error Infrastructure commands require INSTANCE=default; INSTANCE selects an application only)
+endif
+endif
 export KUBE_CONTEXT K3D_NAMESPACE
 KUBECTL := kubectl --context "$(KUBE_CONTEXT)"
 HELM := helm --kube-context "$(KUBE_CONTEXT)"
@@ -82,12 +91,17 @@ else
 K3D_CA_VOLUME_ARG :=
 endif
 
+# Keep the existing environment defaults; either capability is explicitly overridable.
+K3D_OPENFGA_ENABLED ?= $(if $(filter secondary,$(ENV)),false,true)
+K3D_POSTGRES_APPLICATION_BOOTSTRAP ?= $(if $(filter secondary,$(ENV)),true,false)
+
 # One set of values for lint, prefetch rendering and the actual infrastructure release.
 K3D_HELM_VALUES = --set stack=$(STACK) --set-string host.fqdn="$(K3D_HOST_NAME)" \
 	--set-string keycloak.hostname="$(K3D_KEYCLOAK_HOST)" --set keycloak.publicPort=$(K3D_HOST_PORT_KEYCLOAK) \
 	--set host.frontendPort=$(K3D_HOST_PORT_FRONTEND) --set host.dashboardsPort=$(K3D_HOST_PORT_OPENSEARCH_DASHBOARDS) \
 	--set temporal.uiPort=$(K3D_HOST_PORT_TEMPORAL_UI) \
-	--set postgres.applicationBootstrap=$(if $(filter secondary,$(ENV)),true,false)
+	--set postgres.applicationBootstrap=$(K3D_POSTGRES_APPLICATION_BOOTSTRAP) \
+	--set openfga.enabled=$(K3D_OPENFGA_ENABLED)
 
 # Kubelet disk thresholds in absolute sizes. The defaults are percentages of the
 # host disk (image GC above 85% used, eviction under 15% free): on a developer
@@ -111,6 +125,8 @@ K3D_CLUSTER_CREATE_BASE_ARGS := \
 	-p "$(K3D_HOST_PORT_CLICKHOUSE_NATIVE):30902@server:0" \
 	-p "$(K3D_HOST_PORT_OPENSEARCH):30920@server:0" \
 	-p "$(K3D_HOST_PORT_OPENSEARCH_DASHBOARDS):30561@server:0" \
+	-p "$(K3D_HOST_PORT_OPENFGA_HTTP):30908@server:0" \
+	-p "$(K3D_HOST_PORT_OPENFGA_GRPC):30981@server:0" \
 	-p "$(K3D_HOST_PORT_TEMPORAL_FRONTEND):30723@server:0" \
 	-p "$(K3D_HOST_PORT_TEMPORAL_UI):30233@server:0" \
 	-p "$(K3D_HOST_PORT_PROMETHEUS):30090@server:0" \
@@ -524,6 +540,9 @@ k3d-health: ## What needs attention on k3d: pods, events, errors, 5xx, degraded 
 	@bin/k3d-observe health
 
 ##@ k3d service targets
+k3d-instance: ## Prepare the isolated Weaver namespace/database on existing infrastructure: INSTANCE=weaver
+	@source bin/k3d-environment.sh; bin/k3d-instance
+
 k3d-restart: ## Restart a k3d component: make k3d-restart COMPONENT=temporal
 	@test -n "$(COMPONENT)" || (echo "ERROR: COMPONENT is required. Usage: make k3d-restart COMPONENT=<name>"; exit 1)
 	$(KUBECTL) rollout restart statefulset/$(COMPONENT) -n "$(K3D_NAMESPACE)" 2>/dev/null || \
@@ -639,7 +658,7 @@ BRANCH ?= swift
 ecosystem-audit: ## Do the sibling checkouts agree on Fred's libraries? Branch, constraints, locks, npm: make ecosystem-audit [BRANCH=swift]
 	@bin/ecosystem-audit --branch "$(BRANCH)" --fetch
 
-.PHONY: k3d-env k3d-health help network-create env-setup keycloak-post-install postgres-up keycloak-up seaweedfs-up opensearch-up clickhouse-up langfuse-up prometheus-up grafana-up temporal-up preflight-check docker-up docker-start docker-stop docker-down all-down docker-wipe docker-destroy k3d-create k3d-up k3d-restart k3d-redeploy k3d-logs k3d-down k3d-uninstall k3d-delete k3d-wipe k3d-status k3d-app k3d-disk-check k3d-app-validate k3d-app-uninstall k3d-airgap-on k3d-airgap-off k3d-airgap-status checkpoint-save checkpoint-restore docker-restart-from-checkpoint checkpoint-list checkpoint-delete check-pure-infrastructure ecosystem-audit keycloak-token-short keycloak-token-normal keycloak-token-status
+.PHONY: k3d-instance k3d-env k3d-health help network-create env-setup keycloak-post-install postgres-up keycloak-up seaweedfs-up opensearch-up clickhouse-up langfuse-up prometheus-up grafana-up temporal-up preflight-check docker-up docker-start docker-stop docker-down all-down docker-wipe docker-destroy k3d-create k3d-up k3d-restart k3d-redeploy k3d-logs k3d-down k3d-uninstall k3d-delete k3d-wipe k3d-status k3d-app k3d-disk-check k3d-app-validate k3d-app-uninstall k3d-airgap-on k3d-airgap-off k3d-airgap-status checkpoint-save checkpoint-restore docker-restart-from-checkpoint checkpoint-list checkpoint-delete check-pure-infrastructure ecosystem-audit keycloak-token-short keycloak-token-normal keycloak-token-status
 
 ##@ Optional ZITADEL identity-provider test
 ZITADEL_COMPOSE = docker compose --env-file docker/zitadel/.env -f docker/zitadel/compose.yaml -p fred-zitadel

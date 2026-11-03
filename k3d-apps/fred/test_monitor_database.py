@@ -19,7 +19,7 @@ loader.exec_module(module)
 
 
 class MonitorDatabaseTests(unittest.TestCase):
-    def provision(self, stored=None):
+    def provision(self, stored=None, infra="test"):
         calls = []
         secret = stored or {
             "metadata": {"resourceVersion": "42"},
@@ -29,7 +29,14 @@ class MonitorDatabaseTests(unittest.TestCase):
         def run(command, *, body=None):
             calls.append((command, body))
             self.assertEqual(
-                command[:5], ["kubectl", "--context", "k3d-test", "-n", "test"]
+                command[:5],
+                [
+                    "kubectl",
+                    "--context",
+                    "k3d-test",
+                    "-n",
+                    infra if "exec" in command else "test",
+                ],
             )
             return json.dumps(secret) if "get" in command else ""
 
@@ -37,7 +44,12 @@ class MonitorDatabaseTests(unittest.TestCase):
             source = Path(directory) / "bootstrap.sql"
             source.write_text("-- exact canonical source\n")
             with (
-                patch.dict(os.environ, KUBE_CONTEXT="k3d-test", K3D_NAMESPACE="test"),
+                patch.dict(
+                    os.environ,
+                    KUBE_CONTEXT="k3d-test",
+                    K3D_NAMESPACE="test",
+                    K3D_INFRA_NAMESPACE=infra,
+                ),
                 patch.object(module, "run", side_effect=run),
             ):
                 module.provision(source)
@@ -68,6 +80,17 @@ class MonitorDatabaseTests(unittest.TestCase):
                 self.assertNotIn(password, " ".join(command))
         uri = base64.b64decode(secret["data"]["POSTGRES_MONITOR_DATABASE_URL"]).decode()
         self.assertTrue(uri.startswith("postgresql://fred_monitor:"))
+
+    def test_cross_namespace_bootstrap_keeps_credentials_in_application_namespace(self):
+        secret = {
+            "metadata": {"resourceVersion": "42"},
+            "data": {"POSTGRES_FRED_DB": base64.b64encode(b"fred_weaver").decode()},
+        }
+        calls, _ = self.provision(secret, infra="foundation")
+        sql_command = next(command for command, _ in calls if "exec" in command)
+        self.assertEqual(sql_command[-1], "fred_weaver")
+        patch_command = next(command for command, _ in calls if "patch" in command)
+        self.assertEqual(patch_command[4], "test")
 
     def test_refuse_non_k3d_before_reading_or_mutating_anything(self):
         with (
