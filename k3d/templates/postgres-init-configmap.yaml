@@ -6,6 +6,8 @@ metadata:
     {{- include "fred-stack.labels" . | nindent 4 }}
 data:
   001-init.sql: |
+    -- Reserve the Swift authorization database even in a Weaver-only lab.
+    -- PostgreSQL init runs only once; adding Swift later must not require a reset.
     DO $$
     BEGIN
       IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '{{ .Values.auth.postgresKeycloakUser }}') THEN
@@ -17,11 +19,9 @@ data:
       IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '{{ .Values.auth.postgresTabularUser }}') THEN
         CREATE ROLE {{ .Values.auth.postgresTabularUser }} NOSUPERUSER LOGIN PASSWORD '{{ .Values.auth.postgresTabularPassword }}';
       END IF;
-      {{- if .Values.openfga.enabled }}
       IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '{{ .Values.auth.postgresOpenfgaUser }}') THEN
         CREATE ROLE {{ .Values.auth.postgresOpenfgaUser }} NOSUPERUSER LOGIN PASSWORD '{{ .Values.auth.postgresOpenfgaPassword }}';
       END IF;
-      {{- end }}
       IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '{{ .Values.auth.postgresTemporalUser }}') THEN
         CREATE ROLE {{ .Values.auth.postgresTemporalUser }} NOSUPERUSER LOGIN PASSWORD '{{ .Values.auth.postgresTemporalPassword }}';
       END IF;
@@ -37,10 +37,8 @@ data:
       WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = '{{ .Values.auth.postgresFredDb }}')\gexec
     SELECT 'CREATE DATABASE {{ .Values.auth.postgresTabularDb }} OWNER {{ .Values.auth.postgresTabularUser }}'
       WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = '{{ .Values.auth.postgresTabularDb }}')\gexec
-    {{- if .Values.openfga.enabled }}
     SELECT 'CREATE DATABASE {{ .Values.auth.postgresOpenfgaDb }} OWNER {{ .Values.auth.postgresOpenfgaUser }}'
       WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = '{{ .Values.auth.postgresOpenfgaDb }}')\gexec
-    {{- end }}
     SELECT 'CREATE DATABASE {{ .Values.auth.postgresTemporalDb }} OWNER {{ .Values.auth.postgresTemporalUser }}'
       WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = '{{ .Values.auth.postgresTemporalDb }}')\gexec
     SELECT 'CREATE DATABASE {{ .Values.auth.postgresTemporalVisibilityDb }} OWNER {{ .Values.auth.postgresTemporalUser }}'
@@ -54,10 +52,8 @@ data:
     GRANT CONNECT ON DATABASE {{ .Values.auth.postgresFredDb }} TO {{ .Values.auth.postgresFredUser }};
     REVOKE ALL ON DATABASE {{ .Values.auth.postgresTabularDb }} FROM PUBLIC;
     GRANT CONNECT ON DATABASE {{ .Values.auth.postgresTabularDb }} TO {{ .Values.auth.postgresTabularUser }};
-    {{- if .Values.openfga.enabled }}
     REVOKE ALL ON DATABASE {{ .Values.auth.postgresOpenfgaDb }} FROM PUBLIC;
     GRANT CONNECT ON DATABASE {{ .Values.auth.postgresOpenfgaDb }} TO {{ .Values.auth.postgresOpenfgaUser }};
-    {{- end }}
     REVOKE ALL ON DATABASE {{ .Values.auth.postgresTemporalDb }} FROM PUBLIC;
     GRANT CONNECT ON DATABASE {{ .Values.auth.postgresTemporalDb }} TO {{ .Values.auth.postgresTemporalUser }};
     REVOKE ALL ON DATABASE {{ .Values.auth.postgresTemporalVisibilityDb }} FROM PUBLIC;

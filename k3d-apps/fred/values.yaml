@@ -1,7 +1,7 @@
 # =============================================================================
 # Fred on the local k3d instance of fred-deployment-factory: values for Fred's
 # chart (the published one, or a checkout's deploy/charts/fred), deployed by
-# `make k3d-app APP=fred [DIR=<fred checkout>]` through helmfile.yaml.gotmpl.
+# the internal application engine through helmfile.yaml.gotmpl.
 #
 # Only what this instance decides lives here. Everything else is the chart's
 # default, so this file is also the list of every way k3d differs from a
@@ -11,9 +11,9 @@
 # backend and its worker.
 #
 # What each block is:
-#   address  where a service of the k3d stack (`make k3d-up`) is reached
+#   address  where a service of the k3d stack (the infrastructure reconciler) is reached
 #   secret   a credential, always by reference to `fred-secrets`, the
-#            Foundation Secret created by `make k3d-up`; never a literal
+#            Foundation Secret created by the infrastructure reconciler; never a literal
 #   posture  a switch set as on fredlab (GKE): c3, delegation, migration Job,
 #            workers
 #   choice   a production choice the chart leaves to each instance; each one is

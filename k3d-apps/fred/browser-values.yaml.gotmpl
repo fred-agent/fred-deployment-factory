@@ -1,5 +1,4 @@
-# Fred alone in the second cluster (registrations.yaml.gotmpl registers nothing there).
-# The default Swift values remain unchanged.
+# Browser and authentication URLs derived from the application namespace.
 x-security: &security
   m2m:
     realm_url: {{ requiredEnv "K3D_REALM_URL" | quote }}

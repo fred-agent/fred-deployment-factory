@@ -1,175 +1,111 @@
 # Fred Deployment Factory
 
-Deploy Fred locally. **Start with Weaver alone on one k3d cluster** using the
-walkthrough below. The factory owns the infrastructure and deployment commands;
-the Fred checkout owns Weaver's chart, configuration and image build.
-
-| Your task | Start here |
-| --- | --- |
-| Develop or try Weaver | [Weaver quick start](#quick-start-weaver-on-k3d) |
-| Install Swift alone, or Swift + Weaver to rehearse migration | [Swift → Weaver migration lab](docs/SWIFT-WEAVER-MIGRATION.md) |
-| Understand configuration, hooks, diagnostics or the optional second cluster | [Local development reference](docs/LOCAL-DEVELOPMENT.md) |
-| Run the legacy Swift Docker development loop | [Docker Compose reference](docs/LOCAL-DEVELOPMENT.md#quick-start-docker-compose) |
-
-## Quick start: Weaver on k3d
-
-For a fresh installation, this installs **Weaver only**. No Swift application or
-migration fixture is needed. If this cluster already hosts Swift, follow
-[path B of the migration lab](docs/SWIFT-WEAVER-MIGRATION.md#b--add-empty-weaver-beside-swift)
-after its ingestion has finished.
-Use a factory checkout containing Weaver support and a sibling Fred checkout
-containing Weaver's `deploy/k3d/helmfile.yaml.gotmpl`. Once Weaver becomes the default
-Git branch, ordinary sibling clones will provide these. Until then, select the
-appropriate branches yourself; the factory never switches branches.
-
-**Current command defaults still have historical names.** `ENV=swift` selects the
-main cluster `fred`, not the Swift application. `INSTANCE=weaver` selects Weaver's
-namespace/database. `DIR` selects the code to build. These arguments are explicit
-below so a previously exported `ENV=secondary` does not select another cluster.
-Changing the default Git branch does not change these Make defaults. Without `DIR`,
-`make k3d-app APP=fred` still selects the pinned published release, **not Weaver**.
-
-### 1. Prerequisites and checkout
-
-Install Docker, [k3d](https://k3d.io), `kubectl`, `helm`,
-[Helmfile](https://github.com/helmfile/helmfile/releases), `jq` and the build
-prerequisites described by your Fred checkout. Run all commands from this factory:
+One local k3d cluster. Prepare the required COTS first, then deploy applications separately:
 
 ```bash
-cd /path/to/fred-deployment-factory
-FRED_WEAVER_DIR="$(cd ../fred && pwd)"
-git -C "$FRED_WEAVER_DIR" status --short --branch
+make k3d-up-swift       # COTS for Swift, including OpenFGA
+make k3d-up-weaver      # COTS for Weaver, without OpenFGA
+make k3d-up-migration   # Shared COTS for Swift + Weaver
 ```
 
-Check that this is the intended Weaver checkout: builds include its local changes.
-Use a fresh shell without custom `K3D_*` overrides or `K3D_REUSE_IMAGES` from another
-session. Do not start Docker Compose on the same host ports.
+Choose one infrastructure command. It prepares the services and the required
+namespace/database boundaries. It never builds or deploys a Fred application,
+requires no source checkout, and does not check model API keys. Rerunning it
+preserves existing data. The factory never switches Git branches.
 
-For browser access, ensure these names resolve to `127.0.0.1`; add to `/etc/hosts`
-if necessary:
+## Prepare once
+
+Install Docker, k3d, kubectl, Helm and jq. Application deployment also needs
+Helmfile, Python 3 with PyYAML and the selected checkout's build tools. Keep
+Docker Compose stopped on these ports.
+
+Ensure `/etc/hosts` contains:
 
 ```text
 127.0.0.1 keycloak weaver.localhost
 ```
 
-### 2. Infrastructure, then Weaver's namespace and database
+## Deploy applications separately
+
+After infrastructure startup, supply the model credential only for the application
+you intend to deploy. Use a private file containing only your Mistral API key:
 
 ```bash
-make k3d-up ENV=swift INSTANCE=default
-make k3d-instance ENV=swift INSTANCE=weaver
-```
+# Swift
+kubectl --context k3d-fred -n fred create secret generic fred-model-credentials \
+  --from-file=OPENAI_API_KEY=/absolute/path/to/model-api-key
+make k3d-app APP=fred DIR=/absolute/path/to/swift/fred
 
-The first command creates/reconciles cluster `fred` and infrastructure in namespace
-`fred`. The second prepares namespace `fred-weaver`, database `fred_weaver`, its
-credentials, service aliases and Temporal namespace `fred-weaver`.
-**Neither command installs the Weaver application.** OpenFGA is currently included
-by the main infrastructure profile for Swift compatibility; Weaver does not use it.
-
-### 3. Supply the model credential
-
-Once per application namespace, create the operator-owned Secret. Replace the file
-path below with a local file containing only your model API key (the supplied profile
-uses Mistral), without a `KEY=` prefix. Never commit that file.
-
-```bash
+# Weaver
 kubectl --context k3d-fred -n fred-weaver create secret generic fred-model-credentials \
   --from-file=OPENAI_API_KEY=/absolute/path/to/model-api-key
+make k3d-app APP=fred DIR=/absolute/path/to/weaver/fred
 ```
 
-### 4. Validate, then build and install
+Run either application command when needed; migration infrastructure does not
+implicitly deploy both. `DIR` chooses the source checkout, including uncommitted
+changes. A Weaver checkout is identified by `apps/control-plane/Cargo.toml` and
+placed in `fred-weaver`; the published Swift definition and other applications use
+`fred`. No branch name or persistent shell selector chooses placement.
 
-```bash
-make k3d-app-validate ENV=swift INSTANCE=weaver APP=fred DIR="$FRED_WEAVER_DIR"
-make k3d-app ENV=swift INSTANCE=weaver APP=fred DIR="$FRED_WEAVER_DIR"
-```
+The existing application contract remains available: `APP` selects a factory
+definition, `DIR` selects source, and `RELEASE` selects a published version instead
+of source. `make k3d-app-validate` renders the same selection without building or
+deploying. See the [application contract](docs/LOCAL-DEVELOPMENT.md#the-k3d-application-contract)
+for other application inputs. `local-checkouts.json` is no longer used.
 
-Run each step only after the previous one succeeds. Validation lints and renders;
-it does not build images or deploy pods. A message about images from the last build
-only describes the references used for rendering. `k3d-app` builds the selected
-checkout, imports its images, prepares its dependencies and installs/upgrades it.
+Model keys remain operator-owned Kubernetes Secrets; the factory never takes them
+from a checkout or shell environment. A missing model key is an application
+prerequisite, not an infrastructure startup failure.
 
-### 5. Check readiness and sign in
+| | Swift | Weaver |
+| --- | --- | --- |
+| Browser | <http://localhost:8088> | <http://weaver.localhost:8088> |
+| Namespace | `fred` | `fred-weaver` |
+| PostgreSQL database | `fred` | `fred_weaver` |
+| Temporal namespace | `default` | `fred-weaver` |
+| Document index | `vector-index-mistral` | `document-vectors` |
 
-```bash
-kubectl --context k3d-fred -n fred-weaver get deployments
-helm list --kube-context k3d-fred -n fred-weaver
-make k3d-health ENV=swift INSTANCE=default
-```
+Both use context `k3d-fred`. Infrastructure lives in `fred`. Keycloak and S3 are
+shared; application permissions, databases and corpus indexes remain separate.
+Weaver alone does not deploy the OpenFGA service. Its empty backing database is
+reserved so Swift can be added later without resetting PostgreSQL. Swift and
+migration include the service automatically.
+The platform starts empty: sign in and follow the bootstrap-token command printed
+at the end of deployment. No demo people or organizations are created by the factory.
 
-Expect all six deployments ready: `control-plane-backend`, `fred-agents`,
-`knowledge-flow-backend`, `knowledge-flow-worker`, `frontend`, `monitor`.
-Open **<http://weaver.localhost:8088>**, register/sign in and complete platform
-administration bootstrap using the token retrieval command printed by deployment.
-The platform starts empty. Follow the Fred checkout's `deploy/k3d/README.md` for
-Weaver's organizations, models, agent templates and first document/conversation.
-The technical monitor is at <http://weaver.localhost:8088/admin/monitor>.
+## Update, pause, inspect, reset
 
-## Day to day
-
-Keep `FRED_WEAVER_DIR` set to your intended checkout in the current shell.
-
-| Task | Command |
+| Intent | Command |
 | --- | --- |
-| Rebuild and update Weaver, preserving data | `make k3d-app ENV=swift INSTANCE=weaver APP=fred DIR="$FRED_WEAVER_DIR"` |
-| Validate configuration without deployment | `make k3d-app-validate ENV=swift INSTANCE=weaver APP=fred DIR="$FRED_WEAVER_DIR"` |
-| Inspect Weaver pods | `kubectl --context k3d-fred -n fred-weaver get pods` |
-| Inspect collected health | `make k3d-health ENV=swift INSTANCE=default` |
-| Stop the cluster, preserve data | `make k3d-down ENV=swift INSTANCE=default` |
-| Start/reconcile infrastructure again | `make k3d-up ENV=swift INSTANCE=default` |
+| Update COTS | Repeat the selected `make k3d-up-*` command |
+| Build/deploy one application | `make k3d-app APP=fred DIR=/path/to/checkout` |
+| Render one application | `make k3d-app-validate APP=fred DIR=/path/to/checkout` |
+| Render without building or changing the cluster | `make k3d-validate-swift`, `make k3d-validate-weaver`, or `make k3d-validate-migration` |
+| Pause / resume existing containers, preserving data | `make k3d-stop` / `make k3d-start` |
+| Inspect deployments / collected diagnostics | `make k3d-status` / `make k3d-health` |
+| **Delete the cluster and all its data** | **`make k3d-wipe`** |
 
-Infrastructure commands use `INSTANCE=default`; application commands use
-`INSTANCE=weaver`. A redeploy is not a database reset. A cluster wipe deletes
-**every namespace and volume**, including Swift if present: it is not a routine
-update step. See the migration note for an explicit disposable-lab reset.
+Going from either solo installation to `make k3d-up-migration` preserves existing data
+and prepares the other application's infrastructure boundary. Deploy each application
+separately when wanted.
+Going from migration to a solo installation is refused. To start a disposable lab
+over, run `make k3d-wipe`, then the desired command. Wipe deletes accounts, conversations,
+documents, S3 objects, indexes and Secrets in cluster `fred`; it does not delete your
+Git checkouts, Docker Compose volumes or another cluster. Recreate model Secrets afterward.
 
-| Shared infrastructure URL | Service |
-| --- | --- |
-| <http://keycloak:8080> | Keycloak |
-| <http://localhost:8233> | Temporal |
-| <http://localhost:3002> | Grafana |
-| <http://localhost:5601> | OpenSearch Dashboards |
+There is **no `ENV`, `INSTANCE`, `MODE` or `PROFILE` selector**. Infrastructure commands reject
+command-line variable assignments and old deployment environment overrides. `APP`,
+`DIR`, `RELEASE` and `VALUES` belong to the separate `k3d-app` commands.
+`STACK` and `K3D_*` overrides do not select a local installation. The old generic
+`make k3d-up` points to the explicit infrastructure commands.
 
-## Published applications and library development
+## References
 
-The published-release commands (`APP=fred` without `DIR`, `RELEASE=...`, evaluator
-and Knowledge Base satellites) remain available for compatible releases. They are
-not the Weaver quick start. See the [Swift/published-release reference](docs/LOCAL-DEVELOPMENT.md#swift-and-published-release-reference).
-Weaver's integration with those satellites is not established by this walkthrough.
+- [Migration lab boundaries](docs/SWIFT-WEAVER-MIGRATION.md)
+- [Technical reference and retained Docker tools](docs/LOCAL-DEVELOPMENT.md)
+- [Weaver database bootstrap](k3d-apps/fred/README-postgres.md)
 
-For applications that consume unreleased Fred libraries, see
-[Work on unreleased Fred](docs/LOCAL-DEVELOPMENT.md#work-on-unreleased-fred).
-`FRED_LIBS` controls library sourcing; it does not select Swift versus Weaver or a
-Kubernetes namespace.
-
-### Check Renovate activity
-
-The Mend-hosted Renovate GitHub App checks the published chart versions and proposes
-updates to the pins in `k3d-apps/*/helmfile.yaml.gotmpl`, according to
-[`renovate.json`](renovate.json). Its jobs run on Mend; GitHub Actions runs this
-repository's validation CI when a PR is opened. Merging a version bump does not deploy
-anything: pull the change and run `make k3d-app APP=fred` (or `APP=fred-evaluator`).
-
-1. Sign in to the [Mend Developer Portal](https://developer.mend.io/) with GitHub.
-2. Select **fred-agent > fred-deployment-factory > Recent jobs**. Open a job and
-   select **DEBUG** to inspect detected versions, warnings and errors.
-3. Check **Repo Engine Settings > Dependency Updates (Renovate)**. In **Silent**
-   mode, Renovate looks up updates but creates **no PRs or issues**. A completed job
-   therefore does not mean a PR was created, and rerunning it does not leave Silent
-   mode. A repository administrator can select **Interactive** in the repository
-   settings to allow PRs; check the next job for the outcome.
-
-**Team access:** colleagues with **Write** access to this GitHub repository should
-be able to read its Renovate job logs using their own GitHub login; a separate Mend
-invitation is normally unnecessary for log access. See the official
-[log access documentation](https://docs.renovatebot.com/troubleshooting/#the-mend-renovate-app-this-means-the-mend-hosted-github-app)
-and [Silent mode documentation](https://docs.renovatebot.com/mend-hosted/hosted-apps-config/#get-onboarding-prs-from-renovate-by-getting-out-of-silent-mode).
-
-
-## More
-
-| For | Read |
-| --- | --- |
-| Install Swift alone or add Weaver to it; rehearse a migration | [Migration lab](docs/SWIFT-WEAVER-MIGRATION.md) |
-| Infrastructure and application contract, configuration and troubleshooting | [Local development reference](docs/LOCAL-DEVELOPMENT.md) |
-| Swift demo teams and users | [Demo reference](local-testing/demo/README.md) |
-| Repository working rules | [CLAUDE.md](CLAUDE.md) |
+This repository contains no GKE/GCP deployment. Docker Compose tools are separate
+legacy infrastructure tools, not a selector for these k3d commands; the current
+Compose files do not supply OpenFGA and cannot alone recreate a Swift installation.

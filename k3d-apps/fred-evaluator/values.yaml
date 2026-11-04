@@ -1,8 +1,8 @@
 # =============================================================================
 # The evaluation application on the local k3d instance: values for the
 # fred-evaluator chart (the published one, or a checkout's
-# deploy/charts/fred-evaluator), deployed by `make k3d-app APP=fred-evaluator
-# [DIR=<evaluator checkout>]` through helmfile.yaml.gotmpl.
+# deploy/charts/fred-evaluator), consumed by the internal application engine;
+# the definition is in helmfile.yaml.gotmpl.
 #
 # Only what k3d decides lives here; the chart's defaults already name the
 # services of a default Fred install (postgres, temporal:7233,
@@ -23,7 +23,7 @@ ui:
   hostOrigin: "http://localhost:8088"      # address: where users open Fred
 
 # secret: every credential by reference to fred-secrets, the Foundation Secret
-# created by `make k3d-up`.
+# created by the infrastructure reconciler.
 extraEnvVars:
   - name: FRED_POSTGRES_PASSWORD
     valueFrom:

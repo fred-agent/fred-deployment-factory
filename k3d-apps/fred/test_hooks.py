@@ -52,7 +52,6 @@ class HookTests(unittest.TestCase):
                     os.environ,
                     PATH=f"{fakebin}:{os.environ['PATH']}",
                     CALLS=str(root / "calls"),
-                    ENV="swift",
                     K3D_PUBLIC_URL="http://localhost:8088",
                     K3D_HOST_NAME="localhost",
                     K3D_KEYCLOAK_HOST="keycloak",
@@ -78,17 +77,11 @@ class HookTests(unittest.TestCase):
                     self.assertEqual(call[1:3], ["--context", "k3d-test"])
             return result, calls
 
-    def test_secondary_leaves_vector_bootstrap_to_the_application(self) -> None:
+    def test_infrastructure_reserves_swift_database_for_later_migration(self) -> None:
         root = Path(__file__).resolve().parents[2]
-        self.assertIn(
-            "postgres.applicationBootstrap=$(if $(filter secondary,$(ENV)),true,false)",
-            (root / "Makefile").read_text(),
-        )
         template = (root / "k3d/templates/postgres-init-configmap.yaml").read_text()
-        self.assertIn(
-            'if not (dig "applicationBootstrap" false .Values.postgres)', template
-        )
-        # The independent tabular database keeps its extension.
+        self.assertIn("CREATE DATABASE {{ .Values.auth.postgresOpenfgaDb }}", template)
+        self.assertNotIn(".Values.openfga.enabled", template)
         self.assertIn(
             "\\connect {{ .Values.auth.postgresTabularDb }}\n    CREATE EXTENSION IF NOT EXISTS vector;",
             template,

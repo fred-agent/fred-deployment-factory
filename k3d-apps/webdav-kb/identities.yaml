@@ -1,5 +1,5 @@
 # The service identity this Knowledge Base needs from the k3d instance's
-# Keycloak, provisioned by `make k3d-app` before the sync (bin/k3d-identities
+# Keycloak, provisioned by the internal application engine before the sync (bin/k3d-identities
 # documents the format).
 clients:
   # Named after the prefix it publishes under: Fred binds the prefix to the

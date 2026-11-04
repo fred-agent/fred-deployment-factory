@@ -36,7 +36,7 @@ for arg in "$@"; do
       cat <<'EOF'
 Usage: check-k3d-services.sh [options]
 
-Checks the services deployed by `make k3d-up` in fred-deployment-factory.
+Checks the services deployed by the infrastructure reconciler in fred-deployment-factory.
 
 Options:
   --wait                 Poll until healthy or timeout

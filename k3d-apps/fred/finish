@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-# Run by `make k3d-app APP=fred` after the sync: with DIR, the checkout's Grafana
+# Run by the internal Fred application engine after the sync: with DIR, the checkout's Grafana
 # dashboards (the published chart does not ship them yet), then how to reach
 # Fred and log in the first time.
 : "${KUBE_CONTEXT:?factory must provide the explicit k3d context}"

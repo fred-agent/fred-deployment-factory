@@ -1,0 +1,179 @@
+#!/usr/bin/env python3
+"""Separate local infrastructure preparation from explicit application deployment."""
+
+import fcntl
+import json
+import os
+from pathlib import Path
+import shutil
+import subprocess
+import sys
+import tempfile
+
+ROOT = Path(__file__).resolve().parent.parent
+APPLICATIONS = {
+    "swift": ("fred", "localhost", "fred", "default"),
+    "weaver": ("fred-weaver", "weaver.localhost", "fred_weaver", "fred-weaver"),
+}
+INSTALLATIONS = {"swift": ("swift",), "weaver": ("weaver",), "migration": ("swift", "weaver")}
+OPERATIONS = {f"k3d-{verb}-{name}" for verb in ("up", "validate") for name in INSTALLATIONS}
+APP_OPERATIONS = {"k3d-app": "deploy", "k3d-app-validate": "validate", "k3d-app-uninstall": "uninstall"}
+OPERATIONS.update(APP_OPERATIONS)
+OPERATIONS.update({"k3d-start", "k3d-stop", "k3d-status", "k3d-health", "k3d-wipe"})
+APP_INPUTS = {"APP", "DIR", "RELEASE", "VALUES", "FRED_LIBS", "FRED_REPO", "HELM_TIMEOUT"}
+SELECTORS = {"ENV", "INSTANCE", "MODE", "PROFILE", "STACK", "APP", "DIR", "RELEASE", "VALUES", "FRED_LIBS", "FRED_REPO", "KUBE_CONTEXT", "HELM_NAMESPACE", "HELM_KUBECONTEXT", "HELM_RELEASE", "HELM_CHART_DIR"}
+KUBE = ["kubectl", "--context", "k3d-fred"]
+STATE_NAME = "fred-local-installation"
+
+
+def run(command, env, *, capture=False, body=None):
+    # Keep tool output visible, except structured reads. Never print environment/Secrets.
+    return subprocess.run(
+        command, cwd=ROOT, env=env, check=True, text=True,
+        input=body, stdout=subprocess.PIPE if capture else None,
+    ).stdout
+
+
+def environment(application=False):
+    selectors = SELECTORS - APP_INPUTS if application else SELECTORS
+    forbidden = sorted(name for name in os.environ if name in selectors or name.startswith("K3D_"))
+    if forbidden:
+        raise ValueError("Remove deployment overrides: " + ", ".join(forbidden) + ". Use k3d-up-* for infrastructure; k3d-app APP=fred DIR=... for an application.")
+    env = dict(os.environ)
+    for key in ("MAKEFLAGS", "MFLAGS", "MAKEOVERRIDES"):
+        env.pop(key, None)
+    for line in (ROOT / "k3d/local.env").read_text().splitlines():
+        if line.startswith("K3D_"):
+            key, value = line.split("=", 1)
+            env[key] = value
+    env.update(KUBE_CONTEXT="k3d-fred", K3D_INFRA_NAMESPACE="fred", K3D_FACTORY_INTERNAL="1")
+    return env
+
+
+def app_environment(env, name):
+    namespace, host, database, temporal = APPLICATIONS[name]
+    return dict(
+        env,
+        K3D_NAMESPACE=namespace, K3D_APP_HOST=host, K3D_DATABASE=database,
+        K3D_TEMPORAL_NAMESPACE=temporal,
+        K3D_PUBLIC_URL=f"http://{host}:8088", K3D_WEBSOCKET_URL=f"ws://{host}:8088",
+        K3D_KEYCLOAK_URL="http://keycloak:8080", K3D_REALM_URL="http://keycloak:8080/realms/app",
+    )
+
+
+def application(operation, env):
+    # Placement follows the selected product checkout, not a shell mode or branch name.
+    name = "swift"
+    if env.get("DIR"):
+        path = Path(env["DIR"]).resolve()
+        if (path / "apps/control-plane/Cargo.toml").is_file():
+            name = "weaver"
+    run([str(ROOT / "bin/k3d-app.sh"), APP_OPERATIONS[operation]], app_environment(env, name))
+
+
+def existing_installation(env):
+    clusters = json.loads(run(["k3d", "cluster", "list", "-o", "json"], env, capture=True))
+    if not any(cluster["name"] == "fred" for cluster in clusters):
+        return set()
+    # An unreachable/stopped cluster is an error, never an empty installation.
+    # The operator can resume it with make k3d-start before asking for an update.
+    state = json.loads(run([*KUBE, "-n", "fred", "get", "configmap", STATE_NAME,
+                           "--ignore-not-found", "-o", "json"], env, capture=True) or "{}")
+    recorded = state.get("data", {}).get("installation")
+    if recorded is not None and recorded not in INSTALLATIONS:
+        raise ValueError("Unknown recorded installation; inspect fred-local-installation before proceeding.")
+    present = set(INSTALLATIONS[recorded]) if recorded else set()
+    # Recognize installations that predate this entry point, including failed Helm releases.
+    releases = json.loads(run(["helm", "--kube-context", "k3d-fred", "list", "-A", "--all",
+                              "--filter", "^fred-app$", "-o", "json"], env, capture=True))
+    for name, (namespace, *_rest) in APPLICATIONS.items():
+        if any(release["namespace"] == namespace for release in releases):
+            present.add(name)
+    namespace = run([*KUBE, "get", "namespace", "fred-weaver", "--ignore-not-found", "-o", "name"], env, capture=True)
+    if namespace.strip():
+        present.add("weaver")
+    return present
+
+
+def require_superset(requested, present):
+    if not present <= set(requested):
+        raise ValueError("The cluster already contains " + " + ".join(sorted(present)) +
+                         ". Use make k3d-up-migration, or explicitly wipe disposable data before choosing a solo installation.")
+
+
+def infrastructure_args(names):
+    return ["--set", "stack=base", "--set", "postgres.applicationBootstrap=false",
+            "--set", "openfga.enabled=" + ("true" if "swift" in names else "false")]
+
+
+def install(operation, env):
+    verb, installation = operation.removeprefix("k3d-").split("-", 1)
+    names = INSTALLATIONS[installation]
+    for tool in ("helm", "jq"):
+        if not shutil.which(tool):
+            raise ValueError(f"Missing prerequisite: {tool}")
+    if verb == "up":
+        for tool in ("k3d", "kubectl", "docker"):
+            if not shutil.which(tool):
+                raise ValueError(f"Missing prerequisite: {tool}")
+        require_superset(names, existing_installation(env))
+    # Infrastructure startup has no application checkout or model-key prerequisite.
+    args = infrastructure_args(names)
+    run(["helm", "lint", "k3d", *args], env)
+    run(["helm", "template", "fred-stack", "k3d", *args], env, capture=True)
+    if verb == "validate":
+        print("Infrastructure manifests rendered. No cluster changes.")
+        return
+    run(["make", "--no-print-directory", "-f", "k3d/infrastructure.mk", "up"],
+        dict(env, K3D_OPENFGA_ENABLED="true" if "swift" in names else "false"))
+    # Record infrastructure intent before preparing application boundaries.
+    state = {"apiVersion": "v1", "kind": "ConfigMap",
+             "metadata": {"name": STATE_NAME, "namespace": "fred"},
+             "data": {"installation": installation}}
+    run([*KUBE, "apply", "-f", "-"], env, body=json.dumps(state))
+    if "weaver" in names:
+        run([str(ROOT / "bin/k3d-instance")], app_environment(env, "weaver"))
+    print("Infrastructure is ready. Deploy applications separately with make k3d-app APP=fred DIR=...")
+
+
+def main():
+    if len(sys.argv) != 2 or sys.argv[1] not in OPERATIONS:
+        raise ValueError("Use make k3d-up-swift, k3d-up-weaver or k3d-up-migration; see make help.")
+    operation = sys.argv[1]
+    env = environment(application=operation in APP_OPERATIONS)
+    # Serialize public operations across factory checkouts for this OS user.
+    lock_path = Path(tempfile.gettempdir()) / f"fred-k3d-{os.getuid()}.lock"
+    descriptor = os.open(lock_path, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(descriptor, "w") as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise ValueError("Another local operation is running; wait for it to finish.") from None
+        if operation.startswith(("k3d-up-", "k3d-validate-")):
+            install(operation, env)
+        elif operation in APP_OPERATIONS:
+            application(operation, env)
+        elif operation == "k3d-wipe":
+            print("Deleting cluster fred and ALL its data (Swift, Weaver, S3, indexes, identities).", flush=True)
+            run(["k3d", "cluster", "delete", "fred"], env)
+            # Generated ingestion manifests can reference Secrets destroyed by the wipe.
+            cache = ROOT / ".cache/k3d-apps/fred"
+            if cache.exists():
+                shutil.rmtree(cache)
+        elif operation in {"k3d-start", "k3d-stop"}:
+            run(["k3d", "cluster", operation.removeprefix("k3d-"), "fred"], env)
+        elif operation == "k3d-status":
+            run([*KUBE, "get", "pods,svc", "-A"], env)
+        else:
+            run([str(ROOT / "bin/k3d-observe"), "health"], env)
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except subprocess.CalledProcessError as error:
+        sys.exit(f"Local operation stopped: {Path(error.cmd[0]).name} exited {error.returncode}. No automatic wipe; inspect the error above. If the cluster is stopped, use make k3d-start.")
+    except (OSError, ValueError) as error:
+        sys.exit(str(error))
+    except KeyboardInterrupt:
+        sys.exit("Interrupted. Inspect the installation before retrying; an interrupted wipe may already have deleted data.")

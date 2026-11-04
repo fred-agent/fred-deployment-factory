@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-# Run by `make k3d-app APP=fred` before the sync. Read-only: the model key is the
+# Run by the internal Fred application engine before the sync. Read-only: the model key is the
 # operator's, in a Secret created before the deployment, as in production. Without
 # it the pods would wait for it until the sync times out; stop now and say how.
 : "${KUBE_CONTEXT:?factory must provide the explicit k3d context}"

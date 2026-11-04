@@ -1,6 +1,16 @@
 .DEFAULT_GOAL := help
 SHELL := /bin/bash
 
+LOCAL_COMMANDS := k3d-up-swift k3d-up-weaver k3d-up-migration k3d-validate-swift k3d-validate-weaver k3d-validate-migration k3d-start k3d-stop k3d-status k3d-health k3d-wipe
+ifneq ($(filter $(LOCAL_COMMANDS),$(MAKECMDGOALS)),)
+ifneq ($(words $(MAKECMDGOALS)),1)
+$(error Run one local operation at a time)
+endif
+ifneq ($(strip $(MAKEOVERRIDES)),)
+$(error Local commands take no variable overrides. Use k3d-app APP=fred DIR=... for application deployment)
+endif
+endif
+
 DOCKER_COMPOSE_BASE := docker compose -f docker/docker-compose-
 
 # `make docker-up` has exactly one mode: a fresh, empty deployment (empty
@@ -10,13 +20,12 @@ DOCKER_COMPOSE_BASE := docker compose -f docker/docker-compose-
 # fork and no demo-seeding knob — identity and role provisioning are owned by
 # fred/control-plane-backend, not this repo.
 
-# STACK selects which services are launched (Docker Compose and Helm):
+# STACK selects Docker Compose services only; k3d has one fixed service set:
 #   base (default) → minimal stack: drops ClickHouse, Langfuse (+ its Redis),
 #                    and, on Docker only, Prometheus and Grafana (k3d keeps its
 #                    observability: Prometheus, Grafana, Fluent Bit)
 #   extended       → the full stack (everything)
 STACK ?= base
-export STACK
 ifeq ($(filter $(STACK),base extended),)
 $(error Invalid STACK '$(STACK)'. Use STACK=base or STACK=extended)
 endif
@@ -47,97 +56,39 @@ endif
 # is worse than an over-stopped one.
 DOCKER_ALL_PROJECTS := postgres keycloak $(DOCKER_REST_PROJECTS_BASE) $(DOCKER_REST_PROJECTS_EXTENDED)
 
-# Keep the existing cluster and URLs when ENV is omitted.
-ENV ?= swift
-ifeq ($(filter $(ENV),swift secondary),)
-$(error Invalid ENV '$(ENV)'. Use ENV=swift or ENV=secondary)
-endif
-include k3d/environments/$(ENV).env
-export ENV K3D_CLUSTER K3D_KEYCLOAK_HOST
-export $(filter K3D_HOST_%,$(.VARIABLES))
-KUBE_CONTEXT := k3d-$(K3D_CLUSTER)
-INSTANCE ?= default
-export INSTANCE
-K3D_INFRA_NAMESPACE ?= fred
-K3D_NAMESPACE ?= $(if $(filter weaver,$(INSTANCE)),fred-weaver,$(K3D_INFRA_NAMESPACE))
-export K3D_INFRA_NAMESPACE
-ifneq ($(INSTANCE),default)
-ifneq ($(filter k3d-create k3d-up k3d-down k3d-uninstall k3d-delete k3d-wipe k3d-redeploy,$(MAKECMDGOALS)),)
-$(error Infrastructure commands require INSTANCE=default; INSTANCE selects an application only)
-endif
-endif
-export KUBE_CONTEXT K3D_NAMESPACE
-KUBECTL := kubectl --context "$(KUBE_CONTEXT)"
-HELM := helm --kube-context "$(KUBE_CONTEXT)"
-HELM_RELEASE ?= fred-stack
-HELM_CHART_DIR ?= ./k3d
-HELM_TIMEOUT ?= 20m
-HELM_HISTORY_MAX ?= 10
-IMAGE_REGISTRY_HOST ?= registry-1.docker.io
-K3D_PREFETCH_IMAGES ?= true
-# k3s nodes pull their own system images (coredns, traefik, ...) when the cluster
-# is created; copying them from the host again only adds downloads.
-K3D_PREFETCH_SYSTEM_IMAGES ?= false
-IMAGE_PULL_RETRIES ?= 3
-IMAGE_PULL_RETRY_DELAY ?= 5
-K3D_USE_CILIUM ?= false
-CILIUM_VERSION ?= 1.16.5
-# Mount a host CA bundle into k3d nodes — required in corporate SSL-inspection environments (e.g. Zscaler).
-# Set to your system CA bundle, e.g.: K3D_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
-K3D_CA_BUNDLE ?=
-ifneq ($(K3D_CA_BUNDLE),)
-K3D_CA_VOLUME_ARG := --volume $(K3D_CA_BUNDLE):/etc/ssl/certs/ca-certificates.crt@server:* --volume $(K3D_CA_BUNDLE):/etc/ssl/certs/ca-certificates.crt@agent:*
-else
-K3D_CA_VOLUME_ARG :=
-endif
-
-# Keep the existing environment defaults; either capability is explicitly overridable.
-K3D_OPENFGA_ENABLED ?= $(if $(filter secondary,$(ENV)),false,true)
-K3D_POSTGRES_APPLICATION_BOOTSTRAP ?= $(if $(filter secondary,$(ENV)),true,false)
-
-# One set of values for lint, prefetch rendering and the actual infrastructure release.
-K3D_HELM_VALUES = --set stack=$(STACK) --set-string host.fqdn="$(K3D_HOST_NAME)" \
-	--set-string keycloak.hostname="$(K3D_KEYCLOAK_HOST)" --set keycloak.publicPort=$(K3D_HOST_PORT_KEYCLOAK) \
-	--set host.frontendPort=$(K3D_HOST_PORT_FRONTEND) --set host.dashboardsPort=$(K3D_HOST_PORT_OPENSEARCH_DASHBOARDS) \
-	--set temporal.uiPort=$(K3D_HOST_PORT_TEMPORAL_UI) \
-	--set postgres.applicationBootstrap=$(K3D_POSTGRES_APPLICATION_BOOTSTRAP) \
-	--set openfga.enabled=$(K3D_OPENFGA_ENABLED)
-
-# Kubelet disk thresholds in absolute sizes. The defaults are percentages of the
-# host disk (image GC above 85% used, eviction under 15% free): on a developer
-# laptop with a well-filled large disk they delete prefetched images and evict
-# pods although hundreds of GiB are free.
-K3D_KUBELET_DISK_ARGS := \
-	--k3s-arg "--kubelet-arg=image-gc-high-threshold=100@server:*;agent:*" \
-	--k3s-arg "--kubelet-arg=image-gc-low-threshold=99@server:*;agent:*" \
-	--k3s-arg "--kubelet-arg=eviction-hard=memory.available<100Mi,nodefs.available<2Gi,imagefs.available<2Gi,nodefs.inodesFree<5%,imagefs.inodesFree<5%@server:*;agent:*"
-
-K3D_CLUSTER_CREATE_BASE_ARGS := \
-	--kubeconfig-switch-context=false \
-	--servers 1 \
-	--agents 1 \
-	--wait \
-	$(K3D_KUBELET_DISK_ARGS) \
-	-p "$(K3D_HOST_PORT_POSTGRES):30432@server:0" \
-	-p "$(K3D_HOST_PORT_KEYCLOAK):30080@server:0" \
-	-p "$(K3D_HOST_PORT_SEAWEEDFS_S3):30833@server:0" \
-	-p "$(K3D_HOST_PORT_CLICKHOUSE_HTTP):30823@server:0" \
-	-p "$(K3D_HOST_PORT_CLICKHOUSE_NATIVE):30902@server:0" \
-	-p "$(K3D_HOST_PORT_OPENSEARCH):30920@server:0" \
-	-p "$(K3D_HOST_PORT_OPENSEARCH_DASHBOARDS):30561@server:0" \
-	-p "$(K3D_HOST_PORT_OPENFGA_HTTP):30908@server:0" \
-	-p "$(K3D_HOST_PORT_OPENFGA_GRPC):30981@server:0" \
-	-p "$(K3D_HOST_PORT_TEMPORAL_FRONTEND):30723@server:0" \
-	-p "$(K3D_HOST_PORT_TEMPORAL_UI):30233@server:0" \
-	-p "$(K3D_HOST_PORT_PROMETHEUS):30090@server:0" \
-	-p "$(K3D_HOST_PORT_GRAFANA):30300@server:0" \
-	-p "$(K3D_HOST_PORT_FRONTEND):80@server:0"
-
 ##@ Help
 help: ## Show this help message
 	@awk 'BEGIN {FS = ":.*##"; printf "\n\033[1mAvailable targets:\033[0m\n"} /^[a-zA-Z0-9_-]+:.*?##/ { printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2 } /^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5) }' $(MAKEFILE_LIST)
 
-##@ Docker
+##@ Local k3d infrastructure
+k3d-up-swift: ## Prepare COTS for Swift; no application build or deployment
+k3d-up-weaver: ## Prepare COTS for Weaver; no application build or deployment
+k3d-up-migration: ## Prepare shared COTS for Swift + Weaver; no application deployment
+k3d-validate-swift: ## Render Swift infrastructure only; no cluster changes
+k3d-validate-weaver: ## Render Weaver infrastructure only; no cluster changes
+k3d-validate-migration: ## Render migration infrastructure only; no cluster changes
+k3d-start: ## Resume the existing cluster; preserve data
+k3d-stop: ## Stop the cluster; preserve data
+k3d-status: ## Show both application namespaces
+k3d-health: ## Inspect the collected logs, events and health
+k3d-wipe: ## DELETE cluster fred and ALL its data; checkouts remain untouched
+k3d-up-swift k3d-up-weaver k3d-up-migration k3d-validate-swift k3d-validate-weaver k3d-validate-migration k3d-start k3d-stop k3d-status k3d-health k3d-wipe:
+	@bin/k3d-local $@
+
+##@ k3d applications (separate from infrastructure)
+k3d-app: ## Deploy one application: APP=fred DIR=/path/to/checkout (or RELEASE=version)
+k3d-app-validate: ## Render one application: APP=fred DIR=/path/to/checkout; no deployment
+k3d-app-uninstall: ## Uninstall the selected application: APP=fred DIR=/path/to/checkout
+k3d-app k3d-app-validate k3d-app-uninstall:
+	@bin/k3d-local $@
+
+# Retired commands fail; they are not aliases for another configuration surface.
+k3d-%:
+	@echo 'Removed command. Use make k3d-up-swift, k3d-up-weaver or k3d-up-migration; see make help.' >&2
+	@exit 2
+
+##@ Docker (separate legacy tools)
+docker-up docker-start docker-stop preflight-check: export STACK := $(STACK)
 network-create:
 	@echo "Creating 'fred-shared-network'..."
 	docker network create fred-shared-network --driver bridge || echo "Network already exists or error occurred."
@@ -334,273 +285,6 @@ keycloak-token-normal: ## Local Docker: set browser and agentic M2M access token
 keycloak-token-status: ## Local Docker: show browser and agentic M2M access token lifetimes
 	bash local-testing/scripts/keycloak-token-lifetime.sh status
 
-##@ k3d
-k3d-env: ## Show the selected cluster, URLs and browser DNS setup (ENV=swift by default)
-	@source bin/k3d-environment.sh; \
-	printf 'ENV=%s  context=%s  namespace=%s\n' "$$ENV" "$$KUBE_CONTEXT" "$$K3D_NAMESPACE"; \
-	printf 'Fred: %s\nKeycloak: %s\n' "$$K3D_PUBLIC_URL" "$$K3D_KEYCLOAK_URL"; \
-	printf 'Temporal: http://%s:%s\nGrafana: http://%s:%s\n' "$$K3D_HOST_NAME" "$$K3D_HOST_PORT_TEMPORAL_UI" "$$K3D_HOST_NAME" "$$K3D_HOST_PORT_GRAFANA"; \
-	printf 'OpenSearch Dashboards: http://%s:%s\n' "$$K3D_HOST_NAME" "$$K3D_HOST_PORT_OPENSEARCH_DASHBOARDS"; \
-	printf 'Local DNS (/etc/hosts): 127.0.0.1 %s %s\n' "$$K3D_HOST_NAME" "$$K3D_KEYCLOAK_HOST"
-
-k3d-create: k3d-disk-check ## Create a local k3d cluster (set K3D_USE_CILIUM=true for air-gap/Cilium policies)
-	@set -euo pipefail; \
-		c_step='\033[1;34m'; c_ok='\033[1;32m'; c_warn='\033[1;33m'; c_err='\033[1;31m'; c_info='\033[0;36m'; c_reset='\033[0m'; \
-		step() { printf "%b[STEP]%b %s\n" "$$c_step" "$$c_reset" "$$1"; }; \
-		ok() { printf "%b[OK]%b %s\n" "$$c_ok" "$$c_reset" "$$1"; }; \
-		warn() { printf "%b[WARN]%b %s\n" "$$c_warn" "$$c_reset" "$$1"; }; \
-		info() { printf "%b[INFO]%b %s\n" "$$c_info" "$$c_reset" "$$1"; }; \
-		fail() { local msg="$$1"; local rc="$${2:-1}"; printf "%b[FAIL]%b %s\n" "$$c_err" "$$c_reset" "$$msg"; exit "$$rc"; }; \
-		run_step() { local title="$$1"; shift; step "$$title"; if "$$@"; then ok "$$title"; else local rc=$$?; fail "$$title (exit $$rc)" "$$rc"; fi; }; \
-	command -v k3d >/dev/null 2>&1 || fail "k3d is required"; \
-	mkdir -p .cache; exec 9>.cache/k3d-create.lock; flock 9; \
-	if k3d cluster get "$(K3D_CLUSTER)" >/dev/null 2>&1; then \
-	  info "Cluster '$(K3D_CLUSTER)' already exists, skipping creation."; \
-	  exit 0; \
-	fi; \
-	if [ "$(K3D_USE_CILIUM)" = "true" ] || [ "$(K3D_USE_CILIUM)" = "1" ]; then \
-	  command -v cilium >/dev/null 2>&1 || fail "cilium CLI is required when K3D_USE_CILIUM=true"; \
-	  run_step "Create k3d cluster '$(K3D_CLUSTER)' (Cilium-ready networking)" \
-	    k3d cluster create "$(K3D_CLUSTER)" \
-	    $(K3D_CLUSTER_CREATE_BASE_ARGS) \
-	    $(K3D_CA_VOLUME_ARG) \
-	    --k3s-arg '--flannel-backend=none@server:*' \
-	    --k3s-arg '--disable-network-policy@server:*'; \
-	  run_step "Install Cilium $(CILIUM_VERSION)" cilium --context "$(KUBE_CONTEXT)" install --version "$(CILIUM_VERSION)"; \
-	  run_step "Wait for Cilium readiness" cilium --context "$(KUBE_CONTEXT)" status --wait --wait-duration 5m; \
-	else \
-	  run_step "Create k3d cluster '$(K3D_CLUSTER)' (default k3s networking)" \
-	    k3d cluster create "$(K3D_CLUSTER)" \
-	    $(K3D_CLUSTER_CREATE_BASE_ARGS) \
-	    $(K3D_CA_VOLUME_ARG); \
-	fi
-
-k3d-up: k3d-create ## Deploy infrastructure into the selected cluster (ENV=swift or ENV=secondary)
-	@set -euo pipefail; \
-		c_step='\033[1;34m'; c_ok='\033[1;32m'; c_warn='\033[1;33m'; c_err='\033[1;31m'; c_info='\033[0;36m'; c_reset='\033[0m'; \
-		step() { printf "%b[STEP]%b %s\n" "$$c_step" "$$c_reset" "$$1"; }; \
-		ok() { printf "%b[OK]%b %s\n" "$$c_ok" "$$c_reset" "$$1"; }; \
-		warn() { printf "%b[WARN]%b %s\n" "$$c_warn" "$$c_reset" "$$1"; }; \
-		info() { printf "%b[INFO]%b %s\n" "$$c_info" "$$c_reset" "$$1"; }; \
-		fail() { local msg="$$1"; local rc="$${2:-1}"; printf "%b[FAIL]%b %s\n" "$$c_err" "$$c_reset" "$$msg"; exit "$$rc"; }; \
-		run_step() { local title="$$1"; shift; step "$$title"; if "$$@"; then ok "$$title"; else local rc=$$?; fail "$$title (exit $$rc)" "$$rc"; fi; }; \
-		helm_pid=""; \
-		on_interrupt() { \
-		  warn "Interrupted (Ctrl+C). Stopping running subprocesses..."; \
-		  if [ -n "$$helm_pid" ] && kill -0 "$$helm_pid" >/dev/null 2>&1; then \
-		    kill "$$helm_pid" >/dev/null 2>&1 || true; \
-		    wait "$$helm_pid" >/dev/null 2>&1 || true; \
-		  fi; \
-		  exit 130; \
-		}; \
-		trap on_interrupt INT TERM; \
-	command -v helm >/dev/null 2>&1 || fail "helm is required"; \
-	command -v kubectl >/dev/null 2>&1 || fail "kubectl is required"; \
-	command -v docker >/dev/null 2>&1 || fail "docker is required"; \
-	command -v k3d >/dev/null 2>&1 || fail "k3d is required"; \
-	if docker ps --format '{{.Names}}' | grep -Eq '^k3d-$(K3D_CLUSTER)-server-0$$'; then \
-	  info "Cluster '$(K3D_CLUSTER)' is already running."; \
-	else \
-	  run_step "Start k3d cluster '$(K3D_CLUSTER)'" \
-	    k3d cluster start "$(K3D_CLUSTER)"; \
-	fi; \
-	info "Environment $(ENV): context $(KUBE_CONTEXT), namespace $(K3D_NAMESPACE)"; \
-	if [ "$(K3D_PREFETCH_IMAGES)" = "true" ] || [ "$(K3D_PREFETCH_IMAGES)" = "1" ]; then \
-	  step "Resolve chart images from $(HELM_CHART_DIR)"; \
-	  helm_images=(); \
-	  while IFS= read -r image; do \
-	    [ -n "$$image" ] && helm_images+=("$$image"); \
-	  done < <($(HELM) template "$(HELM_RELEASE)" "$(HELM_CHART_DIR)" $(K3D_HELM_VALUES) | awk '/image:[[:space:]]*/ {print $$2}' | tr -d '"' | sort -u); \
-	  if [ "$${#helm_images[@]}" -eq 0 ]; then \
-	    fail "No images found in chart template for prefetch."; \
-	  fi; \
-	  ok "Resolve chart images from $(HELM_CHART_DIR) ($${#helm_images[@]} images)"; \
-	  all_images=("$${helm_images[@]}"); \
-	  if [ "$(K3D_PREFETCH_SYSTEM_IMAGES)" = "true" ] || [ "$(K3D_PREFETCH_SYSTEM_IMAGES)" = "1" ]; then \
-	    step "Resolve kube-system images"; \
-	    k3s_system_images=(); \
-	    while IFS= read -r image; do \
-	      [ -n "$$image" ] && k3s_system_images+=("$$image"); \
-	    done < <($(KUBECTL) get deploy,daemonset -n kube-system -o jsonpath='{..image}' 2>/dev/null | tr -s '[:space:]' '\n' | sed '/^$$/d' | sort -u || true); \
-	    if [ "$${#k3s_system_images[@]}" -gt 0 ]; then \
-	      ok "Resolve kube-system images ($${#k3s_system_images[@]} images)"; \
-	      merged_images=(); \
-	      while IFS= read -r image; do \
-	        [ -n "$$image" ] && merged_images+=("$$image"); \
-	      done < <(printf "%s\n" "$${all_images[@]}" "$${k3s_system_images[@]}" | sed '/^$$/d' | sort -u); \
-	      all_images=("$${merged_images[@]}"); \
-	      ok "Prepared prefetch image set ($${#all_images[@]} unique images)"; \
-	    else \
-	      warn "Could not resolve kube-system images; continuing with chart images only."; \
-	    fi; \
-	  fi; \
-	  run_step "Prefetch $${#all_images[@]} images into k3d cluster $(K3D_CLUSTER)" \
-	    env IMAGE_PULL_RETRIES="$(IMAGE_PULL_RETRIES)" IMAGE_PULL_RETRY_DELAY="$(IMAGE_PULL_RETRY_DELAY)" \
-	    bin/k3d-prefetch-images.sh "$(K3D_CLUSTER)" "$${all_images[@]}"; \
-	else \
-	  k3d_server_container="$$(docker ps --format '{{.Names}}' | awk '$$0 ~ /^k3d-$(K3D_CLUSTER)-server-0$$/ {print; exit}')"; \
-	  if [ -n "$$k3d_server_container" ]; then \
-	    step "Preflight: DNS resolution from $$k3d_server_container to $(IMAGE_REGISTRY_HOST)"; \
-	    if docker exec "$$k3d_server_container" sh -lc "nslookup $(IMAGE_REGISTRY_HOST) >/dev/null 2>&1"; then \
-	      ok "Preflight: DNS resolution from $$k3d_server_container to $(IMAGE_REGISTRY_HOST)"; \
-	    else \
-	      warn "DNS preflight failed in $$k3d_server_container. Current /etc/resolv.conf:"; \
-	      docker exec "$$k3d_server_container" cat /etc/resolv.conf || true; \
-	      fail "k3d node cannot resolve $(IMAGE_REGISTRY_HOST). Enable K3D_PREFETCH_IMAGES=true (default) or fix Docker DNS and recreate cluster."; \
-	    fi; \
-	  else \
-	    warn "Could not find k3d server container for DNS preflight; continuing."; \
-	  fi; \
-	fi; \
-	run_step "Recover release $(HELM_RELEASE) if an earlier run left it pending or failed" \
-	  bin/k3d-helm-recover.sh "$(HELM_RELEASE)" "$(K3D_NAMESPACE)" "$(HELM_TIMEOUT)"; \
-	run_step "Validate Helm chart $(HELM_CHART_DIR)" \
-	  $(HELM) lint "$(HELM_CHART_DIR)" $(K3D_HELM_VALUES); \
-		if $(HELM) upgrade --help | grep -q -- "--rollback-on-failure"; then \
-		  rollback_flag="--rollback-on-failure"; \
-		else \
-		  rollback_flag="--atomic"; \
-		fi; \
-		step "Deploy Helm release '$(HELM_RELEASE)' into namespace '$(K3D_NAMESPACE)'"; \
-		$(HELM) upgrade --install "$(HELM_RELEASE)" "$(HELM_CHART_DIR)" \
-		  --namespace "$(K3D_NAMESPACE)" \
-		  --create-namespace \
-		  $(K3D_HELM_VALUES) \
-		  --wait \
-		  --wait-for-jobs \
-		  "$$rollback_flag" \
-		  --history-max "$(HELM_HISTORY_MAX)" \
-		  --timeout "$(HELM_TIMEOUT)" & \
-		helm_pid=$$!; \
-		helm_wait_secs=0; \
-		while kill -0 "$$helm_pid" >/dev/null 2>&1; do \
-		  sleep 10; \
-		  helm_wait_secs=$$((helm_wait_secs + 10)); \
-		  pods_ready="$$($(KUBECTL) get pods -n "$(K3D_NAMESPACE)" --no-headers 2>/dev/null | awk '{total+=1; split($$2,a,"/"); if (a[1]==a[2]) ready+=1} END {if (total==0) print "0/0"; else printf "%d/%d", ready, total}' || true)"; \
-		  jobs_done="$$($(KUBECTL) get jobs -n "$(K3D_NAMESPACE)" --no-headers 2>/dev/null | awk '{total+=1; split($$2,a,"/"); if (a[1]==a[2]) done+=1} END {if (total==0) print "0/0"; else printf "%d/%d", done, total}' || true)"; \
-		  [ -n "$$pods_ready" ] || pods_ready="0/0"; \
-		  [ -n "$$jobs_done" ] || jobs_done="0/0"; \
-		  info "Helm in progress ($${helm_wait_secs}s elapsed) - pods ready: $$pods_ready, jobs complete: $$jobs_done"; \
-		  if [ $$((helm_wait_secs % 40)) -eq 0 ]; then \
-		    $(KUBECTL) get pods -n "$(K3D_NAMESPACE)" --no-headers 2>/dev/null | awk 'NR<=8 {printf "  - %s: %s (%s)\n", $$1, $$3, $$2}' || true; \
-		  fi; \
-		done; \
-		rc=0; \
-		if wait "$$helm_pid"; then \
-		  rc=0; \
-		else \
-		  rc=$$?; \
-		fi; \
-		if [ "$$rc" -eq 0 ]; then \
-		  ok "Deploy Helm release '$(HELM_RELEASE)' into namespace '$(K3D_NAMESPACE)'"; \
-		else \
-		  printf "%b[FAIL]%b Deploy Helm release '%s' into namespace '%s' (exit %s)\n" "$$c_err" "$$c_reset" "$(HELM_RELEASE)" "$(K3D_NAMESPACE)" "$$rc"; \
-		  warn "Collecting diagnostics from namespace '$(K3D_NAMESPACE)'"; \
-		  $(KUBECTL) get pods -n "$(K3D_NAMESPACE)" -o wide || true; \
-	  $(KUBECTL) get jobs -n "$(K3D_NAMESPACE)" || true; \
-	  $(KUBECTL) get events -n "$(K3D_NAMESPACE)" --sort-by=.metadata.creationTimestamp | tail -n 40 || true; \
-	  $(HELM) status "$(HELM_RELEASE)" -n "$(K3D_NAMESPACE)" || true; \
-	  fail "Helm deployment failed. Review diagnostics above." "$$rc"; \
-	fi; \
-	run_step "Show namespace status $(K3D_NAMESPACE)" \
-	  $(KUBECTL) get pods,svc -n "$(K3D_NAMESPACE)"
-
-##@ k3d: applications (k3d-apps/<APP>/ here, or a repository's deploy/k3d/; bin/k3d-app.sh)
-# APP: an application defined in k3d-apps/ (fred, fred-evaluator): its published release,
-# RELEASE=<version> or the one its helmfile pins; with DIR, built from that checkout instead.
-# DIR alone: a checkout with deploy/k3d/helmfile.yaml.gotmpl, or that directory itself.
-# VALUES: extra values files applied last to every release (space-separated).
-# FRED_LIBS: pypi (released fred libraries and charts) or local (the fred checkout at
-# FRED_REPO, required then, no default): docs/LOCAL-DEVELOPMENT.md → "Work on unreleased fred".
-APP ?=
-RELEASE ?=
-DIR ?=
-VALUES ?=
-FRED_LIBS ?= pypi
-FRED_REPO ?=
-K3D_APP_ENV = APP="$(APP)" RELEASE="$(RELEASE)" DIR="$(DIR)" VALUES="$(VALUES)" FRED_LIBS="$(FRED_LIBS)" FRED_REPO="$(FRED_REPO)" \
-	K3D_CLUSTER="$(K3D_CLUSTER)" K3D_NAMESPACE="$(K3D_NAMESPACE)" \
-	HELM_TIMEOUT="$(HELM_TIMEOUT)" K3D_HOST_PORT_FRONTEND="$(K3D_HOST_PORT_FRONTEND)" \
-	K3D_HOST_PORT_GRAFANA="$(K3D_HOST_PORT_GRAFANA)" K3D_HOST_PORT_KEYCLOAK="$(K3D_HOST_PORT_KEYCLOAK)" \
-	K3D_HOST_PORT_OPENSEARCH="$(K3D_HOST_PORT_OPENSEARCH)"
-
-k3d-app: k3d-disk-check ## Deploy an application on k3d: make k3d-app APP=fred [RELEASE=x.y.z | DIR=../fred]; rerun after any change
-	@$(K3D_APP_ENV) bin/k3d-app.sh deploy
-
-k3d-disk-check: ## Check the free disk space for k3d (run by k3d-create, k3d-up and k3d-app); never cleans
-	@bin/k3d-disk-check.sh
-
-k3d-app-validate: ## Lint and render an application's releases, no build, no cluster change: make k3d-app-validate APP=fred
-	@$(K3D_APP_ENV) bin/k3d-app.sh validate
-
-k3d-app-uninstall: ## Remove an application's releases; their data stays in the infrastructure: make k3d-app-uninstall APP=fred
-	@$(K3D_APP_ENV) bin/k3d-app.sh uninstall
-
-k3d-health: ## What needs attention on k3d: pods, events, errors, 5xx, degraded features, targets, workflows (bin/k3d-observe)
-	@bin/k3d-observe health
-
-##@ k3d service targets
-k3d-instance: ## Prepare the isolated Weaver namespace/database on existing infrastructure: INSTANCE=weaver
-	@source bin/k3d-environment.sh; bin/k3d-instance
-
-k3d-restart: ## Restart a k3d component: make k3d-restart COMPONENT=temporal
-	@test -n "$(COMPONENT)" || (echo "ERROR: COMPONENT is required. Usage: make k3d-restart COMPONENT=<name>"; exit 1)
-	$(KUBECTL) rollout restart statefulset/$(COMPONENT) -n "$(K3D_NAMESPACE)" 2>/dev/null || \
-		$(KUBECTL) rollout restart deployment/$(COMPONENT) -n "$(K3D_NAMESPACE)"
-
-k3d-redeploy: ## Restart a k3d component and re-run its post-install job: make k3d-redeploy COMPONENT=keycloak
-	@test -n "$(COMPONENT)" || (echo "ERROR: COMPONENT is required. Usage: make k3d-redeploy COMPONENT=<name>"; exit 1)
-	$(KUBECTL) delete job $(COMPONENT)-post-install -n "$(K3D_NAMESPACE)" --ignore-not-found
-	$(KUBECTL) rollout restart statefulset/$(COMPONENT) -n "$(K3D_NAMESPACE)" 2>/dev/null || \
-		$(KUBECTL) rollout restart deployment/$(COMPONENT) -n "$(K3D_NAMESPACE)"
-	$(MAKE) k3d-up
-
-k3d-logs: ## Show logs for a service: make k3d-logs SVC=keycloak-post-install
-	@if [ -z "$(SVC)" ]; then echo "Usage: make k3d-logs SVC=<name>"; exit 1; fi
-	@$(KUBECTL) logs -n "$(K3D_NAMESPACE)" -l app=$(SVC) --tail=100 2>/dev/null || \
-		$(KUBECTL) logs -n "$(K3D_NAMESPACE)" job/$(SVC) --tail=100 2>/dev/null || \
-		echo "No logs found for '$(SVC)'"
-
-k3d-uninstall: ## Uninstall the Helm release from k3d namespace
-	@echo "Removing Helm release '$(HELM_RELEASE)' from context '$(KUBE_CONTEXT)', namespace '$(K3D_NAMESPACE)'..."
-	-$(HELM) uninstall "$(HELM_RELEASE)" -n "$(K3D_NAMESPACE)"
-
-k3d-down: ## Turn off the k3d containers to release publicly allocated ports
-	@echo "Turning the k3d cluster '$(K3D_CLUSTER)' down, and stopping k3d docker containers"
-	-k3d cluster stop '$(K3D_CLUSTER)'
-
-k3d-delete: ## Delete the k3d cluster
-	@echo "Deleting k3d cluster '$(K3D_CLUSTER)'..."
-	@mkdir -p .cache
-	-flock .cache/k3d-create.lock k3d cluster delete "$(K3D_CLUSTER)"
-
-k3d-wipe: ## Full k3d reset (uninstall Helm release and delete cluster)
-	@echo -e "\n--- K3D WIPE IN PROGRESS ---"
-	@$(MAKE) k3d-uninstall
-	@$(MAKE) k3d-delete
-	@echo -e "\n--- K3D WIPE COMPLETE ---"
-
-k3d-status: ## Show pods and services in the selected environment
-	@echo "Environment: $(ENV), context: $(KUBE_CONTEXT), namespace: $(K3D_NAMESPACE)"
-	$(KUBECTL) get pods,svc -n "$(K3D_NAMESPACE)"
-
-k3d-airgap-on: ## Enable air-gap mode (block internet except OpenAI API)
-	@if ! $(KUBECTL) get crd ciliumnetworkpolicies.cilium.io >/dev/null 2>&1; then echo "Cilium CRDs not found; recreate with K3D_USE_CILIUM=true to use air-gap targets."; exit 1; fi
-	@echo "🔒 Enabling air-gap mode in namespace '$(K3D_NAMESPACE)'..."
-	$(KUBECTL) apply -f k3d/policies/cilium-airgap-policy.yaml
-	@echo "Air-gap enabled. Only cluster-internal traffic and api.openai.com:443 are allowed."
-
-k3d-airgap-off: ## Disable air-gap mode (restore full internet access)
-	@if ! $(KUBECTL) get crd ciliumnetworkpolicies.cilium.io >/dev/null 2>&1; then echo "Cilium CRDs not found; nothing to disable."; exit 0; fi
-	@echo "🔓 Disabling air-gap mode in namespace '$(K3D_NAMESPACE)'..."
-	-$(KUBECTL) delete -f k3d/policies/cilium-airgap-policy.yaml
-	@echo "Air-gap disabled. Full internet access restored."
-
-k3d-airgap-status: ## Show active Cilium network policies
-	@if ! $(KUBECTL) get crd ciliumnetworkpolicies.cilium.io >/dev/null 2>&1; then echo "Cilium CRDs not found; no Cilium policies available."; exit 0; fi
-	@echo "📊 CiliumNetworkPolicies in namespace '$(K3D_NAMESPACE)':"
-	$(KUBECTL) get ciliumnetworkpolicies -n "$(K3D_NAMESPACE)"
-
 ##@ Checkpoints
 checkpoint-save: ## Save current Docker stack state as a named checkpoint (NAME=<name> required)
 	@test -n "$(NAME)" || (echo "ERROR: NAME is required. Usage: make checkpoint-save NAME=<name>"; exit 1)
@@ -658,7 +342,7 @@ BRANCH ?= swift
 ecosystem-audit: ## Do the sibling checkouts agree on Fred's libraries? Branch, constraints, locks, npm: make ecosystem-audit [BRANCH=swift]
 	@bin/ecosystem-audit --branch "$(BRANCH)" --fetch
 
-.PHONY: k3d-instance k3d-env k3d-health help network-create env-setup keycloak-post-install postgres-up keycloak-up seaweedfs-up opensearch-up clickhouse-up langfuse-up prometheus-up grafana-up temporal-up preflight-check docker-up docker-start docker-stop docker-down all-down docker-wipe docker-destroy k3d-create k3d-up k3d-restart k3d-redeploy k3d-logs k3d-down k3d-uninstall k3d-delete k3d-wipe k3d-status k3d-app k3d-disk-check k3d-app-validate k3d-app-uninstall k3d-airgap-on k3d-airgap-off k3d-airgap-status checkpoint-save checkpoint-restore docker-restart-from-checkpoint checkpoint-list checkpoint-delete check-pure-infrastructure ecosystem-audit keycloak-token-short keycloak-token-normal keycloak-token-status
+.PHONY: help network-create env-setup keycloak-post-install postgres-up keycloak-up seaweedfs-up opensearch-up clickhouse-up langfuse-up prometheus-up grafana-up temporal-up preflight-check docker-up docker-start docker-stop docker-down all-down docker-wipe docker-destroy checkpoint-save checkpoint-restore docker-restart-from-checkpoint checkpoint-list checkpoint-delete check-pure-infrastructure ecosystem-audit keycloak-token-short keycloak-token-normal keycloak-token-status
 
 ##@ Optional ZITADEL identity-provider test
 ZITADEL_COMPOSE = docker compose --env-file docker/zitadel/.env -f docker/zitadel/compose.yaml -p fred-zitadel
@@ -680,3 +364,5 @@ zitadel-status: ## Show ZITADEL containers
 zitadel-configure: zitadel-up ## Provision SPA/services and generate complete Fred configs
 	@set -eu; umask 077; mkdir -p docker/zitadel/state; $(ZITADEL_COMPOSE) cp api:/bootstrap/operator.pat docker/zitadel/state/operator.pat; chmod 600 docker/zitadel/state/operator.pat
 	/usr/bin/python3 docker/zitadel/provision.py --fred-root "$(SWIFT_SRC)" --output-dir "$(FRED_IDP_CONFIG_DIR)"
+
+.PHONY: k3d-app k3d-app-validate k3d-app-uninstall k3d-up-swift k3d-up-weaver k3d-up-migration k3d-validate-swift k3d-validate-weaver k3d-validate-migration k3d-start k3d-stop k3d-status k3d-health k3d-wipe

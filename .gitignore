@@ -49,3 +49,6 @@ config/fredlab-keycloak-identity.local.json
 /docker/zitadel/.env
 /docker/zitadel/state/
 /.cache/
+
+# Operator source locations (not a second deployment selector).
+/local-checkouts.json

@@ -1,6 +1,6 @@
 # What Fred serves on this instance: the applications and Knowledge Bases registered
 # with it (docs/LOCAL-DEVELOPMENT.md → "Registering with Fred"). Each one's own
-# registration.yaml, stored in the cluster by `make k3d-app`, reaches this file through
+# registration.yaml, stored in the cluster by the internal application engine, reaches this file through
 # K3D_REGISTRATIONS (a JSON object, registration name → registration.yaml text).
 #
 # A registration.yaml is a Fred values file holding only `registrations`, the shape the
@@ -8,15 +8,12 @@
 # registered twice. An earlier chart takes lists, which Helm replaces, so for it this
 # file builds them whole, and no other values file holds them: application_sources,
 # FRONTEND_APPLICATIONS_JSON (each application's `gateway`) and
-# knowledge_bases.publishers. The secondary environment runs Fred alone: nothing is
-# registered. Registration alone grants nothing: a platform admin enables an
+# knowledge_bases.publishers. Registration alone grants nothing: a platform admin enables an
 # application or a Knowledge Base per team (Admin > Features).
 {{- $apps := dict }}
 {{- $publishers := dict }}
 {{- $registrations := dict }}
-{{- if ne (env "ENV") "secondary" }}
 {{- with env "K3D_REGISTRATIONS" }}{{ $registrations = readFile . | fromYaml }}{{ end }}
-{{- end }}
 {{- range $name, $text := $registrations }}
 {{- $values := $text | fromYaml | default dict }}
 {{- range $key, $_ := $values }}

@@ -3,7 +3,7 @@ set -Eeuo pipefail
 
 # Deploy an application on the k3d instance.
 #
-#   bin/k3d-app.sh [deploy|validate|uninstall]     (run by `make k3d-app*`)
+#   bin/k3d-app.sh [deploy|validate|uninstall]     (internal engine called by bin/k3d-local)
 #
 # APP names one of this repository's application definitions, k3d-apps/<APP>/:
 # its published release (RELEASE, or the version its helmfile pins), or, with
@@ -26,7 +26,7 @@ set -Eeuo pipefail
 # This script owns the cluster side: the context, the identities, the image
 # import, release recovery and the sync. It never changes the current kubectl context.
 #
-# Environment: ENV (swift by default), APP, RELEASE, DIR; VALUES, extra values files applied
+# Internal inputs: APP, RELEASE, DIR; VALUES, extra values files applied
 # last to every release (space-separated); FRED_LIBS (pypi | local) and FRED_REPO,
 # which fred the hooks and the helmfile build against; K3D_CLUSTER, K3D_NAMESPACE,
 # HELM_TIMEOUT and the selected profile's ports and URLs (passed on to the hooks).
@@ -41,7 +41,7 @@ fail() { printf "%b[FAIL]%b %s\n" "$c_err" "$c_reset" "$1" >&2; exit 1; }
 trap 'fail "unexpected failure at line $LINENO: $BASH_COMMAND"' ERR
 
 here="$(cd "$(dirname "$0")/.." && pwd)"
-source "$here/bin/k3d-environment.sh"
+source "$here/bin/k3d-context.sh"
 export K3D_FACTORY_ROOT="$here"
 mode="${1:-deploy}"
 [[ "$mode" =~ ^(deploy|validate|uninstall)$ ]] || fail "usage: $0 [deploy|validate|uninstall]"
@@ -63,7 +63,7 @@ if [[ -n "${APP:-}" ]]; then
     fi
   fi
 else
-  [[ -n "${DIR:-}" ]] || fail "APP or DIR is required: make k3d-app APP=<one of: $defined>, or DIR=<checkout>"
+  [[ -n "${DIR:-}" ]] || fail "APP or DIR is required; use make k3d-app APP=fred DIR=/path/to/checkout"
   dir="$(cd "$DIR" 2>/dev/null && pwd)" || fail "DIR=$DIR: no such directory"
   if [[ -f "$dir/deploy/k3d/helmfile.yaml.gotmpl" ]]; then app="$dir/deploy/k3d"
   elif [[ -f "$dir/helmfile.yaml.gotmpl" ]]; then app="$dir"
@@ -121,7 +121,7 @@ write_registrations() {
 }
 write_registrations
 
-info "Environment: $ENV, context: $KUBE_CONTEXT, namespace: $K3D_NAMESPACE"
+info "Context: $KUBE_CONTEXT, namespace: $K3D_NAMESPACE"
 
 describe() {
   local branch commit dirty
@@ -193,11 +193,8 @@ if [[ "$mode" == deploy ]]; then
   identities --check
   render
 fi
-if [[ "$mode" == deploy && "$INSTANCE" == weaver ]]; then
-  "$here/bin/k3d-instance"
-fi
 kubectl --context "$KUBE_CONTEXT" get secret fred-secrets -n "$K3D_NAMESPACE" -o name >/dev/null 2>&1 \
-  || fail "no Secret fred-secrets in context '$KUBE_CONTEXT', namespace '$K3D_NAMESPACE': run 'make k3d-up ENV=$ENV' first"
+  || fail "no Secret fred-secrets in context '$KUBE_CONTEXT', namespace '$K3D_NAMESPACE': run the appropriate make k3d-up-* command first"
 stored="$(kubectl --context "$KUBE_CONTEXT" get configmap -n "$K3D_NAMESPACE" -l "$registration_label" -o json \
   | jq -c --arg label "$registration_label" \
     'reduce .items[] as $c ({}; .[$c.metadata.labels[$label]] = $c.data["registration.yaml"])')" \
@@ -214,7 +211,7 @@ serve_registrations() {
   how="$(kubectl --context "$KUBE_CONTEXT" get configmap "$server_config" -n "$K3D_NAMESPACE" -o json 2>/dev/null \
     | jq -r '.data | to_entries[] | "\(.key)=\(.value)"')" || how=""
   if [[ -z "$how" ]]; then
-    warn "Fred serves it from its next deploy: make k3d-app APP=fred (as you deploy it)"
+    warn "Fred serves it from its next deploy: rerun make k3d-app with its APP and DIR or RELEASE"
     return 0
   fi
   local -a deployed
@@ -248,7 +245,7 @@ fi
 # Configuration was checked before preparing the namespace or building.
 if [[ -n "${K3D_REUSE_IMAGES:-}" && -e "$build_dir/build" ]]; then
   [[ "$(cat "$K3D_IMAGE_VALUES")" != '{}' ]] \
-    || fail "no earlier build to redeploy without one: run make k3d-app with the same APP and DIR"
+    || fail "no earlier build to redeploy without one: rerun the same make k3d-up-* command"
 elif [[ -e "$build_dir/build" ]]; then
   rm -f "$K3D_APP_OUT/images.txt" "$K3D_APP_OUT/images.yaml"
   # Product Makefiles accept IMAGE_TAG. Avoid sharing mutable build tags across checkouts.

@@ -8,26 +8,15 @@ SQL and secret payloads use stdin, and subprocess error output is never logged.
 Control Plane migrations grant SELECT on cp_read views; there is no finish-time
 GRANT and no --require-table mode.
 
-ENV=secondary sets postgres.applicationBootstrap=true in the infrastructure
-chart: its initial SQL does not install vector in the Fred database. The checkout
-bootstrap installs it in knowledge. ENV=swift and the separate tabular database
-keep their existing extension initialization.
+Weaver always uses the separate database `fred_weaver`; its product bootstrap
+installs vector in the knowledge schema. Swift's `fred` database and the independent
+tabular database retain their infrastructure extension initialization.
 
-The first Weaver deployment with this boundary requires resetting the disposable
-secondary PostgreSQL volume. An old public database is not upgraded or migrated.
-To recreate the entire disposable secondary cluster and then deploy:
-
-    make k3d-wipe ENV=secondary
-    make k3d-up ENV=secondary
-    # Recreate fred-model-credentials from the operator's secret source.
-    make k3d-app ENV=secondary APP=fred DIR=../fred
-
-This deletes the secondary cluster's data. Preserve any data that must be retained
-before the separately authorized reset. Neither prepare nor finish resets data.
-The old fred role and monitor-database Secret are not automatically deleted;
-remove them manually only after their old consumers are gone. Transfer database
-ownership away from fred before removing that role. Managed installations use the
-Fred checkout's deploy/postgres/README.md and an administrator-managed bootstrap.
+Run `make k3d-up-weaver` or `make k3d-up-migration` from the factory. Neither prepare nor
+finish resets data. A disposable lab can be reset explicitly with `make k3d-wipe`;
+this deletes all Swift and Weaver data, not just PostgreSQL. See the factory README.
+Managed installations use the Fred checkout's deploy/postgres/README.md and an
+administrator-managed bootstrap. Applied migration history remains immutable.
 
 Run hook tests without a cluster:
 

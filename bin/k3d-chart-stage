@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-# Stage a checkout's chart for `make k3d-app ... DIR=<checkout>` and fetch its
+# Stage a checkout's chart for the internal application engine and fetch its
 # dependencies there, never in the checkout: run as a helmfile prepare hook, since
 # k3d-app.sh renders with --skip-deps. With FRED_LIBS=local, a dependency on a
 # published Fred chart comes from FRED_REPO's deploy/charts instead.

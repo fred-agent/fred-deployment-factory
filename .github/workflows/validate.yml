@@ -6,7 +6,7 @@ name: Validate
 on:
   pull_request:
   push:
-    branches: [swift]
+    branches: [swift, weaver]
 
 permissions:
   contents: read
@@ -34,10 +34,10 @@ jobs:
           sudo apt-get install -y python3-yaml
 
       - name: Command tests
-        run: python3 -m unittest bin/test_k3d_app.py k3d-apps/fred/test_hooks.py
+        run: python3 -m unittest bin/test_k3d_local.py bin/test_k3d_app.py bin/test_k3d_instance.py k3d-apps/fred/test_hooks.py k3d-apps/fred/test_monitor_database.py
 
       - name: Validate the applications
         run: |
           for app in fred fred-evaluator webdav-kb; do
-            make k3d-app-validate APP="$app"
+            K3D_NAMESPACE=fred APP="$app" bin/k3d-app.sh validate
           done

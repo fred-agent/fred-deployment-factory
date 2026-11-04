@@ -70,9 +70,10 @@ class K3dAppTests(unittest.TestCase):
         self.root = Path(self.temp.name)
         self.factory = self.root / "factory checkout"
         (self.factory / "bin").mkdir(parents=True)
-        for name in ("k3d-app.sh", "k3d-helm-recover.sh", "k3d-identities", "k3d-environment.sh"):
+        for name in ("k3d-app.sh", "k3d-helm-recover.sh", "k3d-identities", "k3d-context.sh"):
             shutil.copy(ROOT / "bin" / name, self.factory / "bin" / name)
-        shutil.copytree(ROOT / "k3d/environments", self.factory / "k3d/environments")
+        (self.factory / "k3d").mkdir()
+        shutil.copy(ROOT / "k3d/local.env", self.factory / "k3d/local.env")
         realm = self.factory / "k3d/files/keycloak"
         realm.mkdir(parents=True)
         shutil.copy(ROOT / "k3d/files/keycloak/app-realm.json.template", realm)
@@ -96,10 +97,9 @@ class K3dAppTests(unittest.TestCase):
             PATH=f"{fakebin}:{os.environ['PATH']}",
             CALLS=str(self.root / "calls"),
             DIR="some app",
-            ENV="swift",
-            K3D_CLUSTER="other",
+            K3D_NAMESPACE="fred",
         )
-        for name in ("VALUES", "K3D_NAMESPACE", "KUBE_CONTEXT", "FRED_LIBS", "FRED_REPO",
+        for name in ("VALUES", "ENV", "INSTANCE", "MODE", "PROFILE", "KUBE_CONTEXT", "FRED_LIBS", "FRED_REPO",
                      "APP", "RELEASE", "K3D_APP_CHECKOUT"):
             self.env.pop(name, None)
         # An application defined in this repository: no build of its own.
@@ -206,11 +206,11 @@ class K3dAppTests(unittest.TestCase):
         self.assertEqual(calls[imported], ["import", "app:k3d-1"])
         for call in calls:
             if call[0] in ("build", "prepare", "finish"):
-                self.assertEqual(call[1:3], ["k3d-other", str(self.app)])
+                self.assertEqual(call[1:3], ["k3d-fred", str(self.app)])
             if call[0] == "helmfile":
-                self.assertEqual(call[3:5], ["--kube-context", "k3d-other"])
+                self.assertEqual(call[3:5], ["--kube-context", "k3d-fred"])
             if call[0] in ("helm", "kubectl"):
-                self.assertEqual(call[2], "k3d-other")
+                self.assertEqual(call[2], "k3d-fred")
             self.assertNotIn("use-context", call)
         # Every enabled release is recovered, in its own namespace or the default one.
         statuses = [c for c in calls if c[0] == "helm" and "status" in c]
