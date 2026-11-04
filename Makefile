@@ -25,7 +25,7 @@ endif
 # Service groups for `docker-up`. The base group is always launched; the
 # extended group is appended only when STACK=extended.
 DOCKER_BASE_SERVICES := postgres-up keycloak-up seaweedfs-up opensearch-up openfga-up temporal-up
-DOCKER_EXTENDED_SERVICES := clickhouse-up langfuse-up prometheus-up grafana-up
+DOCKER_EXTENDED_SERVICES := clickhouse-up langfuse-up prometheus-up grafana-up logging-up
 ifeq ($(STACK),extended)
 DOCKER_UP_SERVICES := $(DOCKER_BASE_SERVICES) $(DOCKER_EXTENDED_SERVICES)
 else
@@ -36,7 +36,7 @@ endif
 # postgres and keycloak are started first and awaited individually, so they are
 # not repeated here.
 DOCKER_REST_PROJECTS_BASE := seaweedfs opensearch openfga temporal
-DOCKER_REST_PROJECTS_EXTENDED := clickhouse langfuse prometheus grafana
+DOCKER_REST_PROJECTS_EXTENDED := clickhouse langfuse prometheus grafana logging
 ifeq ($(STACK),extended)
 DOCKER_REST_PROJECTS := $(DOCKER_REST_PROJECTS_BASE) $(DOCKER_REST_PROJECTS_EXTENDED)
 else
@@ -207,6 +207,28 @@ grafana-up: prometheus-up
 	@echo "Launching Grafana..."
 	$(DOCKER_COMPOSE_BASE)grafana.yml -p grafana up -d
 
+FRED_CHECKOUT ?= ../fred
+FRED_LOG_DIR ?= /tmp/fred-structured-logs
+export FRED_LOG_DIR
+
+fred-json: logging-up ## Run Fred APIs, workers and frontend with JSON logs in Grafana (FRED_CHECKOUT=...)
+	python3 "$(CURDIR)/bin/fred-local-logs.py" --checkout "$(FRED_CHECKOUT)" --log-dir "$(FRED_LOG_DIR)" --mode json
+
+fred-text: ## Run the same Fred services with readable terminal logs
+	python3 "$(CURDIR)/bin/fred-local-logs.py" --checkout "$(FRED_CHECKOUT)" --log-dir "$(FRED_LOG_DIR)" --mode text
+
+fred-stop: ## Stop only the Fred processes started by fred-json/fred-text
+	python3 "$(CURDIR)/bin/fred-local-logs.py" --checkout "$(FRED_CHECKOUT)" --log-dir "$(FRED_LOG_DIR)" --stop
+
+logging-up: ## Start Loki, Alloy and Grafana for local JSON log exploration
+	@mkdir -p -m 700 "$(FRED_LOG_DIR)"
+	@chmod 700 "$(FRED_LOG_DIR)"
+	$(DOCKER_COMPOSE_BASE)logging.yml -p logging up -d
+	$(DOCKER_COMPOSE_BASE)grafana.yml -p grafana up -d
+
+logging-down: ## Stop Loki and Alloy, keeping log data
+	$(DOCKER_COMPOSE_BASE)logging.yml -p logging down
+
 openfga-post-install:
 	@echo "Running OpenFGA post-install..."
 	bash docker/openfga/openfga-post-install.sh
@@ -283,6 +305,7 @@ docker-down: all-down ## Stop the Docker stack
 
 all-down:
 	@echo "Stopping Docker stack services..."
+	$(DOCKER_COMPOSE_BASE)logging.yml -p logging down
 	$(DOCKER_COMPOSE_BASE)grafana.yml -p grafana down
 	$(DOCKER_COMPOSE_BASE)prometheus.yml -p prometheus down
 	$(DOCKER_COMPOSE_BASE)langfuse.yml -p langfuse down
@@ -296,6 +319,7 @@ all-down:
 
 docker-wipe: all-down ## Stop Docker stack, delete containers & volumes
 	@echo -e "\n--- WIPE IN PROGRESS ---"
+	$(DOCKER_COMPOSE_BASE)logging.yml -p logging down -v
 	$(DOCKER_COMPOSE_BASE)grafana.yml -p grafana down -v
 	$(DOCKER_COMPOSE_BASE)prometheus.yml -p prometheus down -v
 	$(DOCKER_COMPOSE_BASE)langfuse.yml -p langfuse down -v
@@ -310,6 +334,7 @@ docker-wipe: all-down ## Stop Docker stack, delete containers & volumes
 
 docker-destroy: all-down ## Stop Docker stack, delete containers/volumes/network AND remove images
 	@echo -e "\n--- destroy IN PROGRESS ---"
+	$(DOCKER_COMPOSE_BASE)logging.yml -p logging down -v --rmi all
 	$(DOCKER_COMPOSE_BASE)grafana.yml -p grafana down -v --rmi all
 	$(DOCKER_COMPOSE_BASE)prometheus.yml -p prometheus down -v --rmi all
 	$(DOCKER_COMPOSE_BASE)langfuse.yml -p langfuse down -v --rmi all
@@ -657,7 +682,7 @@ BRANCH ?= swift
 ecosystem-audit: ## Do the sibling checkouts agree on Fred's libraries? Branch, constraints, locks, npm: make ecosystem-audit [BRANCH=swift]
 	@bin/ecosystem-audit --branch "$(BRANCH)" --fetch
 
-.PHONY: k3d-env k3d-health help network-create env-setup keycloak-post-install postgres-up keycloak-up seaweedfs-up opensearch-up clickhouse-up langfuse-up prometheus-up grafana-up openfga-post-install openfga-up temporal-up preflight-check docker-up docker-start docker-stop docker-down all-down docker-wipe docker-destroy k3d-create k3d-up k3d-restart k3d-redeploy k3d-logs k3d-down k3d-uninstall k3d-delete k3d-wipe k3d-status k3d-app k3d-disk-check k3d-app-validate k3d-app-uninstall k3d-airgap-on k3d-airgap-off k3d-airgap-status checkpoint-save checkpoint-restore docker-restart-from-checkpoint checkpoint-list checkpoint-delete check-pure-infrastructure ecosystem-audit keycloak-token-short keycloak-token-normal keycloak-token-status
+.PHONY: fred-json fred-text fred-stop logging-up logging-down k3d-env k3d-health help network-create env-setup keycloak-post-install postgres-up keycloak-up seaweedfs-up opensearch-up clickhouse-up langfuse-up prometheus-up grafana-up openfga-post-install openfga-up temporal-up preflight-check docker-up docker-start docker-stop docker-down all-down docker-wipe docker-destroy k3d-create k3d-up k3d-restart k3d-redeploy k3d-logs k3d-down k3d-uninstall k3d-delete k3d-wipe k3d-status k3d-app k3d-disk-check k3d-app-validate k3d-app-uninstall k3d-airgap-on k3d-airgap-off k3d-airgap-status checkpoint-save checkpoint-restore docker-restart-from-checkpoint checkpoint-list checkpoint-delete check-pure-infrastructure ecosystem-audit keycloak-token-short keycloak-token-normal keycloak-token-status
 
 ##@ Optional ZITADEL identity-provider test
 ZITADEL_COMPOSE = docker compose --env-file docker/zitadel/.env -f docker/zitadel/compose.yaml -p fred-zitadel

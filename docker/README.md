@@ -313,3 +313,83 @@ Hereunder, these are the information to connect to each service with their _loca
 
 - URLs:
   - http://$(DOCKER_COMPOSE_HOST_FQDN):$(PROMETHEUS_PORT) (web UI / API, default: `9090`)
+
+## Local structured logs
+
+With the existing Docker foundation running, `make logging-up` starts Loki and Alloy
+and the existing Grafana on http://localhost:3002. It preserves `docker/.env`.
+Open http://localhost:3002/d/fred-local-logs/fred-logs (also the default home dashboard).
+The compact view shows **timestamp · severity · service · message**, with stable
+service colors and Grafana's native severity colors.
+Use the **Service** and **Severity** dropdowns to select one or more values.
+Expand a line for all parsed fields and its original **raw_record**, then use
+the include/exclude buttons to add **Field filters**; clear them to reset the view.
+The dashboard keeps raw records in Loki unchanged and formats only query results.
+Native text lines remain visible when All is selected. Severity appears once, in
+Grafana's native level column beside the timestamp. In expanded details, `severity`
+is the collected severity and the only severity-related field shown. An Extract
+fields panel transformation maps it to Grafana's internal level column, preserving
+native colors without adding another field to log details. Loki still stores
+`detected_level` as structured metadata (`discover_log_levels` defaults to true);
+the query uses it only as a fallback for native text without Fred severity, then
+hides it from the dashboard results. The query also hides redundant `level` fields
+and duplicate `service_extracted`, `service_role_extracted` and
+`severity_extracted` fields created when JSON keys match collected labels.
+Original fields remain available in `raw_record`.
+Refresh is manual by default so an expanded log stays open; the refresh menu
+can enable automatic updates.
+
+Local Docker Grafana is pinned to 12.4.11 for the native log panel and field-filter
+controls; `GRAFANA_IMAGE` overrides the image. For free-form queries, open **Explore**,
+select the **Fred Logs** datasource and use `{environment="dev"} | json`.
+
+Select `app.log_format: json` in local Fred API/worker configuration, and capture
+stdout/stderr to one `*.log` file per process under `/tmp/fred-structured-logs`.
+The launcher restricts this directory to its owner (0700) and captured logs to
+0600; Alloy reads the mounted directory as container root.
+Override that directory with `FRED_LOG_DIR=/absolute/path make logging-up`.
+The directory must be readable by the collector. Docker applications opt in with
+the container label `fred.logs=true`; unrelated dependency logs are not collected.
+The Docker socket grants the collector Docker API access even when mounted read-only.
+
+Loki retains logs for 72 hours in a named volume; Alloy persists reader positions.
+The collector recognizes Python seconds/nanoseconds, nginx ISO timestamps and audit
+epoch timestamps, preserves original lines and keeps native text diagnostics.
+Only environment, source, service, service role, severity and source file/container
+are labels; operation and identity references remain queryable JSON fields.
+
+Useful queries:
+
+```logql
+{environment="dev", severity=~"ERROR|CRITICAL"} | json
+{environment="dev"} | json | correlation_id="YOUR_ID"
+{environment="dev", service_role="worker"} | json | document_id="YOUR_ID"
+{environment="dev", service="frontend"} | json | http_status >= 400
+```
+
+`make logging-down` stops collection without deleting stored logs. The extended
+Docker stack includes logging; the ordinary stop/down/wipe commands handle it too.
+This validates local output and field queries; GKE timestamp/severity promotion
+still requires a canary in Cloud Logging.
+
+### Switch Fred between terminal and Grafana
+
+From deployment-factory, with Fred dependencies and per-app `.env` files prepared:
+
+```bash
+make fred-json FRED_CHECKOUT=../fred-wt-sl-output
+# Ctrl+C stops all six Fred processes; collectors stay running.
+make fred-text FRED_CHECKOUT=../fred-wt-sl-output
+```
+
+From another terminal, `make fred-stop` stops only the recorded launcher session.
+The launcher checks for an existing session and refuses to replace it silently.
+It uses temporary copies of `configuration_prod.yaml`, selecting only the log mode
+and local inter-service URLs for Knowledge Flow and Control Plane. Tracked
+configurations and `.env` files are untouched. API reloads watch the source packages.
+The launcher uses these ports: Control Plane 9661, Knowledge Flow 9331, Fred Agents 8000 and
+frontend 9583; the frontend proxies all three APIs. Workers use existing installed
+Python environments directly, avoiding repeated model downloads.
+JSON mode writes append-only component log files; text mode prints to the terminal.
+The session record is `FRED_LOG_DIR/session.json`. Only one launcher session may use
+a log directory. Existing API processes must be stopped before starting this session.
