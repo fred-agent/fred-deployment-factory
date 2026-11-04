@@ -10,8 +10,8 @@ The **local deployment** of Fred and its applications, in two forms:
 - **Docker Compose (legacy Swift loop)** — the backing services on the host (`make docker-up`); the Fred apps run
   from a `fred` checkout (`make run` there). It is the fast loop to debug an app, not a
   second deployment: k3d is the one that deploys as production does.
-- **k3d** — COTS preparation through `make k3d-up-swift`, `make k3d-up-weaver`,
-  or `make k3d-up-migration`; explicit application deployment through
+- **k3d** — COTS preparation through `make k3d-up` (Swift and Weaver side by side), or
+  `make k3d-up-swift` / `make k3d-up-weaver` for one; explicit application deployment through
   `make k3d-app APP=fred DIR=/path/to/checkout`. Never couple the two steps.
   The factory reuses its infrastructure chart and generic application engine;
   product repositories own their charts, image builds and application hooks.
@@ -61,7 +61,7 @@ outside it. Do not reintroduce cloud-specific material here.
 
 ## Working rules
 
-- **Validate from scratch before calling it done:** `make k3d-wipe`, then the chosen `make k3d-up-*`, then `make k3d-health`. A rerun on an existing cluster proves convergence, not
+- **Validate from scratch before calling it done:** `make k3d-wipe`, then `make k3d-up` (or a solo variant), then `make k3d-health`. A rerun on an existing cluster proves convergence, not
   installation.
 - **`make k3d-wipe` deletes every volume** (accounts, documents, runs). Never run it, or
   anything that uninstalls the `fred-stack` release, without the developer's explicit go.
@@ -75,21 +75,21 @@ outside it. Do not reintroduce cloud-specific material here.
 - **Secrets never enter git.** Local defaults (`Azerty123_`...) are for this local stack only.
 - **Keep docs lean:** the README owns infrastructure and application commands;
   `docs/LOCAL-DEVELOPMENT.md` is the technical/legacy reference. The explicitly
-  separate `docs/SWIFT-WEAVER-MIGRATION.md` explains coexistence and data boundaries.
+  separate `docs/SWIFT-WEAVER.md` explains coexistence and data boundaries.
   Link to the README instead of duplicating its installation instructions.
 - **Commits:** `type(scope): what changed` (e.g. `fix(k3d): ...`), one logical change each, no
   Claude co-author line.
 
 ## Single local command surface
 
-`k3d-up-swift`, `k3d-up-weaver` and `k3d-up-migration` prepare COTS only,
+`k3d-up`, `k3d-up-swift` and `k3d-up-weaver` prepare COTS only,
 including the required namespace/database boundaries. They must succeed without
 application source paths or model keys and must never build or deploy applications.
 Use `make k3d-app APP=fred DIR=...` (or RELEASE for a published version) for the
 separate application step. Preserve APP/DIR/RELEASE/VALUES and library inputs on
 application commands. Do not reintroduce ENV/INSTANCE/MODE/PROFILE. Placement and
 URLs follow the selected checkout; no local-checkouts.json is required. Validation
-is separate too: k3d-validate-* for COTS, k3d-app-validate for an application.
+is separate too: k3d-validate* for COTS, k3d-app-validate for an application.
 Wipe is always separate and explicitly destructive.
 
 If the user asks for preparation only, do not run installation, wipe, build or test

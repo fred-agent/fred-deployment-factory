@@ -153,5 +153,12 @@ spec:
           persistentVolumeClaim:
             claimName: seaweedfs-data
         - name: seaweedfs-config
+          {{- /* A Weaver deployment adds its scoped identities in this Secret: an
+          infrastructure update must keep them instead of restoring the ConfigMap. */}}
+          {{- if lookup "v1" "Secret" .Release.Namespace "control-plane-s3-config" }}
+          secret:
+            secretName: control-plane-s3-config
+          {{- else }}
           configMap:
             name: fred-seaweedfs-config
+          {{- end }}

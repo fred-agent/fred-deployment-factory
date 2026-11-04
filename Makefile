@@ -1,7 +1,7 @@
 .DEFAULT_GOAL := help
 SHELL := /bin/bash
 
-LOCAL_COMMANDS := k3d-up-swift k3d-up-weaver k3d-up-migration k3d-validate-swift k3d-validate-weaver k3d-validate-migration k3d-start k3d-stop k3d-status k3d-health k3d-wipe
+LOCAL_COMMANDS := k3d-up k3d-up-swift k3d-up-weaver k3d-validate k3d-validate-swift k3d-validate-weaver k3d-start k3d-stop k3d-status k3d-health k3d-wipe
 ifneq ($(filter $(LOCAL_COMMANDS),$(MAKECMDGOALS)),)
 ifneq ($(words $(MAKECMDGOALS)),1)
 $(error Run one local operation at a time)
@@ -61,18 +61,18 @@ help: ## Show this help message
 	@awk 'BEGIN {FS = ":.*##"; printf "\n\033[1mAvailable targets:\033[0m\n"} /^[a-zA-Z0-9_-]+:.*?##/ { printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2 } /^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5) }' $(MAKEFILE_LIST)
 
 ##@ Local k3d infrastructure
-k3d-up-swift: ## Prepare COTS for Swift; no application build or deployment
-k3d-up-weaver: ## Prepare COTS for Weaver; no application build or deployment
-k3d-up-migration: ## Prepare shared COTS for Swift + Weaver; no application deployment
+k3d-up: ## Prepare COTS for Swift and Weaver side by side; no application deployment
+k3d-up-swift: ## Prepare COTS for Swift alone; no application deployment
+k3d-up-weaver: ## Prepare COTS for Weaver alone; no application deployment
+k3d-validate: ## Render the Swift and Weaver infrastructure; no cluster changes
 k3d-validate-swift: ## Render Swift infrastructure only; no cluster changes
 k3d-validate-weaver: ## Render Weaver infrastructure only; no cluster changes
-k3d-validate-migration: ## Render migration infrastructure only; no cluster changes
 k3d-start: ## Resume the existing cluster; preserve data
 k3d-stop: ## Stop the cluster; preserve data
 k3d-status: ## Show both application namespaces
 k3d-health: ## Inspect the collected logs, events and health
 k3d-wipe: ## DELETE cluster fred and ALL its data; checkouts remain untouched
-k3d-up-swift k3d-up-weaver k3d-up-migration k3d-validate-swift k3d-validate-weaver k3d-validate-migration k3d-start k3d-stop k3d-status k3d-health k3d-wipe:
+k3d-up k3d-up-swift k3d-up-weaver k3d-validate k3d-validate-swift k3d-validate-weaver k3d-start k3d-stop k3d-status k3d-health k3d-wipe:
 	@bin/k3d-local $@
 
 ##@ k3d applications (separate from infrastructure)
@@ -84,7 +84,7 @@ k3d-app k3d-app-validate k3d-app-uninstall:
 
 # Retired commands fail; they are not aliases for another configuration surface.
 k3d-%:
-	@echo 'Removed command. Use make k3d-up-swift, k3d-up-weaver or k3d-up-migration; see make help.' >&2
+	@echo 'Removed command. Use make k3d-up (or k3d-up-swift, k3d-up-weaver); see make help.' >&2
 	@exit 2
 
 ##@ Docker (separate legacy tools)
@@ -365,4 +365,4 @@ zitadel-configure: zitadel-up ## Provision SPA/services and generate complete Fr
 	@set -eu; umask 077; mkdir -p docker/zitadel/state; $(ZITADEL_COMPOSE) cp api:/bootstrap/operator.pat docker/zitadel/state/operator.pat; chmod 600 docker/zitadel/state/operator.pat
 	/usr/bin/python3 docker/zitadel/provision.py --fred-root "$(SWIFT_SRC)" --output-dir "$(FRED_IDP_CONFIG_DIR)"
 
-.PHONY: k3d-app k3d-app-validate k3d-app-uninstall k3d-up-swift k3d-up-weaver k3d-up-migration k3d-validate-swift k3d-validate-weaver k3d-validate-migration k3d-start k3d-stop k3d-status k3d-health k3d-wipe
+.PHONY: k3d-app k3d-app-validate k3d-app-uninstall k3d-up k3d-up-swift k3d-up-weaver k3d-validate k3d-validate-swift k3d-validate-weaver k3d-start k3d-stop k3d-status k3d-health k3d-wipe

@@ -1,17 +1,21 @@
 # Fred Deployment Factory
 
-One local k3d cluster. Prepare the required COTS first, then deploy applications separately:
+One local k3d cluster that runs **Swift and Weaver side by side**, each isolated from
+the other, so you can test or work on either one at any time.
 
 ```bash
-make k3d-up-swift       # COTS for Swift, including OpenFGA
-make k3d-up-weaver      # COTS for Weaver, without OpenFGA
-make k3d-up-migration   # Shared COTS for Swift + Weaver
+make k3d-up                                               # 1. Infrastructure for both
+make k3d-app APP=fred DIR=/absolute/path/to/swift/fred    # 2. Deploy Swift, when needed
+make k3d-app APP=fred DIR=/absolute/path/to/weaver/fred   # 2. Deploy Weaver, when needed
 ```
 
-Choose one infrastructure command. It prepares the services and the required
-namespace/database boundaries. It never builds or deploys a Fred application,
-requires no source checkout, and does not check model API keys. Rerunning it
-preserves existing data. The factory never switches Git branches.
+`make k3d-up` prepares the services and each application's namespace and database. It
+never builds or deploys an application, requires no source checkout, and does not check
+model API keys. Rerunning it preserves existing data. The factory never switches Git
+branches.
+
+Each application is deployed separately. Deploying or redeploying one does not touch
+the other, and you can deploy only one of them.
 
 ## Prepare once
 
@@ -25,10 +29,10 @@ Ensure `/etc/hosts` contains:
 127.0.0.1 keycloak weaver.localhost
 ```
 
-## Deploy applications separately
+## Deploy an application
 
-After infrastructure startup, supply the model credential only for the application
-you intend to deploy. Use a private file containing only your Mistral API key:
+Supply the model credential for the application you intend to deploy, once per
+application. Use a private file containing only your Mistral API key:
 
 ```bash
 # Swift
@@ -42,11 +46,11 @@ kubectl --context k3d-fred -n fred-weaver create secret generic fred-model-crede
 make k3d-app APP=fred DIR=/absolute/path/to/weaver/fred
 ```
 
-Run either application command when needed; migration infrastructure does not
-implicitly deploy both. `DIR` chooses the source checkout, including uncommitted
-changes. A Weaver checkout is identified by `apps/control-plane/Cargo.toml` and
-placed in `fred-weaver`; the published Swift definition and other applications use
-`fred`. No branch name or persistent shell selector chooses placement.
+**`APP=fred` is the same for both: `DIR` selects the application.** It chooses the
+source checkout, including uncommitted changes. A Weaver checkout is identified by
+`apps/control-plane/Cargo.toml` and placed in `fred-weaver`; the published Swift
+definition and other applications use `fred`. No branch name or persistent shell
+selector chooses placement.
 
 The existing application contract remains available: `APP` selects a factory
 definition, `DIR` selects source, and `RELEASE` selects a published version instead
@@ -58,6 +62,13 @@ Model keys remain operator-owned Kubernetes Secrets; the factory never takes the
 from a checkout or shell environment. A missing model key is an application
 prerequisite, not an infrastructure startup failure.
 
+The platform starts empty: sign in and follow the bootstrap-token command printed
+at the end of deployment. No demo people or organizations are created by the factory.
+
+## What each application uses
+
+Both use context `k3d-fred`, and infrastructure lives in namespace `fred`.
+
 | | Swift | Weaver |
 | --- | --- | --- |
 | Browser | <http://localhost:8088> | <http://weaver.localhost:8088> |
@@ -65,44 +76,55 @@ prerequisite, not an infrastructure startup failure.
 | PostgreSQL database | `fred` | `fred_weaver` |
 | Temporal namespace | `default` | `fred-weaver` |
 | Document index | `vector-index-mistral` | `document-vectors` |
+| Application logs index | `app-logs-index` | `weaver-app-logs` |
+| KPI index | `kpi-index` | `weaver-kpi` |
 
-Both use context `k3d-fred`. Infrastructure lives in `fred`. Keycloak and S3 are
-shared; application permissions, databases and corpus indexes remain separate.
-Weaver alone does not deploy the OpenFGA service. Its empty backing database is
-reserved so Swift can be added later without resetting PostgreSQL. Swift and
-migration include the service automatically.
-The platform starts empty: sign in and follow the bootstrap-token command printed
-at the end of deployment. No demo people or organizations are created by the factory.
+**Shared on purpose:** Keycloak, the one IdP common to every organization and
+application, and S3. The OpenSearch instance is shared too, but never its indexes.
+Details and limits are in [Swift and Weaver side by side](docs/SWIFT-WEAVER.md).
 
 ## Update, pause, inspect, reset
 
 | Intent | Command |
 | --- | --- |
-| Update COTS | Repeat the selected `make k3d-up-*` command |
+| Update COTS | `make k3d-up` |
+| Render COTS without changing the cluster | `make k3d-validate` |
 | Build/deploy one application | `make k3d-app APP=fred DIR=/path/to/checkout` |
 | Render one application | `make k3d-app-validate APP=fred DIR=/path/to/checkout` |
-| Render without building or changing the cluster | `make k3d-validate-swift`, `make k3d-validate-weaver`, or `make k3d-validate-migration` |
 | Pause / resume existing containers, preserving data | `make k3d-stop` / `make k3d-start` |
 | Inspect deployments / collected diagnostics | `make k3d-status` / `make k3d-health` |
 | **Delete the cluster and all its data** | **`make k3d-wipe`** |
 
-Going from either solo installation to `make k3d-up-migration` preserves existing data
-and prepares the other application's infrastructure boundary. Deploy each application
-separately when wanted.
-Going from migration to a solo installation is refused. To start a disposable lab
-over, run `make k3d-wipe`, then the desired command. Wipe deletes accounts, conversations,
-documents, S3 objects, indexes and Secrets in cluster `fred`; it does not delete your
-Git checkouts, Docker Compose volumes or another cluster. Recreate model Secrets afterward.
+To start a disposable lab over, run `make k3d-wipe`, then `make k3d-up`. Wipe deletes
+accounts, conversations, documents, S3 objects, indexes and Secrets in cluster `fred`;
+it does not delete your Git checkouts, Docker Compose volumes or another cluster.
+Recreate model Secrets afterward.
 
-There is **no `ENV`, `INSTANCE`, `MODE` or `PROFILE` selector**. Infrastructure commands reject
-command-line variable assignments and old deployment environment overrides. `APP`,
-`DIR`, `RELEASE` and `VALUES` belong to the separate `k3d-app` commands.
-`STACK` and `K3D_*` overrides do not select a local installation. The old generic
-`make k3d-up` points to the explicit infrastructure commands.
+## One application only
+
+Most of the time `make k3d-up` is what you want: it costs one extra OpenFGA service
+when you only deploy Weaver. To check that one application runs without the other's
+infrastructure:
+
+| Command | Prepares |
+| --- | --- |
+| `make k3d-up-swift` / `make k3d-validate-swift` | Swift's COTS, including OpenFGA |
+| `make k3d-up-weaver` / `make k3d-validate-weaver` | Weaver's COTS, without OpenFGA. Its empty backing database stays reserved, so `make k3d-up` can add Swift later without resetting PostgreSQL |
+
+Going from either of these to `make k3d-up` preserves existing data. Going back from
+both applications to one is refused: it requires an explicit `make k3d-wipe`.
+
+## Command rules
+
+There is **no `ENV`, `INSTANCE`, `MODE` or `PROFILE` selector**. Infrastructure commands
+reject command-line variable assignments and old deployment environment overrides.
+`APP`, `DIR`, `RELEASE` and `VALUES` belong to the separate `k3d-app` commands.
+`STACK` and `K3D_*` overrides do not select a local installation. `make k3d-up` replaces
+the former `make k3d-up-migration`, which now fails with a pointer to it.
 
 ## References
 
-- [Migration lab boundaries](docs/SWIFT-WEAVER-MIGRATION.md)
+- [Swift and Weaver side by side: boundaries](docs/SWIFT-WEAVER.md)
 - [Technical reference and retained Docker tools](docs/LOCAL-DEVELOPMENT.md)
 - [Weaver database bootstrap](k3d-apps/fred/README-postgres.md)
 

@@ -4,8 +4,8 @@ The recommended starting point is **Weaver alone on k3d**, documented in the
 [README](../README.md). This file is the technical
 reference for infrastructure, application hooks and diagnostics.
 
-For **Swift alone or Swift + Weaver**, use the separate
-[migration lab](SWIFT-WEAVER-MIGRATION.md). It owns the migration commands and reset
+For **Swift and Weaver side by side**, see
+[their boundaries](SWIFT-WEAVER.md), which also covers the reset
 procedure. The Docker walkthrough and the Swift/published-release subsection below
 are legacy Swift workflows; they are not Weaver startup instructions. Weaver's
 current local deployment path is k3d.
@@ -67,7 +67,7 @@ Langfuse `:3001`. Per-service targets also exist (`make keycloak-up`, `make open
 
 ## Full bootstrap walkthrough: from `docker-up` to a validated platform
 
-`make docker-up` only gives you empty infra (§"What `docker-up` / the local `k3d-up-*` commands provisions"
+`make docker-up` only gives you empty infra (§"What `docker-up` / the local `k3d-up` commands provisions"
 below) — zero users, zero teams, zero apps running. This is the exact, copy-pasteable
 sequence to go from that empty infra to a `platform_admin` account, demo data, all four
 Fred apps running prod-like, and both automated and UI-driven validation green. **Every
@@ -319,8 +319,8 @@ Grafana and Fluent Bit. There is no stack/profile override on those commands.
 
 ## k3d: one local installation
 
-Use the [README](../README.md) for the public commands. `make k3d-up-swift`,
-`make k3d-up-weaver` and `make k3d-up-migration` prepare COTS and their namespace,
+Use the [README](../README.md) for the public commands. `make k3d-up`,
+`make k3d-up-swift` and `make k3d-up-weaver` prepare COTS and their namespace,
 database and Temporal boundaries only. No checkout or model key is required.
 Deploy applications separately with `make k3d-app APP=fred DIR=/path/to/checkout`
 (or `RELEASE` for a published version). There is one fixed cluster (`fred`) and
@@ -346,7 +346,7 @@ Weaver always uses database `fred_weaver`. The infrastructure's `fred` database
 retains Swift's extension initialization; the product bootstrap initializes
 Weaver's separate database. See [database bootstrap](../k3d-apps/fred/README-postgres.md).
 
-`make k3d-validate-*` renders infrastructure only. `make k3d-app-validate` renders
+`make k3d-validate` renders infrastructure only. `make k3d-app-validate` renders
 the selected application, using cached image references when available. Neither
 proves that builds or user journeys work. `make k3d-app` builds the selected checkout. `make k3d-wipe` removes the cluster and this checkout's generated
 application cache; no retained Helm payload containing old ingestion Secret references
@@ -484,7 +484,7 @@ and adds each grant. It never deletes. The application's values read the secret 
 `secretKeyRef`; nothing in the application holds Keycloak's admin. Refused: a platform
 client id (those of `k3d/files/keycloak/app-realm.json.template`, and `fred-delegation`)
 and any `realm-management` role beyond `query-users`, `view-users`, `manage-users`.
-`fred-secrets` keeps every key its template does not manage, so `make k3d-up-swift / k3d-up-weaver / k3d-up-migration` never drops
+`fred-secrets` keeps every key its template does not manage, so `make k3d-up` and its solo variants never drop
 an application's secret. The platform's own identities (the realm, the `app` client and its
 roles, Fred's backend clients) stay in `k3d/files/scripts/keycloak-post-install-k8s.sh`,
 which shares its Keycloak functions with `bin/k3d-identities` (`keycloak-lib.sh`).
@@ -552,7 +552,7 @@ for satellite builds against local Fred libraries; it does not select a namespac
 
 ## Infrastructure and initial data
 
-Docker Compose commands start backing services. The local k3d k3d-up-* commands
+Docker Compose commands start backing services. The local k3d `k3d-up` commands
 start only the required COTS and prepare their application boundaries. Fred
 applications require a separate `make k3d-app` command. Both begin
 with an empty Keycloak realm (self-registration enabled), PostgreSQL and Temporal.

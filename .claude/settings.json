@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__claude-artifacts__read_artifact"
+    ]
+  }
+}

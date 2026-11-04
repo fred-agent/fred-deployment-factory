@@ -2,7 +2,7 @@
 set -Eeuo pipefail
 
 # Free space where Docker keeps the k3d nodes, their images and volumes, checked
-# before the local k3d-up-* commands. Read-only: it
+# before the local k3d-up commands. Read-only: it
 # names the cleanup commands and never runs them, since they act on the whole host.
 #
 #   K3D_DISK_FAIL_GB  stop under this many GiB free (default 10: under it OpenSearch,

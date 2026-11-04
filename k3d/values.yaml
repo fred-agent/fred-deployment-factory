@@ -89,8 +89,10 @@ prometheus:
   scrapeInterval: 15s
   evaluationInterval: 15s
   retention: 7d
-  # Every pod of the namespace that declares a container port named `metrics`
+  # Every pod of these namespaces that declares a container port named `metrics`
   # is scraped (job `apps`): the Fred apps do, with no target list to keep.
+  # The release namespace is always included; a namespace may not exist yet.
+  applicationNamespaces: [fred-weaver]
   # SeaweedFS is scraped through its pod annotations (job `fred-stack-pods`).
   seaweedfsMetricsPath: /metrics
 

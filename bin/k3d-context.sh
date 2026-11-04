@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Internal application context. The public command derives placement once.
 if [[ -v ENV || -v INSTANCE || -v MODE || -v PROFILE ]]; then
-  echo 'Removed deployment selectors. Use make k3d-up-swift, k3d-up-weaver or k3d-up-migration.' >&2
+  echo 'Removed deployment selectors. Use make k3d-up, k3d-up-swift or k3d-up-weaver.' >&2
   exit 2
 fi
 while IFS='=' read -r name value; do

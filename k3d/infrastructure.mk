@@ -2,7 +2,7 @@
 SHELL := /bin/bash
 .DEFAULT_GOAL := up
 ifneq ($(K3D_FACTORY_INTERNAL),1)
-$(error Use make k3d-up-swift, make k3d-up-weaver or make k3d-up-migration)
+$(error Use make k3d-up, make k3d-up-swift or make k3d-up-weaver)
 endif
 include k3d/local.env
 KUBE_CONTEXT := k3d-fred

@@ -37,7 +37,7 @@ class LocalTests(unittest.TestCase):
         for present in ({"swift"}, {"weaver"}, {"swift", "weaver"}):
             local.require_superset(("swift", "weaver"), present)
         for requested, present in ((("swift",), {"weaver"}), (("weaver",), {"swift"}), (("swift",), {"swift", "weaver"})):
-            with self.assertRaisesRegex(ValueError, "k3d-up-migration"):
+            with self.assertRaisesRegex(ValueError, "make k3d-up,"):
                 local.require_superset(requested, present)
 
     def test_unreachable_cluster_is_not_treated_as_empty(self):
@@ -47,11 +47,13 @@ class LocalTests(unittest.TestCase):
             with self.assertRaises(subprocess.CalledProcessError):
                 local.existing_installation({})
 
-    def test_partial_migration_is_protected_before_releases_exist(self):
-        with patch.object(local, "run", side_effect=[
-            '[{"name":"fred"}]', '{"data":{"installation":"migration"}}', '[]', '',
-        ]):
-            self.assertEqual(local.existing_installation({}), {"swift", "weaver"})
+    def test_partial_installation_is_protected_before_releases_exist(self):
+        # "migration" is what clusters prepared before k3d-up recorded.
+        for recorded in ("both", "migration"):
+            with self.subTest(recorded=recorded), patch.object(local, "run", side_effect=[
+                '[{"name":"fred"}]', json.dumps({"data": {"installation": recorded}}), '[]', '',
+            ]):
+                self.assertEqual(local.existing_installation({}), {"swift", "weaver"})
 
     def test_legacy_helm_releases_are_not_lost_without_marker(self):
         with patch.object(local, "run", side_effect=[
@@ -133,7 +135,7 @@ class LocalTests(unittest.TestCase):
             patch.object(local, "existing_installation") as existing,
             patch.object(local, "run", return_value="") as run,
         ):
-            local.install("k3d-validate-migration", {})
+            local.install("k3d-validate", {})
             existing.assert_not_called()
             commands = [call.args[0] for call in run.call_args_list]
             self.assertEqual([command[:2] for command in commands], [["helm", "lint"], ["helm", "template"]])
@@ -150,7 +152,7 @@ class LocalTests(unittest.TestCase):
             self.assertEqual(run.call_args.args[0][:2], ["helm", "lint"])
 
     def test_infrastructure_up_needs_neither_checkout_nor_model_key_and_never_deploys_apps(self):
-        for installation in local.INSTALLATIONS:
+        for operation, installation in (("k3d-up", "both"), ("k3d-up-swift", "swift"), ("k3d-up-weaver", "weaver")):
             with (
                 tempfile.TemporaryDirectory() as directory,
                 self.subTest(installation=installation),
@@ -159,7 +161,7 @@ class LocalTests(unittest.TestCase):
                 patch.object(local, "existing_installation", return_value=set()),
                 patch.object(local, "run", return_value="") as run,
             ):
-                local.install(f"k3d-up-{installation}", {})
+                local.install(operation, {})
                 commands = [call.args[0] for call in run.call_args_list]
                 self.assertFalse(any("k3d-app.sh" in " ".join(command) for command in commands))
                 self.assertFalse(any("fred-model-credentials" in command for command in commands))
@@ -167,6 +169,17 @@ class LocalTests(unittest.TestCase):
                 self.assertEqual(any(command[0].endswith("k3d-instance") for command in commands), installation != "swift")
                 marker = next(call.kwargs["body"] for call in run.call_args_list if "body" in call.kwargs)
                 self.assertEqual(json.loads(marker)["data"]["installation"], installation)
+
+    def test_k3d_up_prepares_both_applications_and_the_old_name_is_removed(self):
+        self.assertEqual(local.INFRASTRUCTURE["k3d-up"], ("up", "both"))
+        self.assertEqual(local.INSTALLATIONS["both"], ("swift", "weaver"))
+        self.assertNotIn("k3d-up-migration", local.OPERATIONS)
+        result = subprocess.run(
+            ["make", "--no-print-directory", "k3d-up-migration"],
+            cwd=local.ROOT, capture_output=True, text=True,
+        )
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("make k3d-up", result.stderr)
 
     def test_wipe_is_scoped_and_does_not_deploy(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -12,7 +12,7 @@ Weaver always uses the separate database `fred_weaver`; its product bootstrap
 installs vector in the knowledge schema. Swift's `fred` database and the independent
 tabular database retain their infrastructure extension initialization.
 
-Run `make k3d-up-weaver` or `make k3d-up-migration` from the factory. Neither prepare nor
+Run `make k3d-up` or `make k3d-up-weaver` from the factory. Neither prepare nor
 finish resets data. A disposable lab can be reset explicitly with `make k3d-wipe`;
 this deletes all Swift and Weaver data, not just PostgreSQL. See the factory README.
 Managed installations use the Fred checkout's deploy/postgres/README.md and an

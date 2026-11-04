@@ -5,6 +5,6 @@ set -Eeuo pipefail
 : "${KUBE_CONTEXT:?factory must provide the explicit k3d context}"
 ns="${K3D_NAMESPACE:-fred}"
 kubectl --context "$KUBE_CONTEXT" get deployment control-plane-backend -n "$ns" >/dev/null 2>&1 || {
-  echo "Fred is not deployed in namespace '$ns': run the selected make k3d-up-* command first" >&2
+  echo "Fred is not deployed in namespace '$ns': deploy Fred first with make k3d-app" >&2
   exit 1
 }

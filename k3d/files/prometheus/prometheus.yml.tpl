@@ -9,14 +9,20 @@ scrape_configs:
           - localhost:9090
 
   # The applications deployed next to the stack (Fred, the evaluation app...):
-  # every pod container port named `metrics`. Labels `app` and `pod` say which.
+  # every pod container port named `metrics`. Labels `namespace`, `app` and `pod`
+  # say which: the same service name exists in several application namespaces.
   - job_name: apps
     kubernetes_sd_configs:
       - role: pod
         namespaces:
           names:
             - {{ .Release.Namespace | quote }}
+            {{- range .Values.prometheus.applicationNamespaces }}
+            - {{ . | quote }}
+            {{- end }}
     relabel_configs:
+      - source_labels: [__meta_kubernetes_namespace]
+        target_label: namespace
       - source_labels: [__meta_kubernetes_pod_container_port_name]
         action: keep
         regex: metrics
