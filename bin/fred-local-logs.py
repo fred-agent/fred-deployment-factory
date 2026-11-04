@@ -37,10 +37,15 @@ def prepare_config(source: Path, output: Path, mode: str) -> None:
         "./conversation_policy_catalog.yaml",
         str(source.parent / "conversation_policy_catalog.yaml"),
     )
-    text = text.replace(
-        "http://127.0.0.1:8111/knowledge-flow/v1",
-        "http://127.0.0.1:9331/knowledge-flow/v1",
-    )
+    for path, source_port, target_port in (
+        ("knowledge-flow/v1", 8111, 9331),
+        ("control-plane/v1", 8222, 9661),
+    ):
+        for host in ("127.0.0.1", "localhost"):
+            text = text.replace(
+                f"http://{host}:{source_port}/{path}",
+                f"http://{host}:{target_port}/{path}",
+            )
     output.write_text(text)
     output.chmod(0o600)
 

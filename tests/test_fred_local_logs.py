@@ -43,6 +43,30 @@ class LocalLoggingTests(unittest.TestCase):
                 launcher.prepare_config(source, Path(temporary) / "out.yaml", "json")
             self.assertEqual(source.read_text(), "app:\n  log_level: info\n")
 
+    def test_local_service_urls_use_the_launched_ports(self):
+        for path, source_port, target_port in (
+            ("knowledge-flow/v1", 8111, 9331),
+            ("control-plane/v1", 8222, 9661),
+        ):
+            for host in ("127.0.0.1", "localhost", "remote.example"):
+                with (
+                    self.subTest(path=path, host=host),
+                    tempfile.TemporaryDirectory() as temporary,
+                ):
+                    source = Path(temporary) / "source.yaml"
+                    original = (
+                        "app:\n  log_format: text\nservice:\n"
+                        f'  base_url: "http://{host}:{source_port}/{path}"\n'
+                    )
+                    source.write_text(original)
+                    output = Path(temporary) / "generated.yaml"
+                    launcher.prepare_config(source, output, "json")
+                    port = source_port if host == "remote.example" else target_port
+                    self.assertIn(
+                        f'base_url: "http://{host}:{port}/{path}"', output.read_text()
+                    )
+                    self.assertEqual(source.read_text(), original)
+
     def run_worker(self, directory, mode):
         checkout = directory / "fred"
         app = checkout / "apps/control-plane-backend"

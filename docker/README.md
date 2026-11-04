@@ -385,9 +385,9 @@ make fred-text FRED_CHECKOUT=../fred-wt-sl-output
 From another terminal, `make fred-stop` stops only the recorded launcher session.
 The launcher checks for an existing session and refuses to replace it silently.
 It uses temporary copies of `configuration_prod.yaml`, selecting only the log mode
-and the local Control Plane-to-Knowledge Flow URL. Tracked configurations and `.env`
-files are untouched. API reloads watch the source packages. The ports match the
-VS Code prod tasks: Control Plane 9661, Knowledge Flow 9331, Fred Agents 8000 and
+and local inter-service URLs for Knowledge Flow and Control Plane. Tracked
+configurations and `.env` files are untouched. API reloads watch the source packages.
+The launcher uses these ports: Control Plane 9661, Knowledge Flow 9331, Fred Agents 8000 and
 frontend 9583; the frontend proxies all three APIs. Workers use existing installed
 Python environments directly, avoiding repeated model downloads.
 JSON mode writes append-only component log files; text mode prints to the terminal.
