@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+# Stage a checkout's chart for `make k3d-app ... DIR=<checkout>` and fetch its
+# dependencies there, never in the checkout: run as a helmfile prepare hook, since
+# k3d-app.sh renders with --skip-deps. With FRED_LIBS=local, a dependency on a
+# published Fred chart comes from FRED_REPO's deploy/charts instead.
+#   k3d-chart-stage <checkout chart directory> <staged chart directory>
+source_chart="${1:?the chart directory in the checkout}"
+staged="${2:?the staged chart directory}"
+[[ -f "$source_chart/Chart.yaml" ]] || { echo "no Chart.yaml in $source_chart" >&2; exit 1; }
+
+rm -rf "$staged"
+mkdir -p "$(dirname "$staged")"
+cp -R "$source_chart" "$staged"
+rm -rf "$staged/charts"
+
+if [[ "${FRED_LIBS:-pypi}" == local ]]; then
+  : "${FRED_REPO:?FRED_LIBS=local needs FRED_REPO}"
+  # The local chart's version replaces the published range; Chart.lock no longer applies.
+  python3 - "$staged/Chart.yaml" "$FRED_REPO/deploy/charts" <<'EOF'
+import sys
+from pathlib import Path
+
+import yaml
+
+chart_file, fred_charts = Path(sys.argv[1]), Path(sys.argv[2])
+chart = yaml.safe_load(chart_file.read_text())
+for dependency in chart.get("dependencies") or []:
+    if dependency.get("repository", "").startswith("oci://ghcr.io/thalesgroup/fred-helm"):
+        local = fred_charts / dependency["name"]
+        dependency["repository"] = f"file://{local}"
+        dependency["version"] = yaml.safe_load((local / "Chart.yaml").read_text())["version"]
+        print(f"{dependency['name']}: from {local}")
+chart_file.write_text(yaml.safe_dump(chart, sort_keys=False))
+EOF
+  rm -f "$staged/Chart.lock"
+fi
+
+helm dependency build "$staged" >/dev/null

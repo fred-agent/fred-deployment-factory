@@ -1,0 +1,70 @@
+# =============================================================================
+# Fred with the PyMuPDF variant of knowledge-flow, applied over values.yaml:
+#
+#   make k3d-app APP=fred VALUES=k3d-apps/fred/pymupdf.yaml [RELEASE=x.y.z]
+#
+# Published release only: the image tag is the chart's (its appVersion), and a
+# DIR build tags its own knowledge-flow image without the extra.
+#
+# Two things together, as the knowledge-flow README ("Optional PyMuPDF
+# processing") requires: the `knowledge-flow-backend-pymupdf` image for the API
+# and the worker, and the PyMuPDF processors selected explicitly in every
+# profile (installing the extra never changes the processor). Back to the
+# standard image: redeploy without this file.
+#
+# PyMuPDF is AGPL-3.0 or Artifex commercial, pymupdf-layout PolyForm
+# Noncommercial: fred docs/swift/COPYLEFT-DEPENDENCIES.md, LICENSE-01.
+# =============================================================================
+
+# ── choice: the image ────────────────────────────────────────────────────────
+x-image: &image
+  repository: ghcr.io/thalesgroup/fred-agent/knowledge-flow-backend-pymupdf
+
+# ── choice: the PyMuPDF processors ───────────────────────────────────────────
+# Fast: PyMuPDF4LLM for .pdf. Helm replaces lists, so the chart's other fast
+# processors are repeated unchanged.
+x-fast-input-processors: &fast-input-processors
+  - suffix: ".pdf"
+    class_path: knowledge_flow_backend.core.processors.input.lightweight_markdown_processor.lite2_pdf_to_md_processor.LitePdfMarkdownProcessor
+  - suffix: ".docx"
+    class_path: knowledge_flow_backend.core.processors.input.docx_markdown_processor.docx_markdown_processor.DocxMarkdownProcessor
+  - suffix: ".doc"
+    class_path: knowledge_flow_backend.core.processors.input.doc_markdown_processor.doc_markdown_processor.DocMarkdownProcessor
+  - suffix: ".odt"
+    class_path: knowledge_flow_backend.core.processors.input.odt_markdown_processor.odt_markdown_processor.OdtMarkdownProcessor
+  - suffix: ".pptx"
+    class_path: knowledge_flow_backend.core.processors.input.pptx_markdown_processor.pptx_markdown_processor.PptxMarkdownProcessor
+  - suffix: ".ppt"
+    class_path: knowledge_flow_backend.core.processors.input.ppt_markdown_processor.ppt_markdown_processor.PptMarkdownProcessor
+  - suffix: ".csv"
+    class_path: knowledge_flow_backend.core.processors.input.csv_tabular_processor.csv_tabular_processor.CsvTabularProcessor
+  - suffix: ".xlsx"
+    class_path: knowledge_flow_backend.core.processors.input.excel_processor.excel_processor.ExcelProcessor
+  - suffix: ".xls"
+    class_path: knowledge_flow_backend.core.processors.input.excel_processor.excel_processor.ExcelProcessor
+  - suffix: ".xlsm"
+    class_path: knowledge_flow_backend.core.processors.input.excel_processor.excel_processor.ExcelProcessor
+  - suffix: ".txt"
+    class_path: knowledge_flow_backend.core.processors.input.text_markdown_processor.text_markdown_processor.TextMarkdownProcessor
+  - suffix: ".md"
+    class_path: knowledge_flow_backend.core.processors.input.markdown_markdown_processor.markdown_markdown_processor.MarkdownMarkdownProcessor
+
+# Medium and rich: PdfMarkdownProcessor with the PyMuPDF extractor (Docling by default).
+x-processing: &processing
+  profiles:
+    fast:
+      input_processors: *fast-input-processors
+    medium:
+      pdf: { extractor: pymupdf }
+    rich:
+      pdf: { extractor: pymupdf }
+
+applications:
+  knowledge-flow-backend:
+    image: *image
+    configuration:
+      processing: *processing
+  knowledge-flow-worker:
+    image: *image
+    configuration:
+      processing: *processing

@@ -1,0 +1,81 @@
+# What Fred serves on this instance: the applications and Knowledge Bases registered
+# with it (docs/LOCAL-DEVELOPMENT.md → "Registering with Fred"). Each one's own
+# registration.yaml, stored in the cluster by `make k3d-app`, reaches this file through
+# K3D_REGISTRATIONS (a JSON object, registration name → registration.yaml text).
+#
+# A registration.yaml is a Fred values file holding only `registrations`, the shape the
+# fred chart takes from ThalesGroup/fred#3211 on: this file merges them, refusing an id
+# registered twice. An earlier chart takes lists, which Helm replaces, so for it this
+# file builds them whole, and no other values file holds them: application_sources,
+# FRONTEND_APPLICATIONS_JSON (each application's `gateway`) and
+# knowledge_bases.publishers. The secondary environment runs Fred alone: nothing is
+# registered. Registration alone grants nothing: a platform admin enables an
+# application or a Knowledge Base per team (Admin > Features).
+{{- $apps := dict }}
+{{- $publishers := dict }}
+{{- $registrations := dict }}
+{{- if ne (env "ENV") "secondary" }}
+{{- with env "K3D_REGISTRATIONS" }}{{ $registrations = readFile . | fromYaml }}{{ end }}
+{{- end }}
+{{- range $name, $text := $registrations }}
+{{- $values := $text | fromYaml | default dict }}
+{{- range $key, $_ := $values }}
+{{- if ne $key "registrations" }}{{ fail (printf "registration %s: only `registrations` may be set, not %q" $name $key) }}{{ end }}
+{{- end }}
+{{- $registration := dig "registrations" dict $values }}
+{{- range $key, $_ := $registration }}
+{{- if not (has $key (list "applications" "knowledgeBasePublishers")) }}{{ fail (printf "registration %s: unknown key registrations.%s (applications, knowledgeBasePublishers)" $name $key) }}{{ end }}
+{{- end }}
+{{- range $appId, $entry := dig "applications" dict $registration }}
+{{- if not (dig "gateway" "ui_upstream" "" $entry) }}{{ fail (printf "registration %s: application %s needs gateway.ui_upstream" $name $appId) }}{{ end }}
+{{- if hasKey $apps $appId }}{{ fail (printf "registration %s: application %s is already registered by %s" $name $appId (index $apps $appId).by) }}{{ end }}
+{{- $_ := set $apps $appId (dict "by" $name "entry" $entry) }}
+{{- end }}
+{{- range $clientId, $entry := dig "knowledgeBasePublishers" dict $registration }}
+{{- if hasKey $publishers $clientId }}{{ fail (printf "registration %s: publisher %s is already registered by %s" $name $clientId (index $publishers $clientId).by) }}{{ end }}
+{{- $_ := set $publishers $clientId (dict "by" $name "entry" $entry) }}
+{{- end }}
+{{- end }}
+{{- $maps := .Values.fredChart.registrationsAsMaps }}
+{{- $sources := list }}
+{{- $gateways := list }}
+{{- $applications := dict }}
+{{- range $appId, $app := $apps }}
+{{- $_ := set $applications $appId $app.entry }}
+{{- $sources = append $sources (merge (dict "app_id" $appId) (omit $app.entry "gateway")) }}
+{{- $gateways = append $gateways (merge (dict "app_id" $appId) $app.entry.gateway) }}
+{{- end }}
+{{- $publisherList := list }}
+{{- $publisherMap := dict }}
+{{- range $clientId, $publisher := $publishers }}
+{{- $_ := set $publisherMap $clientId $publisher.entry }}
+{{- $publisherList = append $publisherList (merge (dict "client_id" $clientId) $publisher.entry) }}
+{{- end }}
+
+{{- if $maps }}
+registrations:
+  applications: {{ toJson $applications }}
+  knowledgeBasePublishers: {{ toJson $publisherMap }}
+{{- end }}
+
+applications:
+  frontend:
+    env:
+      - name: VITE_BACKEND_URL_KNOWLEDGE   # address
+        value: {{ requiredEnv "K3D_PUBLIC_URL" | quote }}
+      {{- if not $maps }}
+      # address: where the gateway proxies /apps/<id>/ and /app-services/<id>/.
+      # Fully qualified names: nginx resolves them per request, so an application
+      # not deployed yet never stops the frontend from starting.
+      - name: FRONTEND_APPLICATIONS_JSON
+        value: {{ toJson $gateways | quote }}
+      {{- end }}
+{{- if not $maps }}
+
+  control-plane-backend:
+    configuration:
+      platform:
+        application_sources: {{ toJson $sources }}   # choice
+      knowledge_bases:
+        publishers: {{ toJson $publisherList }}      # choice
+{{- end }}

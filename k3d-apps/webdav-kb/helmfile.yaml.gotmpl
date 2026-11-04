@@ -1,0 +1,29 @@
+# The WebDAV Knowledge Base on this k3d instance:
+#   make k3d-app APP=webdav-kb [RELEASE=<version>] [DIR=<webdav-knowledge-base checkout>]
+# Without DIR, the published chart and image, at RELEASE or the version pinned
+# below (bumped by a Renovate PR after each release). With DIR, the checkout's
+# chart, staged with its dependencies by bin/k3d-chart-stage (Fred's knowledge-base
+# chart from FRED_REPO with FRED_LIBS=local), and K3D_IMAGE_VALUES selects the
+# image its deploy/k3d/build made.
+# renovate: datasource=docker depName=ghcr.io/fred-agent/webdav-knowledge-base-helm/webdav-knowledge-base
+{{- $pinned := "0.4.0" }}
+{{- $checkout := env "K3D_APP_CHECKOUT" }}
+releases:
+  - name: webdav-knowledge-base
+    {{- if $checkout }}
+    chart: {{ printf "%s/chart" (requiredEnv "K3D_APP_OUT") | quote }}
+    hooks:
+      - events: [prepare]
+        command: ../../bin/k3d-chart-stage
+        args:
+          - {{ printf "%s/deploy/charts/webdav-knowledge-base" $checkout | quote }}
+          - {{ printf "%s/chart" (requiredEnv "K3D_APP_OUT") | quote }}
+    {{- else }}
+    chart: oci://ghcr.io/fred-agent/webdav-knowledge-base-helm/webdav-knowledge-base
+    version: {{ env "RELEASE" | default $pinned | quote }}
+    {{- end }}
+    values:
+      - values.yaml
+      {{- with env "K3D_IMAGE_VALUES" }}
+      - {{ . | quote }}
+      {{- end }}

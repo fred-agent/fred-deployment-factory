@@ -1,0 +1,21 @@
+http:
+  routers:
+    login:
+      rule: Host(`localhost`) && (PathPrefix(`/ui/v2/login`) || Path(`/`))
+      entryPoints: [web]
+      service: login
+      priority: 20
+    api:
+      rule: Host(`localhost`)
+      entryPoints: [web]
+      service: api
+      priority: 10
+  services:
+    login:
+      loadBalancer:
+        servers:
+          - url: http://login:3000
+    api:
+      loadBalancer:
+        servers:
+          - url: h2c://api:8080

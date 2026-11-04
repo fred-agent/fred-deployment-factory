@@ -1,0 +1,9 @@
+# The service identities this application needs from the k3d instance's
+# Keycloak, provisioned by fred-deployment-factory's `make k3d-app` before the
+# sync (its bin/k3d-identities documents the format).
+clients:
+  # The worker calls Fred as itself (RFC EVAL-AUTH): service_agent only, no
+  # realm-management role. values.yaml reads its secret by secretKeyRef.
+  - id: fred-evaluation-worker
+    secret: KEYCLOAK_EVAL_WORKER_CLIENT_SECRET
+    grants: [app/service_agent]

@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+# Run by `make k3d-app APP=fred-evaluator` after the sync.
+echo "Fred shows it at http://localhost:${K3D_HOST_PORT_FRONTEND:-8088}/apps/evaluation/ once a platform admin"
+echo "enables the 'evaluation' application for a team (Admin > Features, filter 'app')."

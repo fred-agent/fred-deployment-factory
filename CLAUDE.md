@@ -1,73 +1,78 @@
 # CLAUDE.md — fred-deployment-factory
 
-Audience: AI coding assistants (and the engineer driving them). **Read this first, then
-`docs/rfc/RFC-0001`.** This file tells you what the repo is, the deployment model, and — most
-importantly — **the order the work must happen in.**
+Audience: AI coding assistants (and the engineer driving them). Read this first, then the
+README's "Quick start" and `docs/LOCAL-DEVELOPMENT.md`.
 
 ## What this repo is
 
-The **deployment operator** for Fred. The product (the four apps + their container images)
-lives in the `fred` monorepo (https://github.com/ThalesGroup/fred). This repo says **where and
-how** a concrete instance runs. It has two facets:
+The **local deployment** of Fred and its applications, in two forms:
 
-- **Local** — a docker-compose / k3d developer stack (see `README.md`, `make docker-up`).
-- **Cloud (the reference)** — a live **C1 instance on GKE/GCP**, GitOps-managed by ArgoCD.
-  This is the part the deployment *pattern* is about (`helm/`, `argocd/`, `bin/fredlab-*.sh`).
+- **Docker Compose** — the backing services on the host (`make docker-up`); the Fred apps run
+  from a `fred` checkout (`make run` there). It is the fast loop to debug an app, not a
+  second deployment: k3d is the one that deploys as production does.
+- **k3d** — everything in a local Kubernetes cluster: the infrastructure (`make k3d-up`, chart
+  `k3d/`), then each application: Fred's open-source ones defined here, from their published
+  releases (`make k3d-app APP=fred`, `APP=fred-evaluator`) or a checkout (`DIR=../fred`), the
+  others from their own repository (`make k3d-app DIR=../dt-agents`), with logs, events and
+  metrics collected (`make k3d-health`).
 
-The same repo + pattern is meant to be reused **per instance, per classification, per
-platform** — e.g. a future **C2 instance on TDP (Thales Digital Platform / managed AKS),
-driven by GitLab**.
+The GKE/GCP (fredlab) deployment left this repository on 2026-09-30; an archive clone is kept
+outside it. Do not reintroduce cloud-specific material here.
 
-## Start here (canonical docs)
+## The model
 
-| Doc | What |
-| --- | --- |
-| `docs/rfc/RFC-0001-gitops-deployment-pattern.md` | the deployment pattern + every decision (Foundation/Apps split, the boundary, the classification model §6, the pipeline gap) |
-| `docs/BACKLOG.md` | the work, by theme — **the current direction lives here** |
-| `gcp-c1/argocd/README.md` | the GitOps app-layer ops (cutover procedure, sync) |
-
-The polished *vision* of the pattern is a slide deck in the `fred-website` repo
-(`slides/fred_deployment_pattern.md`). These docs stay **decisions + gaps** only — don't
-re-narrate the vision here.
-
-## The model in one paragraph
-
-Two layers. A **Foundation** — the stateful backbone (Postgres, OpenSearch, Keycloak, OpenFGA,
-Temporal, plus the shared ingress / TLS certs / the one Secret) — changed rarely and
-**imperatively** (reviewed `helm upgrade` via `bin/fredlab-deploy.sh`). And an **Apps** layer —
-the four stateless apps (control-plane, fred-agents, frontend, knowledge-flow backend+worker) —
-managed by a **GitOps controller** (ArgoCD here) that reconciles the cluster to git. Apps
-reference the Foundation **by name** and never create it. The architecture is identical at every
-classification and on every platform; only **three knobs harden by level** — secrets source,
-network segmentation, admin exposure (RFC §6).
-
-## The roadmap — DO THIS IN ORDER (do not skip ahead)
-
-1. **Make the GKE / C1 model rock-solid and simple FIRST.** Consolidate into one clean, tested
-   Apps-layer chart, de-duplicating `gcp-c1/argocd/fred-apps` ↔ `gcp-c1/helm` (backlog
-   `CHART-2`). This is the shared reference everything else inherits.
-2. **THEN promote it to the monorepo.** Make `fred`'s `deploy/charts/fred` the single
-   Apps-layer source; this repo consumes it pinned (tracking issue **ThalesGroup/fred#1839**,
-   backlog `CHART-1`).
-3. **THEN replicate per platform.** A new instance (e.g. **C2 on TDP/AKS via GitLab**, backlog
-   `INST-1`) reuses the *same* Foundation/Apps split and boundary. What changes per instance:
-   the **cluster** (AKS vs GKE), the **git host + GitOps mechanism** (GitLab vs GitHub+ArgoCD),
-   and the **three knobs** for the target classification.
-
-> **For a new platform (e.g. Simon's C2/TDP): do NOT fork a parallel model to stand up C2
-> first.** Contribute to hardening the GKE reference (step 1), so the C2 instance inherits a
-> proven, simple model instead of re-inventing one. Same pattern, different platform — that is
-> the whole point.
+- **This instance owns its values; products own their charts and images.** Fred's open-source
+  applications (Fred, the evaluation application) are defined here, in `k3d-apps/<APP>/`:
+  helmfile (the published OCI chart, its version pinned and bumped by Renovate, `renovate.json`), k3d
+  values, identities, `prepare` and `finish`. Their repositories keep only `deploy/k3d/build`,
+  for `DIR`. Other applications (proprietary ones included) keep their whole definition in
+  their own `deploy/k3d/`. Both follow one contract (`docs/LOCAL-DEVELOPMENT.md` → "The k3d
+  application contract"). This repository never copies a chart, and the engine
+  (`bin/k3d-app.sh`) names no application.
+- **The platform contract is what applications may rely on:** the namespace, the service
+  names and the keys of `fred-secrets`. Changing one breaks applications in other repositories.
+- **An application's k3d values say only what the instance decides.** Every block is labelled
+  `address`, `secret`, `posture`, `choice`, `models` or `sizing`; everything else is the
+  chart's default. A `choice` is a candidate to become a chart default, in the chart's repo.
+- **Credentials as in production.** What the instance generates (database, Keycloak client and
+  infrastructure passwords, the bootstrap token) lives in one Foundation Secret, `fred-secrets`
+  (created by `make k3d-up`, `k3d/templates/secret.yaml`). What the operator supplies (the model
+  key, the web research key) lives in Secrets the operator creates before deploying
+  (`fred-model-credentials`, `fred-web-research-credentials`), never written by a hook. The
+  apps read each one by `secretKeyRef`. Never a literal value in a values file, never a
+  credential taken from the environment or a checkout.
+- **Applications register with Fred, each with its own entry only**: its `registration.yaml`,
+  a Fred values file holding only `registrations` (an application's catalog entry and
+  gateway, a Knowledge Base's publisher, keyed by id), stored by `make k3d-app` in a
+  ConfigMap `fred-registration-<name>`. Fred's
+  `k3d-apps/fred/registrations.yaml.gotmpl` builds the three lists from all of them; a changed
+  registration redeploys Fred, as last deployed, before the application syncs. No values
+  file names another application's entry, and none is passed in `VALUES` to register.
+- **Identities: k3d takes them from the applications, Docker keeps its own.** On k3d, the
+  platform's identities (realm `app`, the `app` client and its roles, Fred's backend
+  clients for now) are in `k3d/files/scripts/keycloak-post-install-k8s.sh`; an application's
+  service clients are declared in its `identities.yaml` and applied by
+  `bin/k3d-identities` (which refuses platform clients and realm-admin roles). Never add an
+  application's client to the post-install script. Docker Compose is the fast debug loop:
+  `docker/keycloak/keycloak-post-install.sh` creates fixed identities for the apps run from
+  their checkouts, with local default secrets, and need not follow k3d.
 
 ## Working rules
 
-- **Platform mutations go through `bin/fredlab-*.sh` scripts**, one safe step at a time — never
-  ad-hoc `kubectl` / `helm` / `argocd`.
-- **Never break the boundary:** the Apps chart must not create the Secret, the Ingress, the
-  ManagedCertificates, or any Foundation service. It references them **by name**.
-- **Prove before you cut over:** `helm template` + diff the rendered config **byte-for-byte**
-  against the live ConfigMap. An ownership move must change *nothing* in behaviour.
-- **Secrets never enter git** — only `*.example.yaml` templates are tracked. Real values are
-  injected at deploy; at higher classifications they come from a vault/CI (RFC §6).
-- **Keep docs lean.** Record decisions in the RFC and work in the BACKLOG; the deck carries the
-  vision. Don't add prose that duplicates either.
+- **Validate from scratch before calling it done:** `make k3d-wipe && make k3d-up`, then the
+  apps, then `make k3d-health`. A rerun on an existing cluster proves convergence, not
+  installation.
+- **`make k3d-wipe` deletes every volume** (accounts, documents, runs). Never run it, or
+  anything that uninstalls the `fred-stack` release, without the developer's explicit go.
+- **Release recovery goes through `bin/k3d-helm-recover.sh`**, the one implementation. It reads
+  Helm's JSON (never its table: the date spans several columns) and refuses to uninstall a
+  release that owns a PersistentVolumeClaim.
+- **Find problems with the collected evidence**, not by grepping pod consoles: `make k3d-health`,
+  `bin/k3d-observe` and the `k3d-observability` skill.
+- **Render before deploying:** `helm lint` and `helm template` with the instance values; the
+  fred chart validates its values against a strict schema.
+- **Secrets never enter git.** Local defaults (`Azerty123_`...) are for this local stack only.
+- **Keep docs lean** and in two places: the README's quick start, and
+  `docs/LOCAL-DEVELOPMENT.md` for the details.
+- **Commits:** `type(scope): what changed` (e.g. `fix(k3d): ...`), one logical change each, no
+  Claude co-author line.

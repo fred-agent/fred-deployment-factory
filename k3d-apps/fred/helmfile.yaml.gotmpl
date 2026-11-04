@@ -1,0 +1,36 @@
+# Fred on this k3d instance: `make k3d-app APP=fred [RELEASE=<version>] [DIR=<fred checkout>]`.
+# Without DIR, the published chart and images, at RELEASE or the version pinned
+# below (bumped by a Renovate PR after each Fred release). With DIR, the checkout's chart, and
+# K3D_IMAGE_VALUES selects the images its deploy/k3d/build made.
+# renovate: datasource=docker depName=ghcr.io/thalesgroup/fred-helm/fred
+{{- $pinned := "3.9.2" }}
+{{- $checkout := env "K3D_APP_CHECKOUT" }}
+{{- $version := env "RELEASE" | default $pinned }}
+{{- /* How the chart takes registrations: `registrations` maps from ThalesGroup/fred#3211
+       (first published in 3.9.0), the former lists before. */}}
+{{- $maps := semverCompare ">=3.9.0-0" $version }}
+{{- if $checkout }}
+{{- $maps = regexMatch "(?m)^registrations:" (readFile (printf "%s/deploy/charts/fred/values.yaml" $checkout)) }}
+{{- end }}
+values:
+  - fredChart:
+      version: {{ $version | quote }}
+      registrationsAsMaps: {{ $maps }}
+---
+releases:
+  - name: fred-app
+    {{- with env "K3D_APP_CHECKOUT" }}
+    chart: {{ printf "%s/deploy/charts/fred" . | quote }}
+    {{- else }}
+    chart: oci://ghcr.io/thalesgroup/fred-helm/fred
+    version: {{ .Values.fredChart.version | quote }}
+    {{- end }}
+    values:
+      - values.yaml
+      - registrations.yaml.gotmpl
+      {{- if eq (env "ENV") "secondary" }}
+      - secondary.yaml.gotmpl
+      {{- end }}
+      {{- with env "K3D_IMAGE_VALUES" }}
+      - {{ . | quote }}
+      {{- end }}

@@ -100,9 +100,10 @@ you much less than two.
   whose activities/requests are handled by a small, long-lived, reused thread pool (check for
   `concurrent.futures.ThreadPoolExecutor` passed as a Temporal `activity_executor`, or similar) is
   exposed to this. Fix: set `MALLOC_ARENA_MAX=1` as an env var on that component (no image
-  rebuild — pure deployment config). See `gcp-c1/argocd/fred-apps/values.yaml`'s
-  `knowledgeFlowWorker.mallocArenaMax` for the wired, working example (chart default unset —
-  opt-in per component only where the symptom is confirmed, don't set it blind).
+  rebuild — pure deployment config). On k3d, add it to that component's `extraEnvVars` in
+  `k3d-apps/fred/values.yaml` (the GKE values carried a wired example,
+  `knowledgeFlowWorker.mallocArenaMax`, before that deployment left this repository). Opt in
+  per component only where the symptom is confirmed; don't set it blind.
 - **`live_object_census()`'s `total_bytes_shallow` (or one specific type in `top_by_count`) itself
   keeps growing cycle over cycle at idle** → a real, if rare, Python-level leak (something
   genuinely still referenced, not cyclic). Neither `collect_and_trim` nor

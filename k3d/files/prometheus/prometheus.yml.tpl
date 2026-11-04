@@ -8,21 +8,27 @@ scrape_configs:
       - targets:
           - localhost:9090
 
-  {{- range $target := .Values.prometheus.extraMetricsTargets }}
-  {{- if $target.enabled }}
-  - job_name: {{ printf "%s-metrics" $target.jobName | quote }}
-    metrics_path: {{ default "/metrics" $target.metricsPath | quote }}
-    static_configs:
-      - targets:
-          - {{ $target.target | quote }}
-  {{- end }}
-  {{- end }}
-
-  - job_name: seaweedfs-s3-metrics
-    metrics_path: {{ .Values.prometheus.seaweedfsMetricsPath | quote }}
-    static_configs:
-      - targets:
-          - seaweedfs:9327
+  # The applications deployed next to the stack (Fred, the evaluation app...):
+  # every pod container port named `metrics`. Labels `app` and `pod` say which.
+  - job_name: apps
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces:
+          names:
+            - {{ .Release.Namespace | quote }}
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_container_port_name]
+        action: keep
+        regex: metrics
+      - source_labels: [__meta_kubernetes_pod_phase]
+        action: keep
+        regex: Running
+      - source_labels: [__meta_kubernetes_pod_label_app]
+        target_label: app
+      - source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_component]
+        target_label: component
+      - source_labels: [__meta_kubernetes_pod_name]
+        target_label: pod
 
   - job_name: fred-stack-services
     kubernetes_sd_configs:
