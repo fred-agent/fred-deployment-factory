@@ -224,6 +224,12 @@ installation. Change the administrator password before sharing this instance.
 `docker/.env` before starting it. The default database password is for local
 development only.
 
+The stock **Zabbix server** host uses **Linux by Zabbix agent**, but this
+minimal project does not run an agent. To avoid an unrelated availability
+alarm, set that host to **Disabled** under **Data collection > Hosts**. If the
+alarm is already open, close it under **Monitoring > Problems**. Leave the
+Prometheus template host enabled.
+
 To test Fred's Prometheus template:
 
 1. In **Data collection > Templates > Import**, select
