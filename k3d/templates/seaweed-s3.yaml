@@ -1,25 +1,28 @@
+{{- $identities := list (dict
+    "name" "admin"
+    "credentials" (list (dict "accessKey" .Values.auth.seaweedfsAdminUser "secretKey" .Values.auth.seaweedfsAdminPassword))
+    "actions" (list "Admin" "Read" "Write" "List")) }}
+{{- range $name, $identity := .Values.s3.identities }}
+{{- $identities = append $identities (dict
+    "name" $name
+    "credentials" (list (dict "accessKey" $name "secretKey" $identity.secretKey))
+    "actions" (list)
+    "policyNames" (list $identity.policy)) }}
+{{- end }}
+{{- $policies := list }}
+{{- range .Files.Get "files/seaweedfs/policies.yaml" | fromYamlArray }}
+{{- $policies = append $policies (dict "name" .name "content" (toJson .content)) }}
+{{- end }}
+{{- $s3 := dict "identities" $identities "policies" $policies | toJson }}
 apiVersion: v1
-kind: ConfigMap
+kind: Secret
 metadata:
   name: fred-seaweedfs-config
   labels:
     {{- include "fred-stack.labels" . | nindent 4 }}
-data:
-  s3.json: |
-    {
-      "identities": [
-        {
-          "name": "admin",
-          "credentials": [
-            {
-              "accessKey": {{ .Values.auth.seaweedfsAdminUser | quote }},
-              "secretKey": {{ .Values.auth.seaweedfsAdminPassword | quote }}
-            }
-          ],
-          "actions": ["Admin", "Read", "Write", "List"]
-        }
-      ]
-    }
+type: Opaque
+stringData:
+  s3.json: {{ $s3 | quote }}
 ---
 apiVersion: v1
 kind: Service
@@ -73,6 +76,7 @@ spec:
   template:
     metadata:
       annotations:
+        checksum/s3-config: {{ $s3 | sha256sum }}
         prometheus.io/scrape: "true"
         prometheus.io/port: "9327"
         prometheus.io/path: {{ .Values.prometheus.seaweedfsMetricsPath | quote }}
@@ -113,7 +117,7 @@ spec:
                   - |
                     until wget -qO- http://127.0.0.1:9333/cluster/status >/dev/null 2>&1; do sleep 1; done
                     until wget -qO- http://127.0.0.1:8888/ >/dev/null 2>&1; do sleep 1; done
-                    for bucket in app-content app-feedback app-chat-profile; do
+                    for bucket in {{ join " " .Values.s3.buckets }}; do
                       echo "s3.bucket.create -name $bucket" | weed shell -master 127.0.0.1:9333 || true
                     done
           ports:
@@ -153,12 +157,5 @@ spec:
           persistentVolumeClaim:
             claimName: seaweedfs-data
         - name: seaweedfs-config
-          {{- /* A Weaver deployment adds its scoped identities in this Secret: an
-          infrastructure update must keep them instead of restoring the ConfigMap. */}}
-          {{- if lookup "v1" "Secret" .Release.Namespace "control-plane-s3-config" }}
           secret:
-            secretName: control-plane-s3-config
-          {{- else }}
-          configMap:
-            name: fred-seaweedfs-config
-          {{- end }}
+            secretName: fred-seaweedfs-config

@@ -2,7 +2,7 @@
 set -Eeuo pipefail
 
 K3D_CLUSTER="${K3D_CLUSTER:-fred}"
-K3D_NAMESPACE="${K3D_NAMESPACE:-fred}"
+K3D_NAMESPACE="${K3D_NAMESPACE:-fred-infra}"
 HELM_RELEASE="${HELM_RELEASE:-fred-stack}"
 STACK_MODE="${STACK_MODE:-auto}"
 TIMEOUT="${TIMEOUT:-0}"
@@ -42,7 +42,7 @@ Options:
   --wait                 Poll until healthy or timeout
   --stack=auto|base|extended
   --cluster=<name>       Default: fred
-  --namespace=<name>     Default: fred
+  --namespace=<name>     Default: fred-infra
   --release=<name>       Default: fred-stack
   --timeout=<seconds>    Default: 0 in once mode, 300 in wait mode
   --interval=<seconds>   Default: 5

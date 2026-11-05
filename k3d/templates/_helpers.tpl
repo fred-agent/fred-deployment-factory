@@ -62,3 +62,8 @@ without metrics or logs cannot be used to find problems. */ -}}
 {{- define "fred-stack.keycloakUrl" -}}
 {{- printf "http://%s:%v" .Values.keycloak.hostname .Values.keycloak.publicPort -}}
 {{- end -}}
+
+{{- /* The namespace of a Fred release line. */ -}}
+{{- define "fred-stack.lineNamespace" -}}
+{{- printf "fred-%s" . -}}
+{{- end -}}

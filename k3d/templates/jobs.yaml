@@ -207,5 +207,123 @@ spec:
             - -ec
             - |
               until tctl --address "$TEMPORAL_CLI_ADDRESS" cluster health; do sleep 2; done
-              tctl --address "$TEMPORAL_CLI_ADDRESS" --ns default namespace describe >/dev/null 2>&1 || \
-                tctl --address "$TEMPORAL_CLI_ADDRESS" --ns default namespace register
+              for namespace in default{{ range $line, $_ := .Values.lines }} {{ include "fred-stack.lineNamespace" $line }}{{ end }}; do
+                tctl --address "$TEMPORAL_CLI_ADDRESS" --ns "$namespace" namespace describe >/dev/null 2>&1 || \
+                  tctl --address "$TEMPORAL_CLI_ADDRESS" --ns "$namespace" namespace register
+              done
+---
+# Each line's database. Its SQL owners belong to the application (its chart's bootstrap
+# hook) or to the foundation (templates/postgres-init-configmap.yaml).
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: postgres-post-install
+  labels:
+    {{- include "fred-stack.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-weight: "10"
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        {{- include "fred-stack.selectorLabels" . | nindent 8 }}
+    spec:
+      enableServiceLinks: false
+      restartPolicy: OnFailure
+      containers:
+        - name: postgres-post-install
+          image: {{ .Values.images.postgresClient }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          env:
+            - {name: PGHOST, value: postgres}
+            - {name: PGDATABASE, value: postgres}
+            - name: PGUSER
+              valueFrom:
+                secretKeyRef: {name: fred-secrets, key: POSTGRES_ADMIN_USER}
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef: {name: fred-secrets, key: POSTGRES_ADMIN_PASSWORD}
+          command:
+            - /bin/sh
+            - -ec
+            - |
+              until pg_isready -q; do sleep 2; done
+              psql -X -q -v ON_ERROR_STOP=1 <<'SQL'
+              {{- range .Values.lines }}
+              SELECT 'CREATE DATABASE {{ .database }}' WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = '{{ .database }}')\gexec
+              REVOKE ALL ON DATABASE {{ .database }} FROM PUBLIC;
+              {{- end }}
+              SQL
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: fred-opensearch-identities
+  labels:
+    {{- include "fred-stack.labels" . | nindent 4 }}
+type: Opaque
+stringData:
+  identities.json: {{ .Values.opensearch.identities | toJson | quote }}
+  pipeline.json: {{ .Values.opensearch.searchPipeline.body | toJson | quote }}
+---
+# The search pipeline, and each application's own account, role and role mapping.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: opensearch-identities
+  labels:
+    {{- include "fred-stack.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-weight: "21"
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        {{- include "fred-stack.selectorLabels" . | nindent 8 }}
+    spec:
+      enableServiceLinks: false
+      restartPolicy: OnFailure
+      containers:
+        - name: opensearch-identities
+          image: {{ .Values.images.toolbox }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          env:
+            - name: OPENSEARCH_ADMIN
+              valueFrom:
+                secretKeyRef: {name: fred-secrets, key: OPENSEARCH_ADMIN}
+            - name: OPENSEARCH_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef: {name: fred-secrets, key: OPENSEARCH_ADMIN_PASSWORD}
+          command:
+            - /bin/bash
+            - -ec
+            - |
+              base=https://opensearch:9200
+              security="$base/_plugins/_security/api"
+              put() {
+                curl -fsSk -u "$OPENSEARCH_ADMIN:$OPENSEARCH_ADMIN_PASSWORD" -X PUT \
+                  -H 'Content-Type: application/json' --data-binary @- "$1" >/dev/null
+              }
+              until curl -fsk -u "$OPENSEARCH_ADMIN:$OPENSEARCH_ADMIN_PASSWORD" "$base/_cluster/health" >/dev/null; do sleep 5; done
+              put "$base/_search/pipeline/{{ .Values.opensearch.searchPipeline.name }}" </config/pipeline.json
+              jq -c 'to_entries[]' /config/identities.json | while read -r identity; do
+                name="$(jq -r '.key' <<<"$identity")"
+                jq -c '.value.role' <<<"$identity" | put "$security/roles/$name"
+                jq -c --arg name "$name" '{password: .value.password, backend_roles: [$name]}' <<<"$identity" | put "$security/internalusers/$name"
+                jq -nc --arg name "$name" '{backend_roles: [$name], users: []}' | put "$security/rolesmapping/$name"
+                echo "identity '$name' ready"
+              done
+          volumeMounts:
+            - name: config
+              mountPath: /config
+              readOnly: true
+      volumes:
+        - name: config
+          secret:
+            secretName: fred-opensearch-identities

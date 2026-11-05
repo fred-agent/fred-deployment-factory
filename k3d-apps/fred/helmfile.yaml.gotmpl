@@ -1,33 +1,52 @@
-# Internal Swift chart definition, selected by the local installation coordinator.
-# Without DIR, the published chart and images, at RELEASE or the version pinned
-# below (bumped by a Renovate PR after each Fred release). With DIR, the checkout's chart, and
-# K3D_IMAGE_VALUES selects the images its deploy/k3d/build made.
-# renovate: datasource=docker depName=ghcr.io/thalesgroup/fred-helm/fred
-{{- $pinned := "3.9.2" }}
-{{- $checkout := env "K3D_APP_CHECKOUT" }}
-{{- $version := env "RELEASE" | default $pinned }}
-{{- /* How the chart takes registrations: `registrations` maps from ThalesGroup/fred#3211
-       (first published in 3.9.0), the former lists before. */}}
-{{- $maps := semverCompare ">=3.9.0-0" $version }}
-{{- if $checkout }}
-{{- $maps = regexMatch "(?m)^registrations:" (readFile (printf "%s/deploy/charts/fred/values.yaml" $checkout)) }}
-{{- end }}
-values:
-  - fredChart:
-      version: {{ $version | quote }}
-      registrationsAsMaps: {{ $maps }}
+# Fred on this k3d instance, one environment per Fred release line:
+#   helmfile -f k3d-apps/fred/helmfile.yaml.gotmpl -e swift sync
+# Without DIR, the published chart and images, at RELEASE or the version pinned below
+# (bumped by a Renovate PR after each Fred release). With DIR, the checkout's chart, and
+# K3D_IMAGE_VALUES selects the images its deploy/k3d/build made (make k3d-app does both).
+environments:
+  swift:
+    values:
+      - checkoutMarker: apps/control-plane-backend/pyproject.toml
+        # renovate: datasource=docker depName=ghcr.io/thalesgroup/fred-helm/fred
+        pinned: "3.9.2"
+  weaver:
+    values:
+      - checkoutMarker: apps/control-plane/Cargo.toml
+        pinned: ""     # Published from Fred 5.0.0.
 ---
+{{- $checkout := env "DIR" }}
+{{- $version := env "RELEASE" | default .Values.pinned }}
+{{- if and $checkout (not (isFile (printf "%s/%s" $checkout .Values.checkoutMarker))) }}
+{{- fail (printf "DIR=%s is not a checkout of Fred %s (it has no %s)" $checkout .Environment.Name .Values.checkoutMarker) }}
+{{- end }}
+{{- if not (or $checkout $version) }}
+{{- fail (printf "FRED=%s has no published release yet: use DIR=/path/to/%s/fred" .Environment.Name .Environment.Name) }}
+{{- end }}
+helmDefaults:
+  kubeContext: k3d-fred
+  wait: true
+  waitForJobs: true
+  timeout: 1200
+  historyMax: 10
+
 releases:
   - name: fred-app
-    {{- with env "K3D_APP_CHECKOUT" }}
-    chart: {{ printf "%s/deploy/charts/fred" . | quote }}
+    namespace: fred-{{ .Environment.Name }}
+    {{- if $checkout }}
+    chart: {{ printf "%s/deploy/charts/fred" $checkout | quote }}
     {{- else }}
     chart: oci://ghcr.io/thalesgroup/fred-helm/fred
-    version: {{ .Values.fredChart.version | quote }}
+    version: {{ $version | quote }}
     {{- end }}
     values:
-      - values.yaml
-      - registrations.yaml.gotmpl
+      - values-{{ .Environment.Name }}.yaml
       {{- with env "K3D_IMAGE_VALUES" }}
       - {{ . | quote }}
       {{- end }}
+    hooks:
+      # The model key is the operator's, created before deploying, as in production.
+      # Without it the pods would wait until the sync times out.
+      - events: [presync]
+        showlogs: true
+        command: kubectl
+        args: [--context, k3d-fred, --namespace, "fred-{{ .Environment.Name }}", get, secret, fred-model-credentials, --output, name]

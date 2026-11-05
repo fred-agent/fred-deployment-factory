@@ -1,7 +1,6 @@
 # Keycloak admin REST primitives, idempotent: each ensure_* creates or fixes
-# one object and never deletes. Sourced by keycloak-post-install-k8s.sh (the
-# platform's identities, in the cluster) and by bin/k3d-identities (the
-# identities an application declares, from the host).
+# one object and never deletes. Sourced by keycloak-post-install-k8s.sh, in the
+# cluster, for the platform's identities and the service clients of k3d/values.yaml.
 #
 # The caller sets KEYCLOAK_SERVER_URL, KEYCLOAK_REALM, KC_BOOTSTRAP_ADMIN_USERNAME
 # and KC_BOOTSTRAP_ADMIN_PASSWORD, then KEYCLOAK_ADMIN_HTTP_TOKEN="$(kc_http_admin_token)".

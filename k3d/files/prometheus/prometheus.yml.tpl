@@ -17,8 +17,8 @@ scrape_configs:
         namespaces:
           names:
             - {{ .Release.Namespace | quote }}
-            {{- range .Values.prometheus.applicationNamespaces }}
-            - {{ . | quote }}
+            {{- range $line, $_ := .Values.lines }}
+            - {{ include "fred-stack.lineNamespace" $line | quote }}
             {{- end }}
     relabel_configs:
       - source_labels: [__meta_kubernetes_namespace]

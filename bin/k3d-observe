@@ -18,7 +18,6 @@ import argparse
 import base64
 import json
 import os
-from pathlib import Path
 import re
 import ssl
 import subprocess
@@ -28,13 +27,11 @@ import urllib.request
 
 if any(name in os.environ for name in ("ENV", "INSTANCE", "MODE", "PROFILE")):
     sys.exit("Removed deployment selectors; use make k3d-health")
-profile = Path(__file__).resolve().parent.parent / "k3d" / "local.env"
-settings = dict(line.split("=", 1) for line in profile.read_text().splitlines() if line.startswith("K3D_"))
-NAMESPACE = settings.get("K3D_NAMESPACE", "fred")
-CONTEXT = "k3d-" + settings["K3D_CLUSTER"]
+NAMESPACE = "fred-infra"
+CONTEXT = "k3d-fred"
 KUBECTL = ["kubectl", "--context", CONTEXT, "-n", NAMESPACE]
-OPENSEARCH = f"https://localhost:{settings['K3D_HOST_PORT_OPENSEARCH']}"
-PROMETHEUS = f"http://localhost:{settings['K3D_HOST_PORT_PROMETHEUS']}"
+OPENSEARCH = "https://localhost:9200"
+PROMETHEUS = "http://localhost:9090"
 # A pod name minus its ReplicaSet and pod suffixes: fred-agents-7f9c-x2k4p -> fred-agents
 POD_SUFFIX = re.compile(r"-[a-z0-9]{8,10}-[a-z0-9]{5}$|-[a-z0-9]{5}$")
 LEVEL = re.compile(r"\b(ERROR|CRITICAL|WARNING)\b")
@@ -53,6 +50,26 @@ def kubectl(*args):
     if result.returncode != 0:
         fail(f"kubectl {' '.join(args)}: {result.stderr.strip()}")
     return result.stdout
+
+
+def line_namespaces():
+    """Fred release line -> Kubernetes namespace (also its Temporal namespace), as prepared."""
+    label = "fred-deployment-factory/line"
+    items = json.loads(subprocess.check_output(
+        ["kubectl", "--context", CONTEXT, "get", "namespace", "-l", label, "-o", "json"], text=True
+    ))["items"]
+    return {item["metadata"]["labels"][label]: item["metadata"]["name"] for item in items}
+
+
+def running_workflows(temporal_namespace, query, limit):
+    result = subprocess.run(
+        [*KUBECTL, "exec", "deploy/temporal", "-c", "temporal", "--",
+         "temporal", "workflow", "list", "--address", "temporal:7233",
+         "--namespace", temporal_namespace, "--query", query, "--limit", str(limit)],
+        capture_output=True, text=True)
+    if result.returncode != 0:
+        fail(f"Temporal workflow list: {result.stderr.strip() or 'command failed'}")
+    return [line for line in result.stdout.splitlines()[1:] if line.strip()]
 
 
 def secret(key):
@@ -117,11 +134,12 @@ def show(doc):
 
 # ── health ───────────────────────────────────────────────────────────────────
 def cmd_health(args):
-    print(f"== Pods (context {CONTEXT}, Swift + Weaver)")
+    lines = line_namespaces()
+    print(f"== Pods (context {CONTEXT}, {NAMESPACE} + {' + '.join(lines.values()) or 'no Fred release line'})")
     pods = json.loads(subprocess.check_output(
         ["kubectl", "--context", CONTEXT, "get", "pods", "-A", "-o", "json"], text=True
     ))["items"]
-    pods = [pod for pod in pods if pod["metadata"]["namespace"] in {"fred", "fred-weaver"}]
+    pods = [pod for pod in pods if pod["metadata"]["namespace"] in {NAMESPACE, *lines.values()}]
     trouble = 0
     for pod in pods:
         name = pod["metadata"]["namespace"] + "/" + pod["metadata"]["name"]
@@ -188,17 +206,11 @@ def cmd_health(args):
         print(f"  DOWN {target['metric'].get('job')} {target['metric'].get('instance')}")
 
     print("\n== Temporal: workflows running")
-    result = subprocess.run(
-        [*KUBECTL, "exec", "deploy/temporal", "-c", "temporal", "--",
-         "temporal", "workflow", "list", "--address", "temporal:7233",
-         "--query", 'ExecutionStatus="Running"', "--limit", "20"],
-        capture_output=True, text=True)
-    if result.returncode != 0:
-        fail(f"Temporal workflow list: {result.stderr.strip() or 'command failed'}")
-    lines = [l for l in result.stdout.splitlines()[1:] if l.strip()]
-    print(f"  {len(lines)} running" + ("" if not lines else ":"))
-    for line in lines[:10]:
-        print("  " + line.strip())
+    for temporal_namespace in lines.values():
+        workflows = running_workflows(temporal_namespace, 'ExecutionStatus="Running"', 20)
+        print(f"  {temporal_namespace}: {len(workflows)} running" + ("" if not workflows else ":"))
+        for workflow in workflows[:10]:
+            print("  " + workflow.strip())
 
 
 # ── logs, trace ──────────────────────────────────────────────────────────────
@@ -214,18 +226,13 @@ def cmd_trace(args):
         show(doc)
     if not docs:
         print("  none")
-    result = subprocess.run(
-        [*KUBECTL, "exec", "deploy/temporal", "-c", "temporal", "--",
-         "temporal", "workflow", "list", "--address", "temporal:7233",
-         "--query", f"WorkflowId STARTS_WITH '{args.id}' OR WorkflowId = 'run-eval-{args.id}'",
-         "--limit", "5"], capture_output=True, text=True)
-    if result.returncode != 0:
-        fail(f"Temporal workflow list: {result.stderr.strip() or 'command failed'}")
-    lines = [l for l in result.stdout.splitlines()[1:] if l.strip()]
-    if lines:
-        print("\n== Temporal workflows")
-        for line in lines:
-            print("  " + line.strip())
+    query = f"WorkflowId STARTS_WITH '{args.id}' OR WorkflowId = 'run-eval-{args.id}'"
+    for temporal_namespace in line_namespaces().values():
+        workflows = running_workflows(temporal_namespace, query, 5)
+        if workflows:
+            print(f"\n== Temporal workflows ({temporal_namespace})")
+            for workflow in workflows:
+                print("  " + workflow.strip())
     if args.id.startswith("eval-run-"):
         print("\n== Evaluation run (database `evaluation`)")
         sql = ("select operational_state, verdict, total_cases, completed_cases, passed_cases,"

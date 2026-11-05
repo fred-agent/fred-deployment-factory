@@ -150,9 +150,6 @@ app_client_uuid="$(client_uuid app)"
 
 ensure_client_role app service_agent "application service agent role"
 
-# An application's own service identities are not here: each one declares them
-# in its identities.yaml (k3d-apps/<APP>/ or its deploy/k3d/), applied by bin/k3d-identities.
-
 # The imported realm ships with zero users (.users=[]): Keycloak still
 # auto-creates service-account-<clientId> for every confidential client with
 # serviceAccountsEnabled=true (agentic, knowledge-flow, control-plane are
@@ -184,9 +181,48 @@ ensure_user_client_role "$agentic_service_user" app service_agent
 ensure_user_client_role "$knowledge_flow_service_user" app service_agent
 ensure_user_client_role "$control_plane_service_user" app service_agent
 
-# fred-agents speaks for a person on every receiver.
+# fred-agents speaks for a person on every receiver. The Knowledge Flow API delegates the
+# authenticated person to the Control Plane, which delegates the admitted person back for
+# document search. This grants trust to assert identity, never a content permission.
 ensure_delegation_client
 ensure_user_client_role "$agentic_service_user" fred-delegation delegation_caller
+delegation_uuid="$(client_uuid fred-delegation)"
+delegation_role="$(kc_http_get "/clients/${delegation_uuid}/roles/delegation_caller")"
+for caller in knowledge-flow control-plane; do
+  ensure_user_client_role "$(wait_for_service_account_username "$caller")" fred-delegation delegation_caller
+  kc_http_post_json "/clients/$(client_uuid "$caller")/scope-mappings/clients/${delegation_uuid}" "[${delegation_role}]"
+done
+
+# The service clients applications use: keycloak.serviceClients of k3d/values.yaml. Each
+# secret comes from the environment, under the key that client declares in `fred-secrets`.
+while IFS= read -r client; do
+  client_id="$(jq -r '.key' <<<"$client")"
+  secret_key="$(jq -r '.value.secretKey' <<<"$client")"
+  uuid="$(ensure_service_client_confidential "$client_id" "${!secret_key}")"
+
+  representation="$(jq -c '.value.representation // {}' <<<"$client")"
+  if [[ "$representation" != "{}" ]]; then
+    kc_http_put_json "/clients/${uuid}" "$(kc_http_get "/clients/${uuid}" | jq -c --argjson changes "$representation" '. + $changes')"
+  fi
+
+  account="$(wait_for_service_account_username "$client_id")"
+  while IFS= read -r grant; do
+    ensure_user_client_role "$account" "${grant%%/*}" "${grant#*/}"
+  done < <(jq -r '.value.grants // [] | .[]' <<<"$client")
+
+  mappers_path="/clients/${uuid}/protocol-mappers/models"
+  existing_mappers="$(kc_http_get "$mappers_path")"
+  while IFS= read -r mapper; do
+    mapper="$(jq -c '.protocol = "openid-connect" | .config += {"access.token.claim": "true", "id.token.claim": "false"}' <<<"$mapper")"
+    mapper_id="$(jq -r --arg name "$(jq -r '.name' <<<"$mapper")" '.[] | select(.name == $name) | .id' <<<"$existing_mappers")"
+    if [[ -n "$mapper_id" ]]; then
+      kc_http_put_json "${mappers_path}/${mapper_id}" "$(jq -c --arg id "$mapper_id" '.id = $id' <<<"$mapper")"
+    else
+      kc_http_post_json "$mappers_path" "$mapper"
+    fi
+  done < <(jq -c '.value.protocolMappers // [] | .[]' <<<"$client")
+  log "service client '${client_id}' ready"
+done < <(jq -c 'to_entries[]' "${SCRIPT_DIR}/keycloak-service-clients.json")
 
 if should_force_relogin; then
   if kc_http_post_empty "/logout-all"; then

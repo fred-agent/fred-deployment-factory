@@ -1,7 +1,8 @@
 # Swift and Weaver side by side
 
-The [README](../README.md) is the single source for installation commands and
-operator credentials. This page explains what `make k3d-up` isolates and what it shares.
+The [README](../README.md) is the single source for installation commands, operator
+credentials and what `FRED` selects. This page explains what `make k3d-up` isolates and
+what it shares.
 
 `make k3d-up` runs both applications on one cluster so that each can be developed and
 tested independently. **It does not migrate data.** The migration strategy is deferred
@@ -12,7 +13,7 @@ marketplace content is transferred by these commands.
 
 | Resource | Boundary |
 | --- | --- |
-| Kubernetes | Separate namespaces: `fred` for Swift and the infrastructure, `fred-weaver` for Weaver |
+| Kubernetes | Separate namespaces: `fred-infra` for the infrastructure, `fred-swift` for Swift, `fred-weaver` for Weaver |
 | PostgreSQL | One server, separate databases and logins |
 | Temporal | One server, separate namespaces |
 | Model key | One Secret per application namespace |
@@ -34,19 +35,9 @@ the OpenSearch administrator.
   access.
 - **Swift's store audit:** Weaver's documents appear as `orphan_content`. Do not delete
   them on that basis.
-- **Cluster logs and metrics:** Fluent Bit's `k3d-logs-*` and `k3d-events-*` cover the
-  whole cluster; filter on the Kubernetes namespace. Prometheus scrapes both namespaces;
-  filter on its `namespace` label.
-
-## Add an application to an existing installation
-
-From `make k3d-up-swift` or `make k3d-up-weaver`, `make k3d-up` retains existing data
-and prepares the other application's boundaries. It does not build or redeploy either
-application. Supply the model Secret, then deploy the one you want.
-
-The requested installation is recorded in the cluster before application deployment,
-which protects interrupted installations from a later accidental request for a solo
-installation. Such a request on a cluster holding both applications is rejected.
+- **Cluster logs and metrics:** Fluent Bit's `k3d-logs-*` covers the three namespaces and
+  `k3d-events-*` the whole cluster; filter on the Kubernetes namespace. Prometheus scrapes
+  the three namespaces; filter on its `namespace` label.
 
 ## Start over deliberately
 

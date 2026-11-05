@@ -1,21 +1,39 @@
-# The evaluation application on this k3d instance:
-# Internal application-engine definition; retained for chart CI.
-# Without DIR, the published chart and images, at RELEASE or the version pinned
-# below (bumped by a Renovate PR after each evaluator release). With DIR, the checkout's chart,
+# The evaluation application on this k3d instance, next to Fred Swift:
+#   helmfile -f k3d-apps/fred-evaluator/helmfile.yaml.gotmpl -e swift sync
+# Without DIR, the published chart and images, at RELEASE or the version pinned below
+# (bumped by a Renovate PR after each evaluator release). With DIR, the checkout's chart,
 # and K3D_IMAGE_VALUES selects the images its deploy/k3d/build made.
-# renovate: datasource=docker depName=ghcr.io/fred-agent/fred-evaluator-helm/fred-evaluator
-{{- $pinned := "1.3.0" }}
-{{- $checkout := env "K3D_APP_CHECKOUT" }}
+environments:
+  swift:
+    values:
+      # renovate: datasource=docker depName=ghcr.io/fred-agent/fred-evaluator-helm/fred-evaluator
+      - pinned: "1.3.0"
+---
+{{- $checkout := env "DIR" }}
+helmDefaults:
+  kubeContext: k3d-fred
+  wait: true
+  waitForJobs: true
+  timeout: 1200
+  historyMax: 10
+
 releases:
   - name: fred-evaluator
+    namespace: fred-{{ .Environment.Name }}
     {{- if $checkout }}
     chart: {{ printf "%s/deploy/charts/fred-evaluator" $checkout | quote }}
     {{- else }}
     chart: oci://ghcr.io/fred-agent/fred-evaluator-helm/fred-evaluator
-    version: {{ env "RELEASE" | default $pinned | quote }}
+    version: {{ env "RELEASE" | default .Values.pinned | quote }}
     {{- end }}
     values:
       - values.yaml
       {{- with env "K3D_IMAGE_VALUES" }}
       - {{ . | quote }}
       {{- end }}
+    hooks:
+      # It runs next to Fred and reads Fred's services.
+      - events: [presync]
+        showlogs: true
+        command: kubectl
+        args: [--context, k3d-fred, --namespace, "fred-{{ .Environment.Name }}", get, deployment, control-plane-backend, --output, name]

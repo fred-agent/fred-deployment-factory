@@ -8,7 +8,7 @@
 [INPUT]
     Name              tail
     Tag               kube.*
-    Path              /var/log/containers/*_{{ .Release.Namespace }}_*.log
+    Path              /var/log/containers/*_{{ .Release.Namespace }}_*.log{{ range $line, $_ := .Values.lines }},/var/log/containers/*_{{ include "fred-stack.lineNamespace" $line }}_*.log{{ end }}
     Exclude_Path      /var/log/containers/fluent-bit-*
     multiline.parser  cri
     # A file it has never read is read from its start (what a pod logged

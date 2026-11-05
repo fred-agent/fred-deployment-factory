@@ -1,0 +1,676 @@
+# =============================================================================
+# Fred Weaver (FRED=weaver) on the local k3d instance of fred-deployment-factory:
+# values for Fred's chart (a checkout's deploy/charts/fred, until a published release),
+# deployed by helmfile.yaml.gotmpl in namespace fred-weaver, at
+# http://weaver.localhost:8088.
+#
+# Everything this instance decides is here, in plain values. What it relies on comes
+# from the infrastructure chart (k3d/values.yaml, lines.weaver): the database, the
+# Temporal namespace, the Secrets `fred-secrets` and `fred-ingestion`, and the
+# OpenSearch, S3 and Keycloak identities. Index and identity names must match there.
+#
+# Image tags are not set here: with DIR, the checkout's deploy/k3d/build writes each
+# image's content tag into the image values the helmfile adds after this file.
+# =============================================================================
+postgresBootstrap:
+  enabled: true
+  image: pgvector/pgvector:pg17
+  database: fred_weaver
+  adminUser: admin
+applications:
+  control-plane-backend:
+    applicationName: control-plane-backend
+    command:
+      data:
+      - control-plane
+      - serve
+      enabled: true
+    configuration:
+      platform:
+        inference_credentials:
+        - api_key_env: OPENAI_API_KEY
+          api_root: https://api.mistral.ai/v1
+          credential_binding: mistral
+          source_id: mistral
+          source_revision: 1
+        knowledge_flow_url: http://knowledge-flow-backend:8000/knowledge-flow/v2
+        model_sources:
+        - authentication:
+            accept_inference_authority: true
+            authority: discovery_and_inference
+            mode: bearer
+            provider_scopes:
+            - GET /v1/models
+            - POST /v1/chat/completions
+            secret_env_var: OPENAI_API_KEY
+          complete_inventory_guaranteed: true
+          discovery_url: https://api.mistral.ai/v1/models
+          enabled: true
+          inference:
+            api_root: https://api.mistral.ai/v1
+            credential_binding: mistral
+            provider: openai
+          qualification: mixed_capabilities_v1
+          revision: 1
+          source_id: mistral
+          visibility_scope: local-test-mistral-account
+        organization_models:
+        - default:
+            source_id: mistral
+            upstream_model_id: mistral-small-latest
+          fallback: null
+          organization: Acme
+          permitted:
+          - source_id: mistral
+            upstream_model_id: mistral-small-latest
+          - source_id: mistral
+            upstream_model_id: mistral-medium-latest
+          reasoning_enabled: []
+          sources:
+          - mistral
+        - default:
+            source_id: mistral
+            upstream_model_id: mistral-small-latest
+          fallback: null
+          organization: Globex
+          permitted:
+          - source_id: mistral
+            upstream_model_id: mistral-small-latest
+          - source_id: mistral
+            upstream_model_id: mistral-medium-latest
+          reasoning_enabled: []
+          sources:
+          - mistral
+        runtime_catalog_sources:
+        - base_url: http://fred-agents/fred/agents/v2
+          enabled: true
+          public_base_url: /fred/agents/v2
+          runtime_id: fred-agents
+      scheduler:
+        lifecycle:
+          enabled: true
+          temporal:
+            host: temporal:7233
+            namespace: fred-weaver
+        processing:
+          derived:
+            access_key_env_var: FRED_CONTENT_ACCESS_KEY
+            allow_insecure: true
+            bucket: app-content-documents
+            endpoint: http://seaweedfs:8333
+            prefix: ''
+            secret_key_env_var: FRED_CONTENT_SECRET_KEY
+          enabled: true
+          limits:
+            artifacts: 2000
+            chunks: 100000
+            output_bytes: 536870912
+            pending: 100
+          temporal:
+            host: temporal:7233
+            namespace: fred-weaver
+            task_queue: manager-ingestion
+          worker:
+            audience: control-plane
+            client_id: knowledge-flow-worker
+            issuer: http://keycloak:8080/realms/app
+          worker_contract_file: /app/processing-contract/worker-contract.json
+      security:
+        authorized_origins:
+        - http://weaver.localhost:8088
+        delegation:
+          accept_delegated_calls: true
+          service_accounts_only: true
+        m2m:
+          realm_url: http://keycloak:8080/realms/app
+        user:
+          realm_url: http://keycloak:8080/realms/app
+      storage:
+        content:
+          allow_insecure: true
+          bucket: app-content-documents
+          endpoint: http://seaweedfs:8333
+          limits:
+            downloads: 8
+            file_bytes: 104857600
+            s3_seconds: 120
+            temp_bytes: 419430400
+            transfer_seconds: 300
+            uploads: 4
+          prefix: ''
+        postgres:
+          database: fred_weaver
+    extraEnvVars:
+    - name: FRED_POSTGRES_PASSWORD
+      valueFrom:
+        secretKeyRef:
+          key: POSTGRES_CP_PASSWORD
+          name: fred-secrets
+    - name: OPENAI_API_KEY
+      valueFrom:
+        secretKeyRef:
+          key: OPENAI_API_KEY
+          name: fred-model-credentials
+    - name: SSL_CERT_FILE
+      value: /etc/fred/node-ca/ca-certificates.crt
+    - name: KEYCLOAK_CONTROL_PLANE_CLIENT_SECRET
+      valueFrom:
+        secretKeyRef:
+          key: KEYCLOAK_CONTROL_PLANE_CLIENT_SECRET
+          name: fred-secrets
+    - name: FRED_BOOTSTRAP_TOKEN
+      valueFrom:
+        secretKeyRef:
+          key: CONTROL_PLANE_BOOTSTRAP_TOKEN
+          name: fred-secrets
+    - name: FRED_CONTENT_ACCESS_KEY
+      value: fred-document-manager
+    - name: FRED_CONTENT_SECRET_KEY
+      valueFrom:
+        secretKeyRef:
+          key: manager-s3-secret
+          name: fred-ingestion
+    extraVolumeMounts:
+    - mountPath: /etc/fred/node-ca/ca-certificates.crt
+      name: node-ca
+      readOnly: true
+    - mountPath: /app/processing-contract
+      name: processing-contract
+      readOnly: true
+    extraVolumes:
+    - hostPath:
+        path: /etc/ssl/certs/ca-certificates.crt
+        type: File
+      name: node-ca
+    ingress:
+      enabled: false
+    lifecycle_policy_catalog:
+      space_policies:
+        purge:
+          default:
+            retention: PT1M
+    migration:
+      args:
+      - initialize-schema
+      command:
+      - control-plane
+      enabled: true
+      extraEnvVars:
+      - name: FRED_POSTGRES_PASSWORD
+        valueFrom:
+          secretKeyRef:
+            key: POSTGRES_CP_PASSWORD
+            name: fred-secrets
+      scaleDown: false
+    resources:
+      limits:
+        cpu: '2'
+        ephemeral-storage: 2Gi
+        memory: 1Gi
+      requests:
+        cpu: 250m
+        ephemeral-storage: 1Gi
+        memory: 256Mi
+    serviceAccount:
+      name: control-plane-backend
+    volumeMounts:
+    - mountPath: /app/config/lifecycle_policy_catalog.yaml
+      name: manager-catalog
+      subPath: lifecycle_policy_catalog.yaml
+    - mountPath: /app/config/configuration.yaml
+      name: manager-config
+      subPath: configuration.yaml
+    - mountPath: /app/config/.env
+      name: manager-env
+      subPath: .env
+    volumes:
+    - configMap:
+        name: control-plane-backend-catalog
+      name: manager-catalog
+    - configMap:
+        name: control-plane-backend-back
+      name: manager-config
+    - name: manager-env
+      secret:
+        secretName: control-plane-backend-env
+    workerContract:
+      exportFromWorkerImage: true
+  control-plane-worker:
+    deployment:
+      enabled: true
+    enabled: false
+    extraEnvVars:
+    - name: COLUMNS
+      value: '250'
+    - name: FRED_POSTGRES_PASSWORD
+      valueFrom:
+        secretKeyRef:
+          key: POSTGRES_FRED_PASSWORD
+          name: fred-secrets
+          optional: false
+    - name: OPENSEARCH_PASSWORD
+      valueFrom:
+        secretKeyRef:
+          key: OPENSEARCH_ADMIN_PASSWORD
+          name: fred-secrets
+          optional: false
+    - name: MINIO_SECRET_KEY
+      valueFrom:
+        secretKeyRef:
+          key: SEAWEEDFS_ADMIN_PASSWORD
+          name: fred-secrets
+          optional: false
+    - name: KEYCLOAK_CONTROL_PLANE_CLIENT_SECRET
+      valueFrom:
+        secretKeyRef:
+          key: KEYCLOAK_CONTROL_PLANE_CLIENT_SECRET
+          name: fred-secrets
+          optional: false
+  fred-agents:
+    configuration:
+      ai:
+        timeout:
+          connect: 20
+          read: 60
+      app:
+        gcu_version: v1
+        openai_compat: false
+      inference_credentials:
+      - api_key_env: OPENAI_API_KEY
+        api_root: https://api.mistral.ai/v1
+        credential_binding: mistral
+        source_id: mistral
+        source_revision: 1
+      observability:
+        kpi:
+          opensearch:
+            enabled: true
+            index: weaver-kpi
+          prometheus:
+            address: 0.0.0.0
+      scheduler:
+        temporal:
+          host: temporal:7233
+          namespace: fred-weaver
+      security:
+        authorized_origins:
+        - http://weaver.localhost:8088
+        delegation:
+          act_for_people: true
+        m2m:
+          realm_url: http://keycloak:8080/realms/app
+        profile: c3
+        user:
+          realm_url: http://keycloak:8080/realms/app
+      storage:
+        log_store:
+          index: weaver-app-logs
+          type: opensearch
+        object_store:
+          access_key: admin
+          endpoint: http://seaweedfs:8333
+          secure: false
+          type: minio
+        opensearch:
+          host: https://opensearch:9200
+          username: fred-agents
+        postgres:
+          database: fred_weaver
+          host: postgres
+          pool_pre_ping: true
+          pool_recycle: 1800
+          pool_timeout: 30
+          schema: runtime
+          username: fred_runtime
+    enabled: true
+    extraEnvVars:
+    - name: COLUMNS
+      value: '250'
+    - name: FRED_POSTGRES_PASSWORD
+      valueFrom:
+        secretKeyRef:
+          key: POSTGRES_RUNTIME_PASSWORD
+          name: fred-secrets
+    - name: OPENSEARCH_PASSWORD
+      valueFrom:
+        secretKeyRef:
+          key: agents-opensearch-password
+          name: fred-ingestion
+    - name: MINIO_SECRET_KEY
+      valueFrom:
+        secretKeyRef:
+          key: SEAWEEDFS_ADMIN_PASSWORD
+          name: fred-secrets
+          optional: false
+    - name: OPENAI_API_KEY
+      valueFrom:
+        secretKeyRef:
+          key: OPENAI_API_KEY
+          name: fred-model-credentials
+          optional: false
+    - name: WEB_RESEARCH_PROVIDER_KEY
+      valueFrom:
+        secretKeyRef:
+          key: WEB_RESEARCH_PROVIDER_KEY
+          name: fred-web-research-credentials
+          optional: true
+    - name: KEYCLOAK_AGENTIC_CLIENT_SECRET
+      valueFrom:
+        secretKeyRef:
+          key: KEYCLOAK_AGENTIC_CLIENT_SECRET
+          name: fred-secrets
+          optional: false
+    - name: SSL_CERT_FILE
+      value: /etc/fred/node-ca/ca-certificates.crt
+    extraVolumeMounts:
+    - mountPath: /etc/fred/node-ca/ca-certificates.crt
+      name: node-ca
+      readOnly: true
+    extraVolumes:
+    - hostPath:
+        path: /etc/ssl/certs/ca-certificates.crt
+        type: File
+      name: node-ca
+    migration:
+      enabled: true
+      extraEnvVars:
+      - name: FRED_POSTGRES_PASSWORD
+        valueFrom:
+          secretKeyRef:
+            key: POSTGRES_RUNTIME_PASSWORD
+            name: fred-secrets
+  frontend:
+    configuration:
+      config_json:
+        backend_url_api: http://weaver.localhost:8088
+        backend_url_knowledge: http://weaver.localhost:8088
+        frontend_basename: /
+        websocket_url: ws://weaver.localhost:8088/fred/chatbot/query
+    extraEnvVars:
+    - name: FRONTEND_CONTROL_PLANE_UPSTREAM
+      value: http://control-plane-backend.fred-weaver.svc.cluster.local:8222
+    ingress:
+      className: traefik
+      enabled: true
+      hosts:
+      - host: weaver.localhost
+        paths:
+        - path: /
+          pathType: Prefix
+          service:
+            name: frontend
+            port: 80
+        - path: /control-plane
+          pathType: Prefix
+          service:
+            name: control-plane-backend
+            port: 8222
+        - path: /fred/agents/v2
+          pathType: Prefix
+          service:
+            name: fred-agents
+            port: 80
+      tls: []
+  knowledge-flow-backend:
+    configuration:
+      chat_model:
+        name: mistral-small-latest
+        provider: openai
+        settings:
+          base_url: https://api.mistral.ai/v1
+      control_plane_url: http://control-plane-backend:8222/control-plane/v1
+      crossencoder_model:
+        settings:
+          http_client_limits:
+            keepalive_expiry_seconds: 10
+            max_connections: 500
+            max_keepalive_connections: 0
+          max_retries: 0
+          online: true
+          timeout:
+            connect: 10
+            read: 120
+      embedding_model:
+        name: mistral-embed
+        provider: openai
+        settings:
+          base_url: https://api.mistral.ai/v1
+          check_embedding_ctx_length: false
+      observability:
+        kpi:
+          opensearch:
+            enabled: true
+            index: weaver-kpi
+          prometheus:
+            address: 0.0.0.0
+      published_artifacts:
+        access_key_env: KF_ARTIFACT_ACCESS_KEY
+        allow_insecure: true
+        bucket: app-content-documents
+        endpoint: http://seaweedfs:8333
+        secret_key_env: KF_ARTIFACT_SECRET_KEY
+      security:
+        authorized_origins:
+        - http://weaver.localhost:8088
+        delegation:
+          accept_delegated_calls: true
+          act_for_people: true
+          service_accounts_only: true
+        m2m:
+          enabled: true
+          realm_url: http://keycloak:8080/realms/app
+        profile: c3
+        user:
+          realm_url: http://keycloak:8080/realms/app
+      storage:
+        log_store:
+          index: weaver-app-logs
+          type: opensearch
+        opensearch:
+          host: https://opensearch:9200
+          username: fred-kf-api
+        postgres:
+          database: fred_weaver
+          host: postgres
+          max_overflow: 0
+          pool_pre_ping: true
+          pool_recycle: 1800
+          pool_size: 2
+          pool_timeout: 30
+          schema: knowledge
+          username: fred_kf
+        tabular_store:
+          query:
+            duckdb_memory_limit: 256MB
+            duckdb_threads: 1
+            max_concurrent_queries: 2
+            max_queued_queries: 4
+            max_selected_datasets: 50
+            query_timeout_seconds: 30
+        vector_store:
+          bulk_size: 1000
+          collection_name: null
+          index: document-vectors
+          type: opensearch
+    extraEnvVars:
+    - name: COLUMNS
+      value: '250'
+    - name: FRED_POSTGRES_PASSWORD
+      valueFrom:
+        secretKeyRef:
+          key: POSTGRES_KF_PASSWORD
+          name: fred-secrets
+    - name: OPENSEARCH_PASSWORD
+      valueFrom:
+        secretKeyRef:
+          key: kf-api-opensearch-password
+          name: fred-ingestion
+    - name: OPENAI_API_KEY
+      valueFrom:
+        secretKeyRef:
+          key: OPENAI_API_KEY
+          name: fred-model-credentials
+          optional: false
+    - name: KEYCLOAK_KNOWLEDGE_FLOW_CLIENT_SECRET
+      valueFrom:
+        secretKeyRef:
+          key: KEYCLOAK_KNOWLEDGE_FLOW_CLIENT_SECRET
+          name: fred-secrets
+          optional: false
+    - name: SSL_CERT_FILE
+      value: /etc/fred/node-ca/ca-certificates.crt
+    - name: KF_ARTIFACT_ACCESS_KEY
+      value: fred-document-reader
+    - name: KF_ARTIFACT_SECRET_KEY
+      valueFrom:
+        secretKeyRef:
+          key: kf-api-s3-secret
+          name: fred-ingestion
+    extraVolumeMounts:
+    - mountPath: /etc/fred/node-ca/ca-certificates.crt
+      name: node-ca
+      readOnly: true
+    extraVolumes:
+    - hostPath:
+        path: /etc/ssl/certs/ca-certificates.crt
+        type: File
+      name: node-ca
+  knowledge-flow-worker:
+    configuration:
+      chat_model:
+        name: mistral-small-latest
+        provider: openai
+        settings:
+          base_url: https://api.mistral.ai/v1
+      embedding_model:
+        name: mistral-embed
+        provider: openai
+        settings:
+          base_url: https://api.mistral.ai/v1
+          check_embedding_ctx_length: false
+      manager_processing:
+        allow_insecure: true
+        audience: control-plane
+        bucket: app-content-documents
+        client_id: knowledge-flow-worker
+        endpoint: http://seaweedfs:8333
+        issuer: http://keycloak:8080/realms/app
+        temporary_bytes: 1073741824
+        url: http://control-plane-backend:8222/control-plane/v1
+        vector_store:
+          bulk_size: 1000
+          index: document-vectors
+          type: opensearch
+      observability:
+        kpi:
+          opensearch:
+            enabled: true
+            index: weaver-kpi
+          prometheus:
+            address: 0.0.0.0
+      scheduler:
+        backend: temporal
+        enabled: true
+        temporal:
+          host: temporal:7233
+          ingestion_max_concurrent_activities: 1
+          namespace: fred-weaver
+          task_queue: manager-ingestion
+        worker_roles:
+        - common
+        - extraction-fast
+        - extraction-medium
+        - extraction-rich
+      storage:
+        log_store:
+          index: weaver-app-logs
+          type: opensearch
+        opensearch:
+          host: https://opensearch:9200
+          username: fred-kf-ingestion
+        postgres:
+          database: fred_weaver
+          host: postgres
+          max_overflow: 0
+          pool_pre_ping: true
+          pool_recycle: 1800
+          pool_size: 2
+          pool_timeout: 30
+          schema: knowledge
+          username: fred_kf
+        tabular_store:
+          query:
+            duckdb_memory_limit: 256MB
+            duckdb_threads: 1
+            max_concurrent_queries: 2
+            max_queued_queries: 4
+            max_selected_datasets: 50
+            query_timeout_seconds: 30
+        vector_store:
+          bulk_size: 1000
+          collection_name: null
+          index: document-vectors
+          type: opensearch
+      vision_model:
+        name: pixtral-12b-2409
+        provider: openai
+        settings:
+          base_url: https://api.mistral.ai/v1
+    deployment:
+      enabled: true
+    enabled: true
+    extraEnvVars:
+    - name: OPENAI_API_KEY
+      valueFrom:
+        secretKeyRef:
+          key: OPENAI_API_KEY
+          name: fred-model-credentials
+    - name: COLUMNS
+      value: '250'
+    - name: SSL_CERT_FILE
+      value: /etc/fred/node-ca/ca-certificates.crt
+    - name: OPENSEARCH_PASSWORD
+      valueFrom:
+        secretKeyRef:
+          key: opensearch-password
+          name: fred-ingestion
+    - name: MANAGER_WORKER_CLIENT_SECRET
+      valueFrom:
+        secretKeyRef:
+          key: KEYCLOAK_MANAGER_WORKER_CLIENT_SECRET
+          name: fred-secrets
+    - name: MANAGER_DERIVED_ACCESS_KEY
+      value: fred-document-processor
+    - name: MANAGER_DERIVED_SECRET_KEY
+      valueFrom:
+        secretKeyRef:
+          key: processor-s3-secret
+          name: fred-ingestion
+    extraVolumeMounts:
+    - mountPath: /etc/fred/node-ca/ca-certificates.crt
+      name: node-ca
+      readOnly: true
+    extraVolumes:
+    - hostPath:
+        path: /etc/ssl/certs/ca-certificates.crt
+        type: File
+      name: node-ca
+    replicaCount: 1
+    resources:
+      limits:
+        cpu: '4'
+        ephemeral-storage: 8Gi
+        memory: 6Gi
+      requests:
+        cpu: '1'
+        ephemeral-storage: 5Gi
+        memory: 2Gi
+    volumes:
+    - configMap:
+        name: knowledge-flow-worker-back
+      name: knowledge-flow-worker-vol
+    - name: knowledge-flow-worker-env-vol
+      secret:
+        secretName: knowledge-flow-worker-env
+  monitor:
+    enabled: true

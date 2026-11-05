@@ -14,7 +14,7 @@ repository) queries them all.
 ## Preconditions
 
 `make k3d-up` ran (observability is in the base stack), and the apps were deployed with
-`make k3d-app DIR=...` (their k3d values open the metrics endpoints and widen
+`make k3d-app FRED=swift|weaver APP=fred DIR=...` (their k3d values open the metrics endpoints and widen
 the console so one log line stays one record). Run everything from this repository's root.
 
 ## The sources, and what each one answers
@@ -24,10 +24,10 @@ the console so one log line stays one record). Run everything from this reposito
 | `k3d-logs-*` (OpenSearch) | every container's output, one document per line, with `kubernetes.pod_name`, `container_name`, `labels.app` | `bin/k3d-observe logs`, or Discover on <http://localhost:5601> |
 | `k3d-events-*` (OpenSearch) | Kubernetes events: `reason` (BackOff, Unhealthy, FailedScheduling...), `involvedObject.name`, `message` | `bin/k3d-observe health`, Discover |
 | `app-logs-index` (OpenSearch) | the Fred apps' own structured log store (`service`, `level`) | Discover |
-| Pod state (cluster) | restarts and their reason: **OOMKilled is here, not in the events** | `bin/k3d-observe health`, `kubectl -n fred get pods` |
+| Pod state (cluster) | restarts and their reason: **OOMKilled is here, not in the events** | `bin/k3d-observe health`, `kubectl -n fred-swift get pods` (`fred-weaver`, `fred-infra`) |
 | Prometheus | the apps' KPIs: `api_request_latency_ms` (labels `app`, `route`, `http_status`), `llm_call_latency_ms`, `agent_tool_latency_ms`, `agent_tool_failed_total`, `event_loop_lag_ms`, `rebac_call_latency_ms`, `fred_auth_m2m_*` | `bin/k3d-observe kpi` / `promql`, <http://localhost:9090>, Grafana <http://localhost:3002> (folder Fred) |
 | Temporal | ingestion and evaluation workflows, their pending activities, attempts, last heartbeat | `bin/k3d-observe trace`, <http://localhost:8233> |
-| Databases | the ground truth of an entity's state: `fred.kf_task_run`, `fred.metadata` (document stages), `evaluation.evaluation_run` / `evaluation_case` | `kubectl -n fred exec deploy/postgres -- psql -U admin -d <db>` |
+| Databases | the ground truth of an entity's state: `fred_swift`'s `kf_task_run`, `metadata` (document stages), `evaluation.evaluation_run` / `evaluation_case` | `kubectl -n fred-infra exec deploy/postgres -- psql -U admin -d <db>` |
 
 Credentials are in the `fred-secrets` Secret; the script reads them itself.
 

@@ -8,7 +8,7 @@
       "description": "The published release each k3d application deploys by default",
       "managerFilePatterns": ["/^k3d-apps/[^/]+/helmfile\\.yaml\\.gotmpl$/"],
       "matchStrings": [
-        "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)\\n\\{\\{- \\$pinned := \"(?<currentValue>[^\"]+)\" \\}\\}"
+        "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)\\n\\s*(?:- )?pinned: \"(?<currentValue>[^\"]+)\""
       ],
       "versioningTemplate": "semver"
     }

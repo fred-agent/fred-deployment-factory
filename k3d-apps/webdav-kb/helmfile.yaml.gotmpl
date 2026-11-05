@@ -1,29 +1,39 @@
-# The WebDAV Knowledge Base on this k3d instance:
-# Internal application-engine definition; retained for chart CI.
-# Without DIR, the published chart and image, at RELEASE or the version pinned
-# below (bumped by a Renovate PR after each release). With DIR, the checkout's
-# chart, staged with its dependencies by bin/k3d-chart-stage (Fred's knowledge-base
-# chart from FRED_REPO with FRED_LIBS=local), and K3D_IMAGE_VALUES selects the
-# image its deploy/k3d/build made.
-# renovate: datasource=docker depName=ghcr.io/fred-agent/webdav-knowledge-base-helm/webdav-knowledge-base
-{{- $pinned := "0.4.0" }}
-{{- $checkout := env "K3D_APP_CHECKOUT" }}
+# The WebDAV Knowledge Base on this k3d instance, next to Fred Swift:
+#   helmfile -f k3d-apps/webdav-kb/helmfile.yaml.gotmpl -e swift sync
+# Without DIR, the published chart and image, at RELEASE or the version pinned below
+# (bumped by a Renovate PR after each release). With DIR, the checkout's chart, and
+# K3D_IMAGE_VALUES selects the image its deploy/k3d/build made.
+environments:
+  swift:
+    values:
+      # renovate: datasource=docker depName=ghcr.io/fred-agent/webdav-knowledge-base-helm/webdav-knowledge-base
+      - pinned: "0.4.0"
+---
+{{- $checkout := env "DIR" }}
+helmDefaults:
+  kubeContext: k3d-fred
+  wait: true
+  waitForJobs: true
+  timeout: 1200
+  historyMax: 10
+
 releases:
   - name: webdav-knowledge-base
+    namespace: fred-{{ .Environment.Name }}
     {{- if $checkout }}
-    chart: {{ printf "%s/chart" (requiredEnv "K3D_APP_OUT") | quote }}
-    hooks:
-      - events: [prepare]
-        command: ../../bin/k3d-chart-stage
-        args:
-          - {{ printf "%s/deploy/charts/webdav-knowledge-base" $checkout | quote }}
-          - {{ printf "%s/chart" (requiredEnv "K3D_APP_OUT") | quote }}
+    chart: {{ printf "%s/deploy/charts/webdav-knowledge-base" $checkout | quote }}
     {{- else }}
     chart: oci://ghcr.io/fred-agent/webdav-knowledge-base-helm/webdav-knowledge-base
-    version: {{ env "RELEASE" | default $pinned | quote }}
+    version: {{ env "RELEASE" | default .Values.pinned | quote }}
     {{- end }}
     values:
       - values.yaml
       {{- with env "K3D_IMAGE_VALUES" }}
       - {{ . | quote }}
       {{- end }}
+    hooks:
+      # Its publish Job declares this Knowledge Base to Fred's control plane.
+      - events: [presync]
+        showlogs: true
+        command: kubectl
+        args: [--context, k3d-fred, --namespace, "fred-{{ .Environment.Name }}", get, deployment, control-plane-backend, --output, name]

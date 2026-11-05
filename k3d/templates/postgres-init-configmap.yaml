@@ -6,8 +6,6 @@ metadata:
     {{- include "fred-stack.labels" . | nindent 4 }}
 data:
   001-init.sql: |
-    -- Reserve the Swift authorization database even in a Weaver-only lab.
-    -- PostgreSQL init runs only once; adding Swift later must not require a reset.
     DO $$
     BEGIN
       IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '{{ .Values.auth.postgresKeycloakUser }}') THEN

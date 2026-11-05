@@ -1,0 +1,36 @@
+# The local cluster: k3d cluster create --config k3d/cluster.yaml
+apiVersion: k3d.io/v1alpha5
+kind: Simple
+metadata:
+  name: fred
+servers: 1
+agents: 1
+ports:
+  # Host ports to the NodePorts of k3d/values.yaml, and the ingress on 8088.
+  - {port: "5432:30432", nodeFilters: ["server:0"]}
+  - {port: "8080:30080", nodeFilters: ["server:0"]}
+  - {port: "8333:30833", nodeFilters: ["server:0"]}
+  - {port: "8123:30823", nodeFilters: ["server:0"]}
+  - {port: "9002:30902", nodeFilters: ["server:0"]}
+  - {port: "9200:30920", nodeFilters: ["server:0"]}
+  - {port: "5601:30561", nodeFilters: ["server:0"]}
+  - {port: "9080:30908", nodeFilters: ["server:0"]}
+  - {port: "9081:30981", nodeFilters: ["server:0"]}
+  - {port: "7233:30723", nodeFilters: ["server:0"]}
+  - {port: "8233:30233", nodeFilters: ["server:0"]}
+  - {port: "9090:30090", nodeFilters: ["server:0"]}
+  - {port: "3002:30300", nodeFilters: ["server:0"]}
+  - {port: "8088:80", nodeFilters: ["server:0"]}
+options:
+  k3d:
+    wait: true
+  kubeconfig:
+    updateDefaultKubeconfig: true
+    switchCurrentContext: false
+  k3s:
+    extraArgs:
+      # Disk thresholds in absolute sizes. The defaults are percentages of the host disk:
+      # on a well-filled large laptop disk they evict pods with hundreds of GiB free.
+      - {arg: "--kubelet-arg=image-gc-high-threshold=100", nodeFilters: ["server:*", "agent:*"]}
+      - {arg: "--kubelet-arg=image-gc-low-threshold=99", nodeFilters: ["server:*", "agent:*"]}
+      - {arg: "--kubelet-arg=eviction-hard=memory.available<100Mi,nodefs.available<2Gi,imagefs.available<2Gi,nodefs.inodesFree<5%,imagefs.inodesFree<5%", nodeFilters: ["server:*", "agent:*"]}

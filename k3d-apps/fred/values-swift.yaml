@@ -1,7 +1,7 @@
 # =============================================================================
-# Fred on the local k3d instance of fred-deployment-factory: values for Fred's
-# chart (the published one, or a checkout's deploy/charts/fred), deployed by
-# the internal application engine through helmfile.yaml.gotmpl.
+# Fred Swift (FRED=swift) on the local k3d instance of fred-deployment-factory:
+# values for Fred's chart (the published one, or a checkout's deploy/charts/fred),
+# deployed by helmfile.yaml.gotmpl in namespace fred-swift.
 #
 # Only what this instance decides lives here. Everything else is the chart's
 # default, so this file is also the list of every way k3d differs from a
@@ -12,8 +12,8 @@
 #
 # What each block is:
 #   address  where a service of the k3d stack (the infrastructure reconciler) is reached
-#   secret   a credential, always by reference to `fred-secrets`, the
-#            Foundation Secret created by the infrastructure reconciler; never a literal
+#   secret   a credential, always by reference to `fred-secrets`, which the
+#            infrastructure chart creates in this namespace; never a literal
 #   posture  a switch set as on fredlab (GKE): c3, delegation, migration Job,
 #            workers
 #   choice   a production choice the chart leaves to each instance; each one is
@@ -29,7 +29,9 @@
 # ── address ──────────────────────────────────────────────────────────────────
 x-realm-url: &realm-url "http://keycloak:8080/realms/app"
 x-origins: &origins
-  - "http://localhost:8088"
+  - "http://swift.localhost:8088"
+x-database: &database fred_swift
+x-temporal-namespace: &temporal-namespace fred-swift
 x-rebac: &rebac
   api_url: "http://openfga:9080"
 
@@ -115,6 +117,7 @@ x-kf-security: &kf-security
 x-kf-scheduler: &kf-scheduler
   temporal:
     host: "temporal:7233"                  # address
+    namespace: *temporal-namespace         # address
 
 x-kf-content-storage: &kf-content-storage  # choice: S3 (SeaweedFS), shared by API and worker
   type: minio
@@ -134,7 +137,8 @@ x-kf-filesystem: &kf-filesystem            # choice: S3 (SeaweedFS)
 x-kf-storage: &kf-storage
   postgres:
     host: postgres                         # address
-    username: fred                         # address: the `fred` database owner
+    database: *database                    # address
+    username: fred                         # address: the database's owner
     pool_size: 2                           # choice (as on fredlab)
     max_overflow: 0
     pool_timeout: 30
@@ -224,10 +228,12 @@ x-cp-security: &cp-security
 x-cp-scheduler: &cp-scheduler
   temporal:
     host: "temporal:7233"                  # address
+    namespace: *temporal-namespace         # address
 
 x-cp-storage: &cp-storage
   postgres:
     host: postgres                         # address
+    database: *database                    # address
     pool_timeout: 30                       # choice (as on fredlab)
     pool_recycle: 1800
     pool_pre_ping: true
@@ -258,6 +264,36 @@ x-cp-configuration: &cp-configuration
   storage: *cp-storage
   observability: *observability
 
+# ── registrations ────────────────────────────────────────────────────────────
+# choice: what this instance's Fred serves. An application shows up once a platform
+# admin enables it for a team (Admin > Features, filter "app"): registration alone grants
+# nothing, and the gateway resolves an upstream per request, so an application not
+# deployed yet never stops the frontend. Add yours here, or in a VALUES file.
+registrations:
+  applications:
+    evaluation:
+      ui_prefix: /apps/evaluation
+      version: 1.2.0
+      icon: fact_check
+      display_name:
+        en: "Evaluation"
+        fr: "Évaluation"
+      description:
+        en: "Evaluate agents against versioned test sets."
+        fr: "Évaluer les agents sur des jeux de tests versionnés."
+      enabled: true
+      gateway:                             # address: what the frontend gateway proxies to
+        ui_upstream: http://fred-evaluator-ui.fred-swift.svc.cluster.local:8080
+        service_upstream: http://fred-evaluator-api.fred-swift.svc.cluster.local:8336
+        service_required: true
+  knowledgeBasePublishers:
+    # fred-samples' Knowledge Bases, run from their checkout, share this client.
+    kb-fred.samples:
+      prefix: fred.samples
+    # The WebDAV Knowledge Base (k3d-apps/webdav-kb).
+    kb-fred.webdav:
+      prefix: fred.webdav
+
 applications:
 
   # ===========================================================================
@@ -287,6 +323,7 @@ applications:
       scheduler:
         temporal:
           host: "temporal:7233"            # address
+          namespace: *temporal-namespace   # address
       security:
         profile: c3                        # posture
         m2m: { realm_url: *realm-url }     # address
@@ -306,6 +343,7 @@ applications:
           secure: false
         postgres:
           host: postgres                   # address
+          database: *database              # address
           username: fred                   # address
           pool_timeout: 30                 # choice (as on fredlab)
           pool_recycle: 1800
@@ -355,7 +393,9 @@ applications:
 
   # ===========================================================================
   frontend:
-    # env, with the gateway's applications: registrations.yaml.gotmpl.
+    env:
+      - name: VITE_BACKEND_URL_KNOWLEDGE   # address
+        value: "http://swift.localhost:8088"
     # Branding fetched from SeaweedFS at startup; with no object the pod logs
     # one warning and serves the baked assets. See the fred frontend README.
     extraEnvVars:
@@ -367,13 +407,13 @@ applications:
       - name: FRONTEND_THEME_S3_SECRET_KEY # secret
         valueFrom:
           secretKeyRef: { name: fred-secrets, key: SEAWEEDFS_ADMIN_PASSWORD, optional: true }
-    # address: Fred on http://localhost:8088. Keycloak is not Fred's to expose:
+    # address: Fred on http://swift.localhost:8088. Keycloak is not Fred's to expose:
     # the browser reaches it at http://keycloak:8080, the realm_url above.
     ingress:
       enabled: true
       className: "traefik"
       hosts:
-        - host: ""
+        - host: swift.localhost
           paths:
             - { path: /, pathType: Prefix, service: { name: frontend, port: 80 } }
             - { path: /fred/agents/v2, pathType: Prefix, service: { name: fred-agents, port: 80 } }
@@ -382,9 +422,9 @@ applications:
       tls: []
     configuration:
       config_json:                         # address
-        backend_url_api: "http://localhost:8088"
-        backend_url_knowledge: "http://localhost:8088"
-        websocket_url: "ws://localhost:8088/fred/chatbot/query"
+        backend_url_api: "http://swift.localhost:8088"
+        backend_url_knowledge: "http://swift.localhost:8088"
+        websocket_url: "ws://swift.localhost:8088/fred/chatbot/query"
         frontend_basename: "/"
 
   # ===========================================================================
@@ -433,6 +473,7 @@ applications:
         worker_roles: ["common", "extraction-fast", "extraction-medium", "extraction-rich"]
         temporal:
           host: "temporal:7233"            # address (the merge above is shallow)
+          namespace: *temporal-namespace   # address
           # sizing: one extraction at a time per role, 3 at most in this pod.
           ingestion_max_concurrent_activities: 1
 
@@ -462,8 +503,7 @@ applications:
             base_url: http://fred-agents/fred/agents/v2
             enabled: true
             ingress_prefix: /fred/agents/v2
-        # choice: this instance serves applications. Which ones, and the
-        # Knowledge Bases allowed to publish: registrations.yaml.gotmpl.
+        # choice: this instance serves the applications of `registrations` above.
         frontend:
           feature_flags:
             enableApplications: true

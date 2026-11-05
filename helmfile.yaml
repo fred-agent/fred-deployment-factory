@@ -1,0 +1,15 @@
+# The infrastructure of this k3d instance: helmfile sync, on the cluster of
+# k3d/cluster.yaml. Every Fred release line is prepared here (k3d/values.yaml, `lines`);
+# applications deploy separately, with k3d-apps/<APP>/helmfile.yaml.gotmpl.
+helmDefaults:
+  kubeContext: k3d-fred
+  wait: true
+  waitForJobs: true
+  timeout: 1200
+  historyMax: 10
+
+releases:
+  - name: fred-stack
+    namespace: fred-infra
+    createNamespace: true
+    chart: ./k3d

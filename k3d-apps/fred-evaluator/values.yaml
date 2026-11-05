@@ -7,7 +7,7 @@
 # Only what k3d decides lives here; the chart's defaults already name the
 # services of a default Fred install (postgres, temporal:7233,
 # control-plane-backend:8222, fred-agents), which is what k3d runs. Fred learns
-# about the application from its registration.yaml.
+# about the application from its `registrations` (k3d-apps/fred/values-swift.yaml).
 #
 # Posture as on fredlab: no security profile, no delegation; the worker has its
 # own `fred-evaluation-worker` identity with app/service_agent only.
@@ -20,10 +20,10 @@
 x-realm-url: &realm-url "http://keycloak:8080/realms/app"
 
 ui:
-  hostOrigin: "http://localhost:8088"      # address: where users open Fred
+  hostOrigin: "http://swift.localhost:8088"   # address: where users open Fred
 
-# secret: every credential by reference to fred-secrets, the Foundation Secret
-# created by the infrastructure reconciler.
+# secret: every credential by reference to fred-secrets, which the infrastructure
+# chart creates in this namespace.
 extraEnvVars:
   - name: FRED_POSTGRES_PASSWORD
     valueFrom:
@@ -48,4 +48,4 @@ configuration:
     m2m:
       realm_url: *realm-url                # address
     authorized_origins:                    # address
-      - "http://localhost:8088"
+      - "http://swift.localhost:8088"

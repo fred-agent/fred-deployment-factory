@@ -51,4 +51,3 @@ config/fredlab-keycloak-identity.local.json
 /.cache/
 
 # Operator source locations (not a second deployment selector).
-/local-checkouts.json

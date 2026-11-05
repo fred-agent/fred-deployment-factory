@@ -1,0 +1,66 @@
+{{- /* What each Fred release line gets on this instance. Applications only read it:
+none of them needs an administrator credential to deploy. */ -}}
+{{- $foundation := include "fred-stack.foundationSecrets" . | fromYaml }}
+{{- range $line, $config := .Values.lines }}
+{{- $namespace := include "fred-stack.lineNamespace" $line }}
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ $namespace }}
+  labels:
+    {{- include "fred-stack.labels" $ | nindent 4 }}
+    fred-deployment-factory/line: {{ $line }}
+  annotations:
+    # The namespace holds the operator's model Secret and the deployed applications.
+    helm.sh/resource-policy: keep
+{{- range $config.services }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ . }}
+  namespace: {{ $namespace }}
+  labels:
+    {{- include "fred-stack.labels" $ | nindent 4 }}
+spec:
+  type: ExternalName
+  externalName: {{ . }}.{{ $.Release.Namespace }}.svc.cluster.local
+{{- end }}
+{{- $secrets := dict }}
+{{- range $key, $value := $foundation }}
+{{- range $prefix := $config.sharedSecrets }}
+{{- if hasPrefix $prefix $key }}{{- $_ := set $secrets $key $value }}{{- end }}
+{{- end }}
+{{- end }}
+{{- $_ := set $secrets "POSTGRES_FRED_DB" $config.database }}
+{{- /* The first platform admin's token: generated once for each line, then kept. */}}
+{{- $current := (lookup "v1" "Secret" $namespace "fred-secrets").data | default dict }}
+{{- $_ := set $secrets "CONTROL_PLANE_BOOTSTRAP_TOKEN" (index $current "CONTROL_PLANE_BOOTSTRAP_TOKEN" | default "" | b64dec | default (randAlphaNum 64)) }}
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: fred-secrets
+  namespace: {{ $namespace }}
+  labels:
+    {{- include "fred-stack.labels" $ | nindent 4 }}
+type: Opaque
+stringData:
+  {{- merge (deepCopy ($config.secrets | default dict)) $secrets | toYaml | nindent 2 }}
+{{- range $name, $data := $config.namedSecrets }}
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ $name }}
+  namespace: {{ $namespace }}
+  labels:
+    {{- include "fred-stack.labels" $ | nindent 4 }}
+type: Opaque
+stringData:
+  {{- range $key, $value := $data }}
+  {{ $key }}: {{ $value | quote }}
+  {{- end }}
+{{- end }}
+{{- end }}

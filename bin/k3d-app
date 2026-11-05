@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+# Deploy one application on a Fred release line: what an operator would type, in order.
+#   bin/k3d-app sync|template|destroy     (from make k3d-app, k3d-app-validate, k3d-app-uninstall)
+# FRED: the line, a Helmfile environment. APP: a definition in k3d-apps/. DIR: a checkout;
+# without APP, one holding its own deploy/k3d/helmfile.yaml.gotmpl. RELEASE: a published
+# version instead. VALUES: extra values files. FRED_LIBS, FRED_REPO: for the checkout's build.
+set -Eeuo pipefail
+
+action="${1:?usage: bin/k3d-app sync|template|destroy}"
+root="$(cd "$(dirname "$0")/.." && pwd)"
+fail() { printf '%s\n' "$1" >&2; exit 1; }
+
+[[ -n "${FRED:-}" ]] || fail "FRED is required, it decides where this goes: make k3d-app FRED=swift|weaver APP=..."
+[[ -n "${APP:-}${DIR:-}" ]] || fail "APP or DIR is required: make k3d-app FRED=$FRED APP=fred [DIR=/path/to/checkout | RELEASE=version]"
+[[ -z "${DIR:-}" || -z "${RELEASE:-}" ]] || fail "RELEASE deploys a published release and DIR a checkout: choose one"
+if [[ -n "${DIR:-}" ]]; then
+  DIR="$(cd "$DIR" 2>/dev/null && pwd)" || fail "DIR=$DIR: no such directory"
+  export DIR
+fi
+
+if [[ -n "${APP:-}" ]]; then definition="$root/k3d-apps/$APP"
+elif [[ -f "$DIR/deploy/k3d/helmfile.yaml.gotmpl" ]]; then definition="$DIR/deploy/k3d"
+else definition="$DIR"; fi
+[[ -f "$definition/helmfile.yaml.gotmpl" ]] || fail "No helmfile.yaml.gotmpl in $definition"
+
+key="$(printf '%s' "${DIR:-published}" | sha256sum | cut -c1-12)"
+export K3D_APP_OUT="$root/.cache/k3d-apps/$FRED/${APP:-$(basename "$definition")}-$key"
+mkdir -p "$K3D_APP_OUT"
+images="$K3D_APP_OUT/images.yaml"
+
+helmfile=(helmfile --file "$definition/helmfile.yaml.gotmpl" --environment "$FRED")
+values=()
+for file in ${VALUES:-}; do values+=(--values "$(realpath "$file")"); done
+[[ -n "${DIR:-}" && -f "$images" ]] && export K3D_IMAGE_VALUES="$images"
+
+if [[ "$action" != destroy ]]; then
+  # A mistake costs seconds here, not a build.
+  "${helmfile[@]}" template "${values[@]}" >/dev/null \
+    || fail "Cannot render this for FRED=$FRED (see above). $definition/helmfile.yaml.gotmpl lists the lines it runs on."
+fi
+[[ "$action" == template ]] && { echo "Rendered for FRED=$FRED, without building or changing the cluster."; exit 0; }
+
+if [[ "$action" == sync && -n "${DIR:-}" && -x "$DIR/deploy/k3d/build" ]]; then
+  IMAGE_TAG="k3d-fred-$key" "$DIR/deploy/k3d/build"
+  mapfile -t built <"$K3D_APP_OUT/images.txt"
+  k3d image import --cluster fred "${built[@]}"
+  export K3D_IMAGE_VALUES="$images"
+fi
+
+if [[ "$action" == sync ]]; then "${helmfile[@]}" sync "${values[@]}"; else "${helmfile[@]}" "$action"; fi
+
+if [[ "$action" == sync ]]; then
+  printf '\nFRED=%s, namespace fred-%s: http://%s.localhost:8088\n' "$FRED" "$FRED" "$FRED"
+  printf 'First login, the bootstrap token: kubectl --context k3d-fred -n fred-%s get secret fred-secrets -o jsonpath="{.data.CONTROL_PLANE_BOOTSTRAP_TOKEN}" | base64 -d; echo\n' "$FRED"
+fi

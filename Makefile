@@ -1,13 +1,21 @@
 .DEFAULT_GOAL := help
 SHELL := /bin/bash
 
-LOCAL_COMMANDS := k3d-up k3d-up-swift k3d-up-weaver k3d-validate k3d-validate-swift k3d-validate-weaver k3d-start k3d-stop k3d-status k3d-health k3d-wipe
-ifneq ($(filter $(LOCAL_COMMANDS),$(MAKECMDGOALS)),)
-ifneq ($(words $(MAKECMDGOALS)),1)
-$(error Run one local operation at a time)
+# FRED names a Fred release line, a Helmfile environment: it decides where an application
+# goes. It is typed on each command: a value left in the shell must never choose for you.
+ifneq ($(filter k3d-%,$(MAKECMDGOALS)),)
+ifneq ($(filter environment environment override,$(origin FRED)),)
+$(error FRED is set in your shell. Unset it and type it on the command: make $(firstword $(MAKECMDGOALS)) FRED=...)
 endif
-ifneq ($(strip $(MAKEOVERRIDES)),)
-$(error Local commands take no variable overrides. Use k3d-app APP=fred DIR=... for application deployment)
+endif
+
+K3D_INFRA_COMMANDS := k3d-up k3d-validate k3d-start k3d-stop k3d-status k3d-health k3d-wipe
+ifneq ($(filter $(K3D_INFRA_COMMANDS),$(MAKECMDGOALS)),)
+ifneq ($(words $(MAKECMDGOALS)),1)
+$(error Run one k3d command at a time)
+endif
+ifneq ($(strip $(filter-out VALUES=%,$(MAKEOVERRIDES))),)
+$(error This command prepares every Fred release line and takes no such variable. Use make k3d-app FRED=... APP=... for an application)
 endif
 endif
 
@@ -61,30 +69,56 @@ help: ## Show this help message
 	@awk 'BEGIN {FS = ":.*##"; printf "\n\033[1mAvailable targets:\033[0m\n"} /^[a-zA-Z0-9_-]+:.*?##/ { printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2 } /^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5) }' $(MAKEFILE_LIST)
 
 ##@ Local k3d infrastructure
-k3d-up: ## Prepare COTS for Swift and Weaver side by side; no application deployment
-k3d-up-swift: ## Prepare COTS for Swift alone; no application deployment
-k3d-up-weaver: ## Prepare COTS for Weaver alone; no application deployment
-k3d-validate: ## Render the Swift and Weaver infrastructure; no cluster changes
-k3d-validate-swift: ## Render Swift infrastructure only; no cluster changes
-k3d-validate-weaver: ## Render Weaver infrastructure only; no cluster changes
+K3D_KUBECTL := kubectl --context k3d-fred
+# Carry the host trust bundle into the cluster (corporate TLS inspection), when there is one.
+K3D_CA_BUNDLE := $(firstword $(wildcard /etc/ssl/certs/ca-certificates.crt /etc/pki/tls/certs/ca-bundle.crt))
+K3D_CA_VOLUMES := $(if $(K3D_CA_BUNDLE),--volume $(K3D_CA_BUNDLE):/etc/ssl/certs/ca-certificates.crt@server:* --volume $(K3D_CA_BUNDLE):/etc/ssl/certs/ca-certificates.crt@agent:*)
+K3D_VALUES := $(addprefix --values ,$(abspath $(VALUES)))
+
+k3d-up: ## Create the cluster if needed and prepare the infrastructure for every Fred release line; no application deployment
+	@if k3d cluster get fred >/dev/null 2>&1; then k3d cluster start fred; else k3d cluster create --config k3d/cluster.yaml $(K3D_CA_VOLUMES); fi
+	@if $(K3D_KUBECTL) get namespace fred >/dev/null 2>&1; then \
+	  echo 'This cluster has the former layout (namespace fred), and its data cannot move to fred-infra. Save what you need, then make k3d-wipe and make k3d-up.' >&2; exit 1; \
+	fi
+	helmfile sync $(K3D_VALUES)
+	@echo 'Infrastructure ready in namespace fred-infra. Deploy an application: make k3d-app FRED=swift|weaver APP=fred [DIR=... | RELEASE=...]'
+
+k3d-validate: ## Render the infrastructure; no cluster changes
+	helm lint k3d
+	helmfile template $(K3D_VALUES) >/dev/null
+	@echo 'Infrastructure rendered. No cluster changes.'
+
 k3d-start: ## Resume the existing cluster; preserve data
+	k3d cluster start fred
+
 k3d-stop: ## Stop the cluster; preserve data
-k3d-status: ## Show both application namespaces
+	k3d cluster stop fred
+
+k3d-status: ## Show the infrastructure and Fred release line namespaces
+	@for namespace in $$($(K3D_KUBECTL) get namespace -o name | sed -n 's#^namespace/\(fred-.*\)#\1#p'); do \
+	  echo "== $$namespace"; $(K3D_KUBECTL) -n "$$namespace" get pods,svc; \
+	done
+
 k3d-health: ## Inspect the collected logs, events and health
+	@bin/k3d-observe health
+
 k3d-wipe: ## DELETE cluster fred and ALL its data; checkouts remain untouched
-k3d-up k3d-up-swift k3d-up-weaver k3d-validate k3d-validate-swift k3d-validate-weaver k3d-start k3d-stop k3d-status k3d-health k3d-wipe:
-	@bin/k3d-local $@
+	k3d cluster delete fred
+	rm -rf .cache/k3d-apps
 
 ##@ k3d applications (separate from infrastructure)
-k3d-app: ## Deploy one application: APP=fred DIR=/path/to/checkout (or RELEASE=version)
-k3d-app-validate: ## Render one application: APP=fred DIR=/path/to/checkout; no deployment
-k3d-app-uninstall: ## Uninstall the selected application: APP=fred DIR=/path/to/checkout
-k3d-app k3d-app-validate k3d-app-uninstall:
-	@bin/k3d-local $@
+k3d-app: ## Deploy one application: FRED=swift|weaver APP=fred DIR=/path/to/checkout (or RELEASE=version)
+	@bin/k3d-app sync
+
+k3d-app-validate: ## Render one application: FRED=swift|weaver APP=fred DIR=/path/to/checkout; no deployment
+	@bin/k3d-app template
+
+k3d-app-uninstall: ## Uninstall one application: FRED=swift|weaver APP=fred
+	@bin/k3d-app destroy
 
 # Retired commands fail; they are not aliases for another configuration surface.
 k3d-%:
-	@echo 'Removed command. Use make k3d-up (or k3d-up-swift, k3d-up-weaver); see make help.' >&2
+	@echo 'Removed command. Use make k3d-up, or make k3d-app FRED=swift|weaver APP=...; see make help.' >&2
 	@exit 2
 
 ##@ Docker (separate legacy tools)
@@ -365,4 +399,4 @@ zitadel-configure: zitadel-up ## Provision SPA/services and generate complete Fr
 	@set -eu; umask 077; mkdir -p docker/zitadel/state; $(ZITADEL_COMPOSE) cp api:/bootstrap/operator.pat docker/zitadel/state/operator.pat; chmod 600 docker/zitadel/state/operator.pat
 	/usr/bin/python3 docker/zitadel/provision.py --fred-root "$(SWIFT_SRC)" --output-dir "$(FRED_IDP_CONFIG_DIR)"
 
-.PHONY: k3d-app k3d-app-validate k3d-app-uninstall k3d-up k3d-up-swift k3d-up-weaver k3d-validate k3d-validate-swift k3d-validate-weaver k3d-start k3d-stop k3d-status k3d-health k3d-wipe
+.PHONY: k3d-app k3d-app-validate k3d-app-uninstall k3d-up k3d-validate k3d-start k3d-stop k3d-status k3d-health k3d-wipe

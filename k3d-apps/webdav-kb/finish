@@ -1,5 +1,0 @@
-#!/usr/bin/env bash
-set -Eeuo pipefail
-# Run by the internal Knowledge Base application engine after the sync.
-echo "Fred lists it once a platform admin enables it for a team (Admin > Features > Knowledge Bases);"
-echo "the team then points an instance at a share it can reach from the cluster."

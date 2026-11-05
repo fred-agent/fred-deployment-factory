@@ -13,7 +13,7 @@ apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
   name: airgap-egress
-  namespace: fred
+  namespace: fred-infra
 spec:
   endpointSelector: {}
   egress:

@@ -20,6 +20,46 @@ host:
 keycloak:
   hostname: keycloak
   publicPort: 8080
+  # The confidential service clients applications use, beyond the platform's own
+  # (files/scripts/keycloak-post-install-k8s.sh), applied by the post-install Job.
+  # secretKey is the client's key in `fred-secrets`; grants are <client>/<role>
+  # for its service account; representation and protocolMappers are Keycloak's own.
+  serviceClients:
+    fred-evaluation-worker:
+      secretKey: KEYCLOAK_EVAL_WORKER_CLIENT_SECRET
+      secret: Azerty123_
+      grants: [app/service_agent]
+    # Named after the prefix it publishes under: Fred binds the prefix to the client.
+    kb-fred.webdav:
+      secretKey: KEYCLOAK_KB_FRED_WEBDAV_CLIENT_SECRET
+      secret: Azerty123_
+      grants: [app/service_agent]
+    # Weaver's ingestion worker, a workload that calls the control plane as itself.
+    knowledge-flow-worker:
+      secretKey: KEYCLOAK_MANAGER_WORKER_CLIENT_SECRET
+      secret: Azerty123_
+      representation:
+        standardFlowEnabled: false
+        implicitFlowEnabled: false
+        directAccessGrantsEnabled: false
+        fullScopeAllowed: false
+      protocolMappers:
+        - name: workload-audience
+          protocolMapper: oidc-audience-mapper
+          config:
+            included.custom.audience: control-plane
+        - name: workload-client-id
+          protocolMapper: oidc-hardcoded-claim-mapper
+          config:
+            claim.name: client_id
+            claim.value: knowledge-flow-worker
+            jsonType.label: String
+        - name: workload-username
+          protocolMapper: oidc-usermodel-property-mapper
+          config:
+            user.attribute: username
+            claim.name: preferred_username
+            jsonType.label: String
 
 auth:
   postgresAdminUser: admin
@@ -31,7 +71,8 @@ auth:
 
   postgresFredUser: fred
   postgresFredPassword: Azerty123_
-  postgresFredDb: fred
+  # The database of the line that uses this login (lines.swift below).
+  postgresFredDb: fred_swift
 
   postgresTabularUser: tabular
   postgresTabularPassword: Azerty123_
@@ -84,27 +125,113 @@ postgres:
 clickhouse:
   enabled: true
 
+# The Fred release lines this instance runs. Each line gets the namespace
+# fred-<line>, with its `fred-secrets`, the aliases to the infrastructure, its
+# database and its Temporal namespace: what `make k3d-app FRED=<line>` relies on.
+# Credentials are local defaults, for this local stack only, as in `auth` above.
+#   database      its PostgreSQL database
+#   services      short names resolving to the services of the infrastructure
+#   sharedSecrets key prefixes of the Foundation Secret its applications read
+#   secrets       further keys of its `fred-secrets`
+#   namedSecrets  further Secrets in its namespace
+lines:
+  swift:
+    database: fred_swift
+    services: [postgres, seaweedfs, opensearch, temporal, keycloak, prometheus, openfga]
+    sharedSecrets: [KEYCLOAK_, SEAWEEDFS_, OPENSEARCH_, POSTGRES_FRED_, POSTGRES_EVALUATION_, POSTGRES_TABULAR_DATA_, OPENFGA_]
+  weaver:
+    database: fred_weaver
+    services: [postgres, seaweedfs, opensearch, temporal, keycloak, prometheus]
+    sharedSecrets: [KEYCLOAK_, SEAWEEDFS_, OPENSEARCH_]
+    secrets:
+      POSTGRES_CP_PASSWORD: Azerty123_
+      POSTGRES_KF_PASSWORD: Azerty123_
+      POSTGRES_RUNTIME_PASSWORD: Azerty123_
+      POSTGRES_MONITOR_PASSWORD: Azerty123_
+      POSTGRES_MONITOR_DATABASE_URL: postgresql://fred_monitor:Azerty123_@postgres:5432/fred_weaver
+    namedSecrets:
+      # For the chart's postgresBootstrap hook, which creates the SQL owners.
+      postgres-admin:
+        password: Azerty123_
+      fred-ingestion:
+        manager-s3-secret: &s3-manager Azerty123_manager
+        processor-s3-secret: &s3-processor Azerty123_processor
+        kf-api-s3-secret: &s3-reader Azerty123_reader
+        opensearch-password: &opensearch-ingestion FredOpensearch123!!
+        kf-api-opensearch-password: &opensearch-kf-api FredOpensearch123!!
+        agents-opensearch-password: &opensearch-agents FredOpensearch123!!
+
+# What the applications need on S3, beyond the administrator of `auth`.
+s3:
+  buckets: [app-content, app-feedback, app-chat-profile, app-content-documents]
+  # Their policies are in files/seaweedfs/policies.yaml.
+  identities:
+    fred-document-manager: {secretKey: *s3-manager, policy: manager}
+    fred-document-processor: {secretKey: *s3-processor, policy: kf}
+    fred-document-reader: {secretKey: *s3-reader, policy: kf-read}
+
+# What the applications need on OpenSearch, beyond the administrator of `auth`.
+opensearch:
+  # Global to the instance. Mirrors fred_knowledge.vector.opensearch_vector_store,
+  # whose adapter uses an existing pipeline and creates a missing one.
+  searchPipeline:
+    name: hybrid-search-pipeline
+    body:
+      description: Post processor for hybrid search
+      phase_results_processors:
+        - normalization-processor:
+            normalization: {technique: min_max}
+            combination:
+              technique: arithmetic_mean
+              parameters: {weights: [0.5, 0.5]}
+  # One account, role and mapping per name. The indexes are the ones Weaver's values name.
+  identities:
+    fred-kf-ingestion:
+      password: *opensearch-ingestion
+      role:
+        cluster_permissions: &search-cluster [cluster_monitor, cluster_composite_ops, "cluster:admin/search/pipeline/get"]
+        index_permissions:
+          - index_patterns: [document-vectors, weaver-kpi]
+            allowed_actions: &index-owner [crud, create_index, manage]
+    # One connection serves search and observability; only the latter may write.
+    fred-kf-api:
+      password: *opensearch-kf-api
+      role:
+        cluster_permissions: *search-cluster
+        index_permissions:
+          - index_patterns: [document-vectors]
+            # The adapter checks the index and its mapping at startup.
+            allowed_actions: [read, "indices:admin/get", "indices:admin/mappings/get", "indices:monitor/settings/get"]
+          - index_patterns: &weaver-observability [weaver-app-logs, weaver-kpi]
+            allowed_actions: *index-owner
+    # The agent runtime only writes its logs and KPI: no corpus, no pipeline.
+    fred-agents:
+      password: *opensearch-agents
+      role:
+        cluster_permissions: [cluster_monitor, cluster_composite_ops]
+        index_permissions:
+          - index_patterns: *weaver-observability
+            allowed_actions: *index-owner
+
 prometheus:
   enabled: true
   scrapeInterval: 15s
   evaluationInterval: 15s
   retention: 7d
-  # Every pod of these namespaces that declares a container port named `metrics`
-  # is scraped (job `apps`): the Fred apps do, with no target list to keep.
-  # The release namespace is always included; a namespace may not exist yet.
-  applicationNamespaces: [fred-weaver]
+  # Every pod of the lines' namespaces that declares a container port named
+  # `metrics` is scraped (job `apps`), with no target list to keep.
   # SeaweedFS is scraped through its pod annotations (job `fred-stack-pods`).
   seaweedfsMetricsPath: /metrics
 
 grafana:
   enabled: true
 
-# Fluent Bit ships every container's output and the namespace's Kubernetes
-# events (OOMKilled, BackOff, failed probes...) to OpenSearch:
+# Fluent Bit ships every container's output (this namespace, the lines') and the
+# cluster's Kubernetes events (OOMKilled, BackOff, failed probes...) to OpenSearch:
 #   k3d-logs-YYYY.MM.DD    one document per log line, with pod, container, app
 #   k3d-events-YYYY.MM.DD  one document per event
 # Browse them in OpenSearch Dashboards (:5601); query them with
-# bin/k3d-observe.sh.
+# bin/k3d-observe.
 logCollection:
   enabled: true
 
@@ -154,6 +281,6 @@ images:
   grafana: grafana/grafana:11.1.4
   fluentBit: fluent/fluent-bit:4.0.3
 
-# Swift needs OpenFGA; Weaver-only infrastructure disables it explicitly.
+# For Swift's authorization; Weaver does not use it.
 openfga:
   enabled: true
