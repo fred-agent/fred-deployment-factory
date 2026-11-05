@@ -208,14 +208,25 @@ Grafana is pre-provisioned with a Prometheus datasource pointing to `http://app-
 Zabbix has its own PostgreSQL database and is absent from the `base` and
 `extended` profiles. Its server joins `fred-shared-network` to reach Compose
 exporters. The web UI listens on localhost only. Docker Compose and a running
-Docker daemon are the only prerequisites; Fred's application processes can be
-started separately.
+Docker daemon and Fred's Prometheus template are the prerequisites; Fred's
+application processes can be started separately.
 
 From the root of this repository, run:
 
 ```bash
 make zabbix-up
 docker compose -f docker/docker-compose-zabbix.yml -p zabbix ps
+```
+
+`make zabbix-up` waits for the Zabbix API, imports Fred's template, and
+configures the four development exporters. Rerunning it checks the existing
+hosts without duplicating them. The template is read from the sibling Fred
+checkout at `../fred/deploy/zabbix/fred-prometheus-by-http.yaml`. If that file
+is absent, an already imported template is reused. On a fresh Zabbix database,
+pass the template's local path until it is available on your Fred branch:
+
+```bash
+make zabbix-up ZABBIX_TEMPLATE_FILE=/path/to/fred-prometheus-by-http.yaml
 ```
 
 Open <http://localhost:8085> and sign in as `Admin` / `zabbix` on a fresh
@@ -230,18 +241,14 @@ alarm, set that host to **Disabled** under **Data collection > Hosts**. If the
 alarm is already open, close it under **Monitoring > Problems**. Leave the
 Prometheus template host enabled.
 
-To import Fred's Prometheus template and configure the four development
-exporters, run this from the repository root after `make zabbix-up`:
+To import or recheck Fred's configuration without starting Zabbix again, run:
 
 ```bash
 make zabbix-provision-fred
 ```
 
-The template comes from the sibling Fred checkout at
-`../fred/deploy/zabbix/fred-prometheus-by-http.yaml`. Until that template is
-available on your Fred branch, set `ZABBIX_TEMPLATE_FILE` to its local path.
-The provisioning command is safe to repeat. It checks existing hosts and
-stops if a host with the same name has a different template or metrics URL.
+The provisioning command stops if a host with the same name has a different
+template or metrics URL.
 Set `ZABBIX_API_URL`, `ZABBIX_ADMIN_USER`, or `ZABBIX_ADMIN_PASSWORD` in the
 environment if the local Zabbix API or credentials differ from the defaults.
 
@@ -256,7 +263,8 @@ installed as `{$FRED.METRICS.URL}` macros on these hosts:
 | Control Plane API | `http://host.docker.internal:9222/metrics` |
 
 The Zabbix template defines the HTTP agent request, discovery, and numeric
-metric items. Docker Compose only runs Zabbix; it does not configure scraping.
+metric items. The provisioning script configures scraping after Compose starts
+Zabbix.
 For a Compose exporter, use its service name and port on
 `fred-shared-network`. Use a separate Zabbix host for each exporter instance.
 

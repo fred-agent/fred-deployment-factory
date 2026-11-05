@@ -229,9 +229,10 @@ logging-up: ## Start Loki, Alloy and Grafana for local JSON log exploration
 logging-down: ## Stop Loki and Alloy, keeping log data
 	$(DOCKER_COMPOSE_BASE)logging.yml -p logging down
 
-zabbix-up: network-create ## Start optional Zabbix 7.0 LTS with its own PostgreSQL database
+zabbix-up: network-create ## Start optional Zabbix 7.0 LTS and provision Fred metrics hosts
 	@echo "Launching Zabbix..."
 	$(DOCKER_COMPOSE_BASE)zabbix.yml -p zabbix up -d
+	$(MAKE) zabbix-provision-fred
 
 ZABBIX_TEMPLATE_FILE ?= $(FRED_CHECKOUT)/deploy/zabbix/fred-prometheus-by-http.yaml
 
