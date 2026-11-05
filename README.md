@@ -47,7 +47,9 @@ Fred is on <http://localhost:5173>.
 **Day to day:** `make docker-stop` / `make docker-start` (containers and data kept).
 `make docker-wipe` deletes the containers **and every volume**.
 
-For optional Zabbix 7.0 LTS monitoring, run `make zabbix-up` and follow the
+For optional Zabbix 7.0 LTS monitoring, run `make docker-up USE_ZABBIX=true`
+(and `make docker-start USE_ZABBIX=true` after stopping), or run
+`make zabbix-up` on an existing stack. Follow the
 [Zabbix Compose procedure](docker/README.md#optional-zabbix-70-lts).
 
 ---
