@@ -52,13 +52,19 @@ def api_call(url, method, params, token=None):
 
 def login_when_ready(url, username, password, wait_seconds):
     deadline = monotonic() + wait_seconds
+    waiting = False
     while True:
         try:
             return api_call(url, "user.login", {"username": username, "password": password})
-        except (URLError, TimeoutError, json.JSONDecodeError) as exc:
+        except (URLError, TimeoutError, json.JSONDecodeError, RuntimeError) as exc:
+            if isinstance(exc, RuntimeError) and "incorrect user name or password" in str(exc).lower():
+                raise
             remaining = deadline - monotonic()
             if remaining <= 0:
                 raise RuntimeError(f"Zabbix API did not become ready: {exc}") from exc
+            if not waiting:
+                print("Waiting for Zabbix API to finish initialization...", flush=True)
+                waiting = True
             sleep(min(2, remaining))
 
 
