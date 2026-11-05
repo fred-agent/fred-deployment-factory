@@ -1,0 +1,58 @@
+services:
+  zabbix-db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: zabbix
+      POSTGRES_PASSWORD: ${ZABBIX_DB_PASSWORD:-Azerty123_}
+      POSTGRES_DB: zabbix
+    volumes:
+      - vol-zabbix-db:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U zabbix -d zabbix"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  zabbix-server:
+    image: zabbix/zabbix-server-pgsql:alpine-7.0-latest
+    restart: unless-stopped
+    environment:
+      DB_SERVER_HOST: zabbix-db
+      POSTGRES_USER: zabbix
+      POSTGRES_PASSWORD: ${ZABBIX_DB_PASSWORD:-Azerty123_}
+      POSTGRES_DB: zabbix
+    networks:
+      - default
+      - app-network
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    depends_on:
+      zabbix-db:
+        condition: service_healthy
+
+  zabbix-web:
+    image: zabbix/zabbix-web-nginx-pgsql:alpine-7.0-latest
+    restart: unless-stopped
+    environment:
+      DB_SERVER_HOST: zabbix-db
+      POSTGRES_USER: zabbix
+      POSTGRES_PASSWORD: ${ZABBIX_DB_PASSWORD:-Azerty123_}
+      POSTGRES_DB: zabbix
+      ZBX_SERVER_HOST: zabbix-server
+      PHP_TZ: ${ZABBIX_TIMEZONE:-Europe/Paris}
+    ports:
+      - 127.0.0.1:${ZABBIX_PORT:-8085}:8080/tcp
+    depends_on:
+      zabbix-db:
+        condition: service_healthy
+      zabbix-server:
+        condition: service_started
+
+volumes:
+  vol-zabbix-db:
+
+networks:
+  app-network:
+    external: true
+    name: fred-shared-network

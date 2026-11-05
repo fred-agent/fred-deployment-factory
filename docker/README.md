@@ -203,6 +203,49 @@ It also scrapes the native metrics endpoints exposed in Docker Compose mode for:
 
 Grafana is pre-provisioned with a Prometheus datasource pointing to `http://app-prometheus:9090` on the shared Docker network.
 
+### Optional Zabbix 7.0 LTS
+
+Zabbix has its own PostgreSQL database and is absent from the `base` and
+`extended` profiles. Its server joins `fred-shared-network` to reach Compose
+exporters. The web UI listens on localhost only. Docker Compose and a running
+Docker daemon are the only prerequisites; Fred's application processes can be
+started separately.
+
+From the root of this repository, run:
+
+```bash
+make zabbix-up
+docker compose -f docker/docker-compose-zabbix.yml -p zabbix ps
+```
+
+Open <http://localhost:8085> and sign in as `Admin` / `zabbix` on a fresh
+installation. Change the administrator password before sharing this instance.
+`ZABBIX_PORT`, `ZABBIX_DB_PASSWORD`, and `ZABBIX_TIMEZONE` can be set in
+`docker/.env` before starting it. The default database password is for local
+development only.
+
+To test Fred's Prometheus template:
+
+1. In **Data collection > Templates > Import**, select
+   `../fred/deploy/zabbix/fred-prometheus-by-http.yaml` from the sibling Fred
+   checkout, then import it.
+2. In **Data collection > Hosts**, create one host for each Fred `/metrics`
+   endpoint and link **Fred Prometheus by HTTP**. No Zabbix agent interface is
+   required.
+3. Set host macro `{$FRED.METRICS.URL}` to a URL the Zabbix server can fetch,
+   for example `http://host.docker.internal:9000/metrics` for a Fred process
+   running on the host. For a Compose exporter, use its service name and port
+   on `fred-shared-network`. The existing OpenFGA exporter can serve as a smoke
+   test at `http://openfga:2112/metrics`. Use a separate host for each exporter instance.
+4. After two one-minute polls (discovery, then item values), inspect **Monitoring > Latest data**.
+   `fred.prometheus.raw` and `fred.prometheus.parsed` should be supported, and
+   numeric series should appear in the discovery rule and latest data.
+
+`make zabbix-down` removes the Zabbix containers and keeps their database
+volume. `make zabbix-up` resumes the saved database. `make docker-stop` also
+stops Zabbix; resume it with `make zabbix-up`. `make docker-wipe` deletes the
+Zabbix database along with all other stack volumes.
+
 ## Access the service interfaces
 
 > :key: For development purposes, the password for nominative or service accounts is `Azerty123_`
