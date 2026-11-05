@@ -239,13 +239,30 @@ To test Fred's Prometheus template:
    endpoint and link **Fred Prometheus by HTTP**. No Zabbix agent interface is
    required.
 3. Set host macro `{$FRED.METRICS.URL}` to a URL the Zabbix server can fetch,
-   for example `http://host.docker.internal:9000/metrics` for a Fred process
-   running on the host. For a Compose exporter, use its service name and port
-   on `fred-shared-network`. The existing OpenFGA exporter can serve as a smoke
-   test at `http://openfga:2112/metrics`. Use a separate host for each exporter instance.
+   using one of the URLs below for a Fred process running on the host. For a
+   Compose exporter, use its service name and port on `fred-shared-network`.
+   Use a separate host for each exporter instance.
 4. After two one-minute polls (discovery, then item values), inspect **Monitoring > Latest data**.
    `fred.prometheus.raw` and `fred.prometheus.parsed` should be supported, and
    numeric series should appear in the discovery rule and latest data.
+
+For a Fred checkout started in development mode, create these four hosts:
+
+| Fred process | `{$FRED.METRICS.URL}` |
+| --- | --- |
+| Agents API | `http://host.docker.internal:9000/metrics` |
+| Knowledge Flow API | `http://host.docker.internal:9111/metrics` |
+| Knowledge Flow worker | `http://host.docker.internal:9112/metrics` |
+| Control Plane API | `http://host.docker.internal:9222/metrics` |
+
+The three APIs start with `make run` in the Fred checkout. Start the Knowledge
+Flow worker separately with `make -C apps/knowledge-flow-backend run-worker`.
+The Control Plane worker can run separately too, but its current
+development configuration has no `/metrics` exporter. A host for a stopped
+process will show an unsupported HTTP item until that process starts.
+
+The existing OpenFGA exporter can serve as a template smoke test at
+`http://openfga:2112/metrics`. It does not validate Fred metrics.
 
 `make zabbix-down` removes the Zabbix containers and keeps their database
 volume. `make zabbix-up` resumes the saved database. `make docker-stop` also
