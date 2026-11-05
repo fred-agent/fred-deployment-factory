@@ -230,23 +230,23 @@ alarm, set that host to **Disabled** under **Data collection > Hosts**. If the
 alarm is already open, close it under **Monitoring > Problems**. Leave the
 Prometheus template host enabled.
 
-To test Fred's Prometheus template:
+To import Fred's Prometheus template and configure the four development
+exporters, run this from the repository root after `make zabbix-up`:
 
-1. In **Data collection > Templates > Import**, select
-   `../fred/deploy/zabbix/fred-prometheus-by-http.yaml` from the sibling Fred
-   checkout, then import it.
-2. In **Data collection > Hosts**, create one host for each Fred `/metrics`
-   endpoint and link **Fred Prometheus by HTTP**. No Zabbix agent interface is
-   required.
-3. Set host macro `{$FRED.METRICS.URL}` to a URL the Zabbix server can fetch,
-   using one of the URLs below for a Fred process running on the host. For a
-   Compose exporter, use its service name and port on `fred-shared-network`.
-   Use a separate host for each exporter instance.
-4. After two one-minute polls (discovery, then item values), inspect **Monitoring > Latest data**.
-   `fred.prometheus.raw` and `fred.prometheus.parsed` should be supported, and
-   numeric series should appear in the discovery rule and latest data.
+```bash
+make zabbix-provision-fred
+```
 
-For a Fred checkout started in development mode, create these four hosts:
+The template comes from the sibling Fred checkout at
+`../fred/deploy/zabbix/fred-prometheus-by-http.yaml`. Until that template is
+available on your Fred branch, set `ZABBIX_TEMPLATE_FILE` to its local path.
+The provisioning command is safe to repeat. It checks existing hosts and
+stops if a host with the same name has a different template or metrics URL.
+Set `ZABBIX_API_URL`, `ZABBIX_ADMIN_USER`, or `ZABBIX_ADMIN_PASSWORD` in the
+environment if the local Zabbix API or credentials differ from the defaults.
+
+The HTTP scraping targets are defined in `bin/zabbix-provision-fred.py` and
+installed as `{$FRED.METRICS.URL}` macros on these hosts:
 
 | Fred process | `{$FRED.METRICS.URL}` |
 | --- | --- |
@@ -254,6 +254,17 @@ For a Fred checkout started in development mode, create these four hosts:
 | Knowledge Flow API | `http://host.docker.internal:9111/metrics` |
 | Knowledge Flow worker | `http://host.docker.internal:9112/metrics` |
 | Control Plane API | `http://host.docker.internal:9222/metrics` |
+
+The Zabbix template defines the HTTP agent request, discovery, and numeric
+metric items. Docker Compose only runs Zabbix; it does not configure scraping.
+For a Compose exporter, use its service name and port on
+`fred-shared-network`. Use a separate Zabbix host for each exporter instance.
+
+After two one-minute polls (discovery, then item values), open **Monitoring >
+Latest data** and select a Fred host. `fred.prometheus.raw` and
+`fred.prometheus.parsed` should be supported, with discovered numeric series
+and values. **Data collection > Hosts** shows the template and URL macro for
+each host.
 
 The three APIs start with `make run` in the Fred checkout. Start the Knowledge
 Flow worker separately with `make -C apps/knowledge-flow-backend run-worker`.

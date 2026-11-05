@@ -233,6 +233,11 @@ zabbix-up: network-create ## Start optional Zabbix 7.0 LTS with its own PostgreS
 	@echo "Launching Zabbix..."
 	$(DOCKER_COMPOSE_BASE)zabbix.yml -p zabbix up -d
 
+ZABBIX_TEMPLATE_FILE ?= $(FRED_CHECKOUT)/deploy/zabbix/fred-prometheus-by-http.yaml
+
+zabbix-provision-fred: ## Import Fred's template and configure its local dev metrics hosts
+	python3 bin/zabbix-provision-fred.py --template "$(ZABBIX_TEMPLATE_FILE)"
+
 zabbix-down: ## Stop and remove optional Zabbix containers (keep its database volume)
 	$(DOCKER_COMPOSE_BASE)zabbix.yml -p zabbix down
 
