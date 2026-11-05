@@ -21,6 +21,7 @@ export STACK
 ifeq ($(filter $(STACK),base extended),)
 $(error Invalid STACK '$(STACK)'. Use STACK=base or STACK=extended)
 endif
+USE_ZABBIX ?= false
 
 # Service groups for `docker-up`. The base group is always launched; the
 # extended group is appended only when STACK=extended.
@@ -30,6 +31,9 @@ ifeq ($(STACK),extended)
 DOCKER_UP_SERVICES := $(DOCKER_BASE_SERVICES) $(DOCKER_EXTENDED_SERVICES)
 else
 DOCKER_UP_SERVICES := $(DOCKER_BASE_SERVICES)
+endif
+ifeq ($(USE_ZABBIX),true)
+DOCKER_UP_SERVICES += zabbix-up
 endif
 
 # Compose projects for `docker-start` / `docker-stop`, in dependency order.
@@ -42,11 +46,14 @@ DOCKER_REST_PROJECTS := $(DOCKER_REST_PROJECTS_BASE) $(DOCKER_REST_PROJECTS_EXTE
 else
 DOCKER_REST_PROJECTS := $(DOCKER_REST_PROJECTS_BASE)
 endif
+ifeq ($(USE_ZABBIX),true)
+DOCKER_REST_PROJECTS += zabbix
+endif
 
 # `docker-stop` ignores STACK and stops every project, mirroring `all-down`:
 # stopping something that is already stopped is free, and a half-stopped stack
 # is worse than an over-stopped one.
-DOCKER_ALL_PROJECTS := postgres keycloak $(DOCKER_REST_PROJECTS_BASE) $(DOCKER_REST_PROJECTS_EXTENDED)
+DOCKER_ALL_PROJECTS := postgres keycloak $(DOCKER_REST_PROJECTS_BASE) $(DOCKER_REST_PROJECTS_EXTENDED) zabbix
 
 # Keep the existing cluster and URLs when ENV is omitted.
 ENV ?= swift
@@ -130,7 +137,7 @@ network-create:
 
 env-setup:
 	@echo "Setting up .env file..."
-	cp docker/.env.template docker/.env
+	@test -f docker/.env || cp docker/.env.template docker/.env
 	@echo "NOTE: Remember to customize docker/.env if needed."
 
 keycloak-post-install:
@@ -229,6 +236,19 @@ logging-up: ## Start Loki, Alloy and Grafana for local JSON log exploration
 logging-down: ## Stop Loki and Alloy, keeping log data
 	$(DOCKER_COMPOSE_BASE)logging.yml -p logging down
 
+zabbix-up: postgres-up ## Start optional Zabbix 7.0 LTS and provision Fred metrics hosts
+	@echo "Launching Zabbix..."
+	$(DOCKER_COMPOSE_BASE)zabbix.yml -p zabbix up -d --remove-orphans
+	$(MAKE) zabbix-provision-fred
+
+ZABBIX_TEMPLATE_FILE ?= $(FRED_CHECKOUT)/deploy/zabbix/fred-prometheus-by-http.yaml
+
+zabbix-provision-fred: ## Import Fred's template and configure its local dev metrics hosts
+	python3 bin/zabbix-provision-fred.py --template "$(ZABBIX_TEMPLATE_FILE)"
+
+zabbix-down: ## Stop and remove optional Zabbix containers (keep its database in PostgreSQL)
+	$(DOCKER_COMPOSE_BASE)zabbix.yml -p zabbix down --remove-orphans
+
 openfga-post-install:
 	@echo "Running OpenFGA post-install..."
 	bash docker/openfga/openfga-post-install.sh
@@ -306,6 +326,7 @@ docker-down: all-down ## Stop the Docker stack
 all-down:
 	@echo "Stopping Docker stack services..."
 	$(DOCKER_COMPOSE_BASE)logging.yml -p logging down
+	$(DOCKER_COMPOSE_BASE)zabbix.yml -p zabbix down --remove-orphans
 	$(DOCKER_COMPOSE_BASE)grafana.yml -p grafana down
 	$(DOCKER_COMPOSE_BASE)prometheus.yml -p prometheus down
 	$(DOCKER_COMPOSE_BASE)langfuse.yml -p langfuse down
@@ -320,6 +341,7 @@ all-down:
 docker-wipe: all-down ## Stop Docker stack, delete containers & volumes
 	@echo -e "\n--- WIPE IN PROGRESS ---"
 	$(DOCKER_COMPOSE_BASE)logging.yml -p logging down -v
+	$(DOCKER_COMPOSE_BASE)zabbix.yml -p zabbix down -v --remove-orphans
 	$(DOCKER_COMPOSE_BASE)grafana.yml -p grafana down -v
 	$(DOCKER_COMPOSE_BASE)prometheus.yml -p prometheus down -v
 	$(DOCKER_COMPOSE_BASE)langfuse.yml -p langfuse down -v
@@ -335,6 +357,7 @@ docker-wipe: all-down ## Stop Docker stack, delete containers & volumes
 docker-destroy: all-down ## Stop Docker stack, delete containers/volumes/network AND remove images
 	@echo -e "\n--- destroy IN PROGRESS ---"
 	$(DOCKER_COMPOSE_BASE)logging.yml -p logging down -v --rmi all
+	$(DOCKER_COMPOSE_BASE)zabbix.yml -p zabbix down -v --rmi all --remove-orphans
 	$(DOCKER_COMPOSE_BASE)grafana.yml -p grafana down -v --rmi all
 	$(DOCKER_COMPOSE_BASE)prometheus.yml -p prometheus down -v --rmi all
 	$(DOCKER_COMPOSE_BASE)langfuse.yml -p langfuse down -v --rmi all

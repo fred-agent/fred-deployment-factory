@@ -203,6 +203,100 @@ It also scrapes the native metrics endpoints exposed in Docker Compose mode for:
 
 Grafana is pre-provisioned with a Prometheus datasource pointing to `http://app-prometheus:9090` on the shared Docker network.
 
+### Optional Zabbix 7.0 LTS
+
+Zabbix uses a dedicated `zabbix` database and user in the shared `app-postgres`
+instance. It is disabled by default in both the `base` and `extended` stacks.
+Its server joins `fred-shared-network` to reach Compose exporters. The web UI
+listens on localhost only. Docker Compose, a running Docker daemon, and Fred's
+Prometheus template are the prerequisites; Fred's application processes can be
+started separately.
+
+From the root of this repository, run:
+
+```bash
+make docker-up USE_ZABBIX=true
+docker compose -f docker/docker-compose-zabbix.yml -p zabbix ps
+```
+
+Use `make docker-start USE_ZABBIX=true` to resume it after `make docker-stop`.
+On an existing stack, `make zabbix-up` starts Zabbix directly. The Zabbix
+database is created in `app-postgres` only when Zabbix starts. Set
+`POSTGRES_ZABBIX_USER`, `POSTGRES_ZABBIX_DB`, `ZABBIX_DB_PASSWORD`,
+`ZABBIX_PORT`, or `ZABBIX_TIMEZONE` in `docker/.env` before the first start.
+`USE_ZABBIX` is a Make variable, so pass it on the command line or export it
+in your shell.
+
+`make zabbix-up` waits for the Zabbix API, imports Fred's template, and
+configures the four development exporters. Rerunning it checks the existing
+hosts without duplicating them. The template is read from the sibling Fred
+checkout at `../fred/deploy/zabbix/fred-prometheus-by-http.yaml`. If that file
+is absent, an already imported template is reused. On a fresh Zabbix database,
+pass the template's local path until it is available on your Fred branch:
+
+```bash
+make zabbix-up ZABBIX_TEMPLATE_FILE=/path/to/fred-prometheus-by-http.yaml
+```
+
+Open <http://localhost:8085> and sign in as `Admin` / `zabbix` on a fresh
+installation. Change the administrator password before sharing this instance.
+The default database password is for local development only.
+
+The stock **Zabbix server** host uses **Linux by Zabbix agent**, but this
+minimal project does not run an agent. To avoid an unrelated availability
+alarm, set that host to **Disabled** under **Data collection > Hosts**. If the
+alarm is already open, close it under **Monitoring > Problems**. Leave the
+Prometheus template host enabled.
+
+To import or recheck Fred's configuration without starting Zabbix again, run:
+
+```bash
+make zabbix-provision-fred
+```
+
+The provisioning command stops if a host with the same name has a different
+template or metrics URL.
+Set `ZABBIX_API_URL`, `ZABBIX_ADMIN_USER`, or `ZABBIX_ADMIN_PASSWORD` in the
+environment if the local Zabbix API or credentials differ from the defaults.
+
+The HTTP scraping targets are defined in `bin/zabbix-provision-fred.py` and
+installed as `{$FRED.METRICS.URL}` macros on these hosts:
+
+| Fred process | `{$FRED.METRICS.URL}` |
+| --- | --- |
+| Agents API | `http://host.docker.internal:9000/metrics` |
+| Knowledge Flow API | `http://host.docker.internal:9111/metrics` |
+| Knowledge Flow worker | `http://host.docker.internal:9112/metrics` |
+| Control Plane API | `http://host.docker.internal:9222/metrics` |
+
+The Zabbix template defines the HTTP agent request, discovery, and numeric
+metric items. The provisioning script configures scraping after Compose starts
+Zabbix.
+For a Compose exporter, use its service name and port on
+`fred-shared-network`. Use a separate Zabbix host for each exporter instance.
+
+After two one-minute polls (discovery, then item values), open **Monitoring >
+Latest data** and select a Fred host. `fred.prometheus.raw` and
+`fred.prometheus.parsed` should be supported, with discovered numeric series
+and values. **Data collection > Hosts** shows the template and URL macro for
+each host.
+
+The three APIs start with `make run` in the Fred checkout. Start the Knowledge
+Flow worker separately with `make -C apps/knowledge-flow-backend run-worker`.
+The Control Plane worker can run separately too, but its current
+development configuration has no `/metrics` exporter. A host for a stopped
+process will show an unsupported HTTP item until that process starts.
+
+The existing OpenFGA exporter can serve as a template smoke test at
+`http://openfga:2112/metrics`. It does not validate Fred metrics.
+
+`make zabbix-down` removes the Zabbix containers and keeps their database in
+the shared PostgreSQL volume. `make zabbix-up` resumes the saved database.
+`make docker-stop` also stops Zabbix; resume it with
+`make docker-start USE_ZABBIX=true` or `make zabbix-up`. `make docker-wipe`
+deletes the Zabbix database along with the other PostgreSQL databases. Existing
+data in the former `zabbix_vol-zabbix-db` volume is not migrated automatically.
+
 ## Access the service interfaces
 
 > :key: For development purposes, the password for nominative or service accounts is `Azerty123_`
