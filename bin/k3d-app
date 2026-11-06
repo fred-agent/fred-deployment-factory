@@ -14,7 +14,8 @@ fail() { printf '%s\n' "$1" >&2; exit 1; }
 [[ -n "${APP:-}${DIR:-}" ]] || fail "APP or DIR is required: make k3d-app FRED=$FRED APP=fred [DIR=/path/to/checkout | RELEASE=version]"
 [[ -z "${DIR:-}" || -z "${RELEASE:-}" ]] || fail "RELEASE deploys a published release and DIR a checkout: choose one"
 if [[ -n "${DIR:-}" ]]; then
-  DIR="$(cd "$DIR" 2>/dev/null && pwd)" || fail "DIR=$DIR: no such directory"
+  [[ -d "$DIR" ]] || fail "DIR=$DIR: no such directory"
+  DIR="$(cd "$DIR" && pwd)"
   export DIR
 fi
 

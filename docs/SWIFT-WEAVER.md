@@ -1,8 +1,7 @@
 # Swift and Weaver side by side
 
-The [README](../README.md) is the single source for installation commands, operator
-credentials and what `FRED` selects. This page explains what `make k3d-up` isolates and
-what it shares.
+The [README](../README.md) has the commands and [How it works](HOW-IT-WORKS.md) explains
+what `FRED` selects. This page explains what `make k3d-up` isolates and what it shares.
 
 `make k3d-up` runs both applications on one cluster so that each can be developed and
 tested independently. **It does not migrate data.** The migration strategy is deferred
@@ -21,8 +20,17 @@ marketplace content is transferred by these commands.
 | Keycloak | **Common by design:** one IdP for every organization and application. This does not share memberships or grants, which belong to each application |
 | S3 | **Shared:** one SeaweedFS service, and common buckets including `app-content-documents` |
 
+| Index | Swift | Weaver |
+| --- | --- | --- |
+| Document | `vector-index-mistral` | `document-vectors` |
+| Application logs | `app-logs-index` | none: stdout, collected into `k3d-logs-*` |
+| KPI | `kpi-index` | `weaver-kpi` |
+
 Weaver's OpenSearch accounts can only reach its own indexes. Swift still connects as
 the OpenSearch administrator.
+
+Both lines use the context `k3d-fred`. Each line's namespace has its own `fred-secrets`, and
+short aliases (`postgres`, `keycloak`, ...) to the services in `fred-infra`.
 
 ## What remains common
 

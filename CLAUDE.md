@@ -65,10 +65,10 @@ outside it. Do not reintroduce cloud-specific material here.
 - **Render before deploying:** `helm lint` and `helm template` with the instance values; the
   fred chart validates its values against a strict schema.
 - **Secrets never enter git.** Local defaults (`Azerty123_`...) are for this local stack only.
-- **Keep docs lean:** the README owns infrastructure and application commands;
-  `docs/LOCAL-DEVELOPMENT.md` is the technical/legacy reference. The explicitly
-  separate `docs/SWIFT-WEAVER.md` explains coexistence and data boundaries.
-  Link to the README instead of duplicating its installation instructions.
+- **Keep docs lean:** the README is recipes only: you want this, run that, with no
+  explanation. `docs/HOW-IT-WORKS.md` explains them, `docs/SWIFT-WEAVER.md` explains
+  coexistence and data boundaries, and `docs/LOCAL-DEVELOPMENT.md` is the technical/legacy
+  reference. Link to the README instead of duplicating its installation instructions.
 - **Commits:** `type(scope): what changed` (e.g. `fix(k3d): ...`), one logical change each, no
   Claude co-author line.
 

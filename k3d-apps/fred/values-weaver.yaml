@@ -27,6 +27,12 @@ applications:
       enabled: true
     configuration:
       platform:
+        capability_preparation:
+          workers:
+            fred-agents:
+              issuer: http://keycloak:8080/realms/app
+              audience: app
+              client_id: agentic
         inference_credentials:
         - api_key_env: OPENAI_API_KEY
           api_root: https://api.mistral.ai/v1
@@ -174,9 +180,6 @@ applications:
     - mountPath: /etc/fred/node-ca/ca-certificates.crt
       name: node-ca
       readOnly: true
-    - mountPath: /app/processing-contract
-      name: processing-contract
-      readOnly: true
     extraVolumes:
     - hostPath:
         path: /etc/ssl/certs/ca-certificates.crt
@@ -303,9 +306,6 @@ applications:
         user:
           realm_url: http://keycloak:8080/realms/app
       storage:
-        log_store:
-          index: weaver-app-logs
-          type: opensearch
         object_store:
           access_key: admin
           endpoint: http://seaweedfs:8333
@@ -379,6 +379,8 @@ applications:
           secretKeyRef:
             key: POSTGRES_RUNTIME_PASSWORD
             name: fred-secrets
+  fred-agents-worker:
+    enabled: true
   frontend:
     configuration:
       config_json:
@@ -463,9 +465,6 @@ applications:
         user:
           realm_url: http://keycloak:8080/realms/app
       storage:
-        log_store:
-          index: weaver-app-logs
-          type: opensearch
         opensearch:
           host: https://opensearch:9200
           username: fred-kf-api
@@ -582,9 +581,6 @@ applications:
         - extraction-medium
         - extraction-rich
       storage:
-        log_store:
-          index: weaver-app-logs
-          type: opensearch
         opensearch:
           host: https://opensearch:9200
           username: fred-kf-ingestion
