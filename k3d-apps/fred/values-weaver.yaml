@@ -37,26 +37,30 @@ applications:
         - api_key_env: OPENAI_API_KEY
           api_root: https://api.mistral.ai/v1
           credential_binding: mistral
-          source_id: mistral
-          source_revision: 1
         knowledge_flow_url: http://knowledge-flow-backend:8000/knowledge-flow/v2
         model_sources:
-        - authentication:
-            accept_inference_authority: true
-            authority: discovery_and_inference
-            mode: bearer
-            provider_scopes:
-            - GET /v1/models
-            - POST /v1/chat/completions
-            secret_env_var: OPENAI_API_KEY
-          complete_inventory_guaranteed: true
-          discovery_url: https://api.mistral.ai/v1/models
-          enabled: true
+        - enabled: true
           inference:
             api_root: https://api.mistral.ai/v1
+            auth:
+              kind: api_key
             credential_binding: mistral
-            provider: openai
-          qualification: mixed_capabilities_v1
+            dialect: mistral
+            route: standard
+            wire: openai_chat
+          inventory:
+            authentication:
+              accept_inference_authority: true
+              authority: discovery_and_inference
+              mode: bearer
+              provider_scopes:
+              - GET /v1/models
+              - POST /v1/chat/completions
+              secret_env_var: OPENAI_API_KEY
+            complete_inventory_guaranteed: true
+            kind: discovered
+            qualification: mixed_capabilities_v1
+            url: https://api.mistral.ai/v1/models
           revision: 1
           source_id: mistral
           visibility_scope: local-test-mistral-account
@@ -282,8 +286,6 @@ applications:
       - api_key_env: OPENAI_API_KEY
         api_root: https://api.mistral.ai/v1
         credential_binding: mistral
-        source_id: mistral
-        source_revision: 1
       observability:
         kpi:
           opensearch:
