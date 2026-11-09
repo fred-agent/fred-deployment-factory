@@ -3,12 +3,12 @@
 Run Fred on your machine, from this directory. Pick one:
 
 - **k3d**: Fred deployed as in production. Swift and Weaver side by side.
-- **Docker Compose**: Weaver only, run from your checkout. The fast loop to debug.
+- **Docker Compose**: Swift or Weaver, run from separate checkouts. The fast loop to debug.
 
 They use the same ports: run only one at a time.
 
 Once: install Docker (and for k3d: k3d, kubectl, Helm, Helmfile) and your checkout's build
-tools, add `127.0.0.1 keycloak swift.localhost weaver.localhost` to `/etc/hosts`, and keep
+tools, add `127.0.0.1 keycloak app-keycloak swift.localhost weaver.localhost` to `/etc/hosts`, and keep
 your Mistral key in a file that contains only the key.
 
 ## k3d
@@ -32,8 +32,26 @@ Open <http://weaver.localhost:8088> or <http://swift.localhost:8088>.
 
 ## Docker Compose
 
+Stop the application processes before switching data stacks. Swift to Weaver:
+
 ```bash
+make docker-down
+make docker-weaver-up
+```
+
+Weaver to Swift:
+
+```bash
+make docker-weaver-down
 make docker-up
+```
+
+Each stack keeps its own PostgreSQL and persistent data. Keycloak and its dedicated
+database stay shared. Ports stay the same; switching requires no wipe.
+
+Run Weaver from its checkout after starting its infrastructure:
+
+```bash
 make docker-app FRED=weaver APP=fred DIR=/path/to/fred KEY_FILE=/path/to/key-file
 ```
 
@@ -42,8 +60,8 @@ Open <http://localhost:5173>.
 | I want to | Run |
 | --- | --- |
 | Restart Fred | The same `make docker-app` again (`KEY_FILE` only to change the key) |
-| Pause / resume | `make docker-stop` / `make docker-start` |
-| **Start over (deletes everything)** | **`make docker-wipe`**, then `make docker-up` |
+| Pause / resume Weaver | `make docker-weaver-stop` / `make docker-weaver-start` |
+| **Reset Weaver data** | **`make docker-weaver-wipe`**, then `make docker-weaver-up` |
 
 ## First login
 

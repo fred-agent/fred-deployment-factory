@@ -17,7 +17,121 @@ This project helps to deploy the following support services:
 
 This repository aims to simplify local development and testing by providing a ready-to-use, reproducible environment for all shared dependencies across the `fred-agent` projects.
 
-## Requirements
+## Switch between Swift and Weaver
+
+Swift and Weaver use the same ports for the applications and their infrastructure.
+Only one data stack runs at a time. Each has its own PostgreSQL container and
+volume, plus independent SeaweedFS, OpenSearch, Temporal, ClickHouse,
+Langfuse/Redis, Prometheus and Grafana state. Switching never copies or deletes
+application data. OpenFGA is kept for Swift only; Weaver uses its own `fred_weaver`
+database and the bootstrap provided by Fred.
+
+Keycloak is shared: the same `app-keycloak` container, realm, clients, users,
+`mirror.gcr.io/keycloak/keycloak:26.3.0` image and port `8080` serve both checkouts.
+Its database is stored in a dedicated internal PostgreSQL container
+(`app-keycloak-postgres`) with no published host port. This lets either application's
+PostgreSQL stop independently. Keycloak identity/client changes apply to both
+applications; their business data remains separate.
+
+Run from the repository root, after stopping the application processes from the
+checkout you are leaving:
+
+```bash
+make docker-down               # leave Swift; preserve its data
+make docker-weaver-up          # stop Swift data containers, create/start Weaver
+# Or: make docker-weaver-up STACK=extended
+make docker-weaver-env         # usual endpoints, selected data profile
+make docker-weaver-stop        # stop Weaver data; keep containers and volumes
+make docker-start              # stop Weaver data and resume existing Swift data
+make docker-weaver-start       # stop Swift data and resume existing Weaver data
+```
+
+Use `docker-up` or `docker-weaver-up` the first time a stack is created. Use
+`docker-start` or `docker-weaver-start` to resume it without rerunning its
+initialization jobs. Add `STACK=extended` to start the extended services too.
+Every switch stops all data services of the other environment, including its
+extended services. Keycloak and its database stay running.
+
+The generic targets accept `DOCKER_ENV=weaver`, for example
+`make postgres-up DOCKER_ENV=weaver` and `make preflight-check DOCKER_ENV=weaver`.
+The independent k3d application selector remains `FRED=swift|weaver`.
+
+### Configuration and storage
+
+`docker/.env` configures Swift and shared Keycloak. `docker/.env.weaver` configures
+Weaver's data services. Missing files are copied from `.env.template`; existing
+files are preserved. Both are ignored by Git. Shared Keycloak always reads its
+credentials from `.env`, including when Weaver is selected.
+`DOCKER_ENV_FILE=/path/to/file` overrides the selected data configuration;
+`DOCKER_SHARED_ENV_FILE=/path/to/file` overrides the shared authentication configuration.
+The profiles in `docker/environments/` select resource names and contain no port
+overrides or alternative browser hostnames.
+
+Swift keeps the original project, container and volume names. Weaver data projects
+and containers use the `weaver-` prefix. For example:
+
+| Stored data | Swift volume | Weaver volume |
+| --- | --- | --- |
+| PostgreSQL | `postgres_vol-postgres-data` | `weaver-postgres_vol-postgres-data` |
+| SeaweedFS | `seaweedfs_vol-seaweedfs-data` | `weaver-seaweedfs_vol-seaweedfs-data` |
+| OpenSearch | `opensearch_vol-opensearch-data` | `weaver-opensearch_vol-opensearch-data` |
+
+Both use `fred-shared-network` and the usual service aliases (`app-postgres`,
+`app-seaweedfs`, etc.). The launcher stops the other data stack before starting
+the selected stack, so the same host ports and aliases address the active data.
+The shared Keycloak PostgreSQL volume is `keycloak_vol-keycloak-postgres-data`.
+
+On the first launch with an existing Swift Keycloak database, the launcher copies
+that database into the dedicated shared volume. It briefly stops Keycloak for a
+consistent copy, retains the source database, and preserves existing accounts and
+clients. A failed restore is rolled back and the old Keycloak is restarted.
+An initialized shared realm is never overwritten. `docker-weaver-up` reconciles
+the service clients required by the current Weaver bootstrap without forcing
+users to log in again; it preserves their accounts. Resume commands do not run
+post-install jobs.
+The first migration reuses the legacy PostgreSQL image, and later starts reuse
+the shared database's image. `KEYCLOAK_POSTGRES_IMAGE` can select an image explicitly
+for a fresh authentication volume. An existing volume requires a real PostgreSQL
+upgrade before changing major versions; the launcher rejects copying a newer
+source into an older destination before stopping Keycloak.
+
+### Endpoints used by both checkouts
+
+| Service | Host port(s) |
+| --- | --- |
+| PostgreSQL | 5432 |
+| Keycloak | 8080 |
+| SeaweedFS S3 | 8333 |
+| SeaweedFS master / volume / filer | 9333 / 8081 / 8888 |
+| OpenSearch / Dashboards | 9200 / 5601 |
+| OpenFGA HTTP / gRPC / playground (Swift only) | 9080 / 9081 / 3000 |
+| Temporal API / UI | 7233 / 8233 |
+| ClickHouse HTTP / native (`extended`) | 8123 / 9002 |
+| Langfuse UI / worker (`extended`) | 3001 / 3030 |
+| Prometheus / Grafana (`extended`) | 9090 / 3002 |
+
+Use `localhost` and each checkout's existing database configuration (`fred` for
+Swift, `fred_weaver` for Weaver). Keycloak remains at
+`http://app-keycloak:8080/realms/app`; keep `127.0.0.1 keycloak app-keycloak` in
+`/etc/hosts` for both checkouts' issuer names. Application listening ports stay
+unchanged, including frontend `5173`. No Weaver-specific proxy targets or CORS
+ports are needed.
+
+`make docker-weaver-down` removes Weaver's data containers but keeps their volumes.
+`make docker-weaver-wipe` deletes Weaver's data containers and volumes. The Swift
+commands affect Swift data in the same way. These commands leave shared Keycloak,
+its database and the shared network intact. The existing checkpoint commands
+support Swift's data volumes only; they do not back up or restore shared authentication.
+
+To inspect a project or run the focused offline command/configuration tests:
+
+```bash
+make -s docker-config DOCKER_ENV=weaver SVC=postgres
+make -s docker-config SVC=keycloak
+python3 -m unittest bin/test_docker_environments.py
+```
+
+## Manual Swift setup
 
 ### Docker Bridge network
 
@@ -73,7 +187,7 @@ OpenSearch is already configured to be connected to Keycloak. This is a graph to
 
 ```mermaid
 graph TB
-A(keycloak) --> E(postgres)
+A(keycloak) --> L(shared Keycloak postgres)
 C(opensearch) --> A(keycloak)
 H(temporal) --> A(keycloak)
 H(temporal) --> E(postgres)
@@ -86,8 +200,7 @@ Launch the components according to your needs with these command lines:
 
 - Keycloak
 ```
-docker compose -f docker/docker-compose-keycloak.yml -p keycloak up -d
-bash docker/keycloak/keycloak-post-install.sh
+make keycloak-up
 ```
 
 The Keycloak post-install script is idempotent and enforces:
@@ -180,7 +293,8 @@ Grafana is pre-provisioned with a Prometheus datasource pointing to `http://app-
 
 > :key: For development purposes, the password for nominative or service accounts is `Azerty123_`
 
-`make docker-up` alone creates **no** nominative account - the Keycloak realm is empty. To get working accounts, either:
+`make docker-up` alone creates **no** nominative account. A new installation starts
+with an empty Keycloak realm; an existing shared realm is preserved. To get working accounts, either:
 
 - self-register through Keycloak's own registration screen, then complete the AUTHZ-07
   `/bootstrap` flow to become the first `platform_admin`; or

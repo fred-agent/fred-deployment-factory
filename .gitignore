@@ -1,5 +1,7 @@
 # Local Docker Compose configuration
 /docker/.env
+/docker/.env.weaver
+/docker/keycloak/realm_export-weaver/
 
 # Python/dev tooling
 /.venv/

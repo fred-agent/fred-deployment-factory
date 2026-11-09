@@ -1,6 +1,6 @@
 services:
   temporal-update-schema:
-    container_name: app-temporal-admin-tools
+    container_name: ${DOCKER_CONTAINER_PREFIX:-}app-temporal-admin-tools
     image: mirror.gcr.io/temporalio/admin-tools:1.28
     environment:
       POSTGRES_TEMPORAL_USER: ${POSTGRES_TEMPORAL_USER:-temporal}
@@ -45,10 +45,12 @@ services:
           --password $$POSTGRES_TEMPORAL_PASSWORD \
           update-schema -d schema/postgresql/v12/visibility/versioned/
     networks:
-      - app-network
+      app-network:
+        aliases:
+          - app-temporal-admin-tools
 
   temporal:
-    container_name: app-temporal
+    container_name: ${DOCKER_CONTAINER_PREFIX:-}app-temporal
     restart: unless-stopped
     image: mirror.gcr.io/temporalio/server:1.28.0
     environment:
@@ -68,7 +70,9 @@ services:
       TEMPORAL_CLI_ADDRESS: app-temporal:7233
       PROMETHEUS_ENDPOINT: 0.0.0.0:9090
     networks:
-      - app-network
+      app-network:
+        aliases:
+          - app-temporal
     ports:
       - 7233:7233
     depends_on:
@@ -81,7 +85,7 @@ services:
       retries: 5
 
   temporal-post-install-job:
-    container_name: app-temporal-post-install-job
+    container_name: ${DOCKER_CONTAINER_PREFIX:-}app-temporal-post-install-job
     image: mirror.gcr.io/temporalio/admin-tools:1.28
     environment:
       TEMPORAL_CLI_ADDRESS: app-temporal:7233
@@ -99,13 +103,15 @@ services:
             tctl --address "$$TEMPORAL_CLI_ADDRESS" --ns "$$namespace" namespace register
         done
     networks:
-      - app-network
+      app-network:
+        aliases:
+          - app-temporal-post-install-job
     depends_on:
       temporal:
         condition: service_healthy
 
   temporal-ui:
-    container_name: app-temporal-web
+    container_name: ${DOCKER_CONTAINER_PREFIX:-}app-temporal-web
     restart: unless-stopped
     image: mirror.gcr.io/temporalio/ui:2.39.0
     environment:
@@ -120,7 +126,9 @@ services:
       TEMPORAL_AUTH_SCOPES: openid,profile,email
       TEMPORAL_AUTH_CLIENT_SECRET: Azerty123_
     networks:
-      - app-network
+      app-network:
+        aliases:
+          - app-temporal-web
     ports:
       - ${TEMPORAL_UI_PORT:-8233}:8080
     depends_on:
@@ -135,4 +143,4 @@ services:
 networks:
   app-network:
     external: true
-    name: fred-shared-network
+    name: ${DOCKER_NETWORK_NAME:-fred-shared-network}

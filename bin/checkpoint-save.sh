@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+if [[ "${DOCKER_ENV:-swift}" != swift ]]; then
+    echo "Checkpoints currently support DOCKER_ENV=swift only." >&2
+    exit 1
+fi
+
 CHECKPOINT_NAME="${1:?Usage: $0 <checkpoint-name>}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"

@@ -1,14 +1,16 @@
 services:
 
   grafana:
-    container_name: app-grafana
+    container_name: ${DOCKER_CONTAINER_PREFIX:-}app-grafana
     restart: unless-stopped
     image: grafana/grafana:11.1.4
     environment:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-Azerty123_}
     networks:
-      - app-network
+      app-network:
+        aliases:
+          - app-grafana
     ports:
       - 0.0.0.0:${GRAFANA_PORT:-3002}:3000/tcp
     volumes:
@@ -21,4 +23,4 @@ volumes:
 networks:
   app-network:
     external: true
-    name: fred-shared-network
+    name: ${DOCKER_NETWORK_NAME:-fred-shared-network}

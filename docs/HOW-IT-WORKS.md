@@ -90,5 +90,6 @@ A cluster from before this layout is not upgraded: `make k3d-up` refuses one wit
 ## What is not here
 
 This repository contains no GKE/GCP deployment. Docker Compose is a separate debug loop for
-Weaver only, run on the host from a checkout (README, "Docker Compose", `make docker-app`); it is not
-a selector for these k3d commands. Swift on Docker Compose stays on branch `swift`.
+Swift or Weaver, run on the host from separate checkouts (README, "Docker Compose");
+it does not select a k3d configuration. Switch data with `make docker-down`, then
+`make docker-weaver-up`; Keycloak stays shared and application data stays separate.
