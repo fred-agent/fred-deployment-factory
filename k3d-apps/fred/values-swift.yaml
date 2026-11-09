@@ -297,6 +297,7 @@ registrations:
 applications:
 
   # ===========================================================================
+  # Checkout charts with capability preparation also load preparation.yaml.gotmpl.
   fred-agents:
     migration:
       enabled: true                        # posture
