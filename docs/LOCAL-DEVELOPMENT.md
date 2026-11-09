@@ -627,6 +627,13 @@ make k3d-up ENV=secondary K3D_AGENT_SANDBOX=true FRED_REPO=../fred \
 make k3d-sandbox-smoke ENV=secondary
 ```
 
+The sandbox profile also prefetches kube-system images from the host cache.
+If the k3d nodes cannot resolve external names through Docker's embedded DNS,
+set `K3D_DNS_UPSTREAM` to an IPv4 resolver reachable from the nodes on `k3d-up`
+(for example, `K3D_DNS_UPSTREAM=1.1.1.1` in this local network). The same value
+can be applied to an existing cluster with `make k3d-dns-upstream ENV=secondary
+K3D_DNS_UPSTREAM=<IPv4>`. This changes only the local cluster's CoreDNS forwarder.
+
 For a destructive reproducibility check, run `make k3d-wipe ENV=secondary`
 first; it deletes that cluster and all its volumes. Then run the `k3d-up`,
 `k3d-sandbox-smoke`, `k3d-sandbox-files-demo`, `k3d-app` and `k3d-health`

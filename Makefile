@@ -69,12 +69,13 @@ IMAGE_REGISTRY_HOST ?= registry-1.docker.io
 K3D_PREFETCH_IMAGES ?= true
 # k3s nodes pull their own system images (coredns, traefik, ...) when the cluster
 # is created; copying them from the host again only adds downloads.
-K3D_PREFETCH_SYSTEM_IMAGES ?= false
+K3D_AGENT_SANDBOX ?= false
+K3D_PREFETCH_SYSTEM_IMAGES ?= $(K3D_AGENT_SANDBOX)
 IMAGE_PULL_RETRIES ?= 3
 IMAGE_PULL_RETRY_DELAY ?= 5
 K3D_USE_CILIUM ?= false
 CILIUM_VERSION ?= 1.16.5
-K3D_AGENT_SANDBOX ?= false
+K3D_DNS_UPSTREAM ?=
 K3D_FRED_SKILLS_DIR ?=
 SANDBOX_CSI_VALUES ?=
 SANDBOX_PYTHON_PROFILE ?= slim
@@ -393,7 +394,7 @@ k3d-create: k3d-disk-check ## Create a local k3d cluster (set K3D_USE_CILIUM=tru
 	    $(K3D_SKILLS_CREATE_ARGS); \
 	fi
 
-k3d-up: k3d-create ## Deploy infrastructure into the selected cluster (ENV=swift or ENV=secondary)
+k3d-up: k3d-create $(if $(K3D_DNS_UPSTREAM),k3d-dns-upstream) ## Deploy infrastructure into the selected cluster (ENV=swift or ENV=secondary)
 	@set -euo pipefail; \
 		c_step='\033[1;34m'; c_ok='\033[1;32m'; c_warn='\033[1;33m'; c_err='\033[1;31m'; c_info='\033[0;36m'; c_reset='\033[0m'; \
 		step() { printf "%b[STEP]%b %s\n" "$$c_step" "$$c_reset" "$$1"; }; \
@@ -536,6 +537,9 @@ k3d-sandbox-up: ## Install gVisor, SIG Agent Sandbox, rclone CSI, registry image
 	  FRED_REPO="$(if $(FRED_REPO),$(FRED_REPO),../fred)" \
 	  SANDBOX_CSI_VALUES="$(SANDBOX_CSI_VALUES)" \
 	  SANDBOX_PYTHON_PROFILE="$(SANDBOX_PYTHON_PROFILE)" bin/k3d-agent-sandbox.sh up
+
+k3d-dns-upstream: ## Set an explicit DNS forwarder for the selected k3d cluster (K3D_DNS_UPSTREAM=<IPv4>)
+	@python3 bin/k3d-dns-upstream.py "$(KUBE_CONTEXT)" "$(K3D_DNS_UPSTREAM)"
 
 k3d-sandbox-smoke: ## Execute Python and Bash and verify a read-only CSI mount under gVisor
 	@K3D_CLUSTER="$(K3D_CLUSTER)" KUBE_CONTEXT="$(KUBE_CONTEXT)" \
