@@ -89,6 +89,6 @@ A cluster from before this layout is not upgraded: `make k3d-up` refuses one wit
 
 ## What is not here
 
-This repository contains no GKE/GCP deployment. Docker Compose tools are separate legacy
-infrastructure tools, not a selector for these k3d commands; the current Compose files do
-not supply OpenFGA and cannot alone recreate a Swift installation.
+This repository contains no GKE/GCP deployment. Docker Compose is a separate debug loop for
+Weaver only, run on the host from a checkout (README, "Docker Compose", `make docker-app`); it is not
+a selector for these k3d commands. Swift on Docker Compose stays on branch `swift`.

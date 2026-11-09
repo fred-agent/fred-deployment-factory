@@ -7,9 +7,15 @@ README's separate infrastructure and application commands and `docs/LOCAL-DEVELO
 
 The **local deployment** of Fred and its applications, in two forms:
 
-- **Docker Compose (legacy Swift loop)** — the backing services on the host (`make docker-up`); the Fred apps run
-  from a `fred` checkout (`make run` there). It is the fast loop to debug an app, not a
-  second deployment: k3d is the one that deploys as production does.
+- **Docker Compose (Weaver only)** — the backing services on the host (`make docker-up`); the
+  Fred Weaver apps run from a checkout (`make docker-app FRED=weaver APP=fred DIR=...`, the
+  same vocabulary as `k3d-app`), each with its `configuration_prod.yaml` pointing to these
+  services. k3d and Docker share one first start (Fred's `deploy/k3d/README.md`), one issuer
+  (`http://keycloak:8080/realms/app`) and the same values; only step 1 differs. Keep it so. It is the fast loop to debug
+  an app, not a second deployment: k3d is the one that deploys as production does. Docker
+  prepares what the k3d line `weaver` gets (database `fred_weaver`, Temporal namespace
+  `fred-weaver`, documents bucket, Keycloak clients) with administrator accounts for
+  OpenSearch and S3. Swift on Docker Compose stays on branch `swift`.
 - **k3d** — a standard Helm deployment: `k3d/cluster.yaml`, the infrastructure chart `k3d/`
   and Helmfile. `make k3d-up` prepares COTS and every Fred release line (Swift, Weaver);
   `make k3d-app FRED=swift|weaver APP=fred DIR=/path/to/checkout` deploys one application,

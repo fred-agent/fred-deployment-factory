@@ -3,7 +3,7 @@ SHELL := /bin/bash
 
 # FRED names a Fred release line, a Helmfile environment: it decides where an application
 # goes. It is typed on each command: a value left in the shell must never choose for you.
-ifneq ($(filter k3d-%,$(MAKECMDGOALS)),)
+ifneq ($(filter k3d-% docker-app,$(MAKECMDGOALS)),)
 ifneq ($(filter environment environment override,$(origin FRED)),)
 $(error FRED is set in your shell. Unset it and type it on the command: make $(firstword $(MAKECMDGOALS)) FRED=...)
 endif
@@ -21,12 +21,11 @@ endif
 
 DOCKER_COMPOSE_BASE := docker compose -f docker/docker-compose-
 
-# `make docker-up` has exactly one mode: a fresh, empty deployment (empty
-# Keycloak realm — clients + service accounts only, no demo users, no demo
-# groups) bootstrapped via AUTHZ-07's root-admin endpoint
-# (`POST /bootstrap/platform-admin`) + declarative provisioning. There is no
-# fork and no demo-seeding knob — identity and role provisioning are owned by
-# fred/control-plane-backend, not this repo.
+# `make docker-up` prepares the backing services of Fred Weaver; `make docker-app` runs Fred
+# on the host from a Weaver checkout, as `make k3d-up` and `make k3d-app` on k3d. One mode: a
+# fresh, empty deployment (empty Keycloak realm: clients and service accounts only, no
+# demo users or groups). The database `fred_weaver` is created empty: its SQL owners and
+# schemas are Fred's bootstrap, as on k3d. Swift on Docker Compose stays on branch swift.
 
 # STACK selects Docker Compose services only; k3d has one fixed service set:
 #   base (default) → minimal stack: drops ClickHouse, Langfuse (+ its Redis),
@@ -121,7 +120,7 @@ k3d-%:
 	@echo 'Removed command. Use make k3d-up, or make k3d-app FRED=swift|weaver APP=...; see make help.' >&2
 	@exit 2
 
-##@ Docker (separate legacy tools)
+##@ Docker Compose: backing services of Fred Weaver, run on the host
 docker-up docker-start docker-stop preflight-check: export STACK := $(STACK)
 network-create:
 	@echo "Creating 'fred-shared-network'..."
@@ -138,7 +137,7 @@ keycloak-post-install:
 
 postgres-up: network-create env-setup
 	@echo "Launching PostgreSQL..."
-	$(DOCKER_COMPOSE_BASE)postgres.yml -p postgres up -d postgres
+	$(DOCKER_COMPOSE_BASE)postgres.yml -p postgres up -d --wait postgres
 	$(DOCKER_COMPOSE_BASE)postgres.yml -p postgres up -d --no-deps --force-recreate postgres-post-install-job
 	@echo "Waiting for PostgreSQL post-install job..."
 	@set -euo pipefail; \
@@ -214,11 +213,12 @@ preflight-check:
 	@echo "Running FRED preflight..."
 	bash bin/fred-preflight.sh
 
-docker-up: $(DOCKER_UP_SERVICES) ## Launch the Docker stack (empty realm; bootstrap the first platform_admin via POST /bootstrap/platform-admin)
-	@echo "Empty realm. Bootstrap the first platform_admin via"
-	@echo "POST /bootstrap/platform-admin (AUTHZ-07) — see README."
+docker-up: $(DOCKER_UP_SERVICES) ## Launch the backing services of Fred Weaver (empty realm and database); no application
 	$(MAKE) preflight-check
-	@echo "All Docker stack services are running."
+	@echo 'Backing services ready. Run Fred: make docker-app FRED=weaver APP=fred DIR=/path/to/fred [KEY_FILE=/path/to/key-file]'
+
+docker-app: ## Run Fred from a checkout on the host: FRED=weaver APP=fred DIR=/path/to/fred [KEY_FILE=...]
+	@bin/docker-app
 
 # Resume an existing stack — after a reboot, a Docker daemon restart, or
 # `make docker-stop`. Unlike `docker-up` this recreates nothing and re-runs no
@@ -376,7 +376,7 @@ BRANCH ?= swift
 ecosystem-audit: ## Do the sibling checkouts agree on Fred's libraries? Branch, constraints, locks, npm: make ecosystem-audit [BRANCH=swift]
 	@bin/ecosystem-audit --branch "$(BRANCH)" --fetch
 
-.PHONY: help network-create env-setup keycloak-post-install postgres-up keycloak-up seaweedfs-up opensearch-up clickhouse-up langfuse-up prometheus-up grafana-up temporal-up preflight-check docker-up docker-start docker-stop docker-down all-down docker-wipe docker-destroy checkpoint-save checkpoint-restore docker-restart-from-checkpoint checkpoint-list checkpoint-delete check-pure-infrastructure ecosystem-audit keycloak-token-short keycloak-token-normal keycloak-token-status
+.PHONY: docker-app help network-create env-setup keycloak-post-install postgres-up keycloak-up seaweedfs-up opensearch-up clickhouse-up langfuse-up prometheus-up grafana-up temporal-up preflight-check docker-up docker-start docker-stop docker-down all-down docker-wipe docker-destroy checkpoint-save checkpoint-restore docker-restart-from-checkpoint checkpoint-list checkpoint-delete check-pure-infrastructure ecosystem-audit keycloak-token-short keycloak-token-normal keycloak-token-status
 
 ##@ Optional ZITADEL identity-provider test
 ZITADEL_COMPOSE = docker compose --env-file docker/zitadel/.env -f docker/zitadel/compose.yaml -p fred-zitadel

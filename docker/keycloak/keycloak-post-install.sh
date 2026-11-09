@@ -151,6 +151,9 @@ KEYCLOAK_KB_FRED_SAMPLES_CLIENT_SECRET="${KEYCLOAK_KB_FRED_SAMPLES_CLIENT_SECRET
 KEYCLOAK_KB_FRED_WEBDAV_CLIENT_SECRET="${KEYCLOAK_KB_FRED_WEBDAV_CLIENT_SECRET:-$(read_env_file_var KEYCLOAK_KB_FRED_WEBDAV_CLIENT_SECRET)}"
 KEYCLOAK_KB_FRED_WEBDAV_CLIENT_SECRET="${KEYCLOAK_KB_FRED_WEBDAV_CLIENT_SECRET:-Azerty123_}"
 
+KEYCLOAK_MANAGER_WORKER_CLIENT_SECRET="${KEYCLOAK_MANAGER_WORKER_CLIENT_SECRET:-$(read_env_file_var KEYCLOAK_MANAGER_WORKER_CLIENT_SECRET)}"
+KEYCLOAK_MANAGER_WORKER_CLIENT_SECRET="${KEYCLOAK_MANAGER_WORKER_CLIENT_SECRET:-Azerty123_}"
+
 KEYCLOAK_KF_ENABLE_MANAGE_USERS="${KEYCLOAK_KF_ENABLE_MANAGE_USERS:-$(read_env_file_var KEYCLOAK_KF_ENABLE_MANAGE_USERS)}"
 KEYCLOAK_KF_ENABLE_MANAGE_USERS="${KEYCLOAK_KF_ENABLE_MANAGE_USERS:-true}"
 
@@ -228,14 +231,15 @@ ensure_app_client() {
   printf '%s' "$uuid"
 }
 
-# Local C3 APIs require aud=app; azp=app identifies the login client only.
-ensure_app_audience() {
+# Creates or fixes one access-token protocol mapper, by name: $2 is name, mapper type and config.
+ensure_protocol_mapper() {
   local uuid="$1"
   local desired current mapper_id
-  desired='{"name":"fred-app-audience","protocol":"openid-connect","protocolMapper":"oidc-audience-mapper","consentRequired":false,"config":{"included.client.audience":"app","access.token.claim":"true","id.token.claim":"false"}}'
+  desired="$(jq -c '.protocol = "openid-connect" | .consentRequired = false
+    | .config += {"access.token.claim": "true", "id.token.claim": "false"}' <<<"$2")"
   current="$(kc get "clients/${uuid}/protocol-mappers/models" -r "$KEYCLOAK_REALM" -c \
-    | jq -c '[.[] | select(.name == "fred-app-audience")]')"
-  [[ "$(jq length <<<"$current")" -le 1 ]] || die "duplicate fred-app-audience mappers"
+    | jq -c --arg name "$(jq -r .name <<<"$desired")" '[.[] | select(.name == $name)]')"
+  [[ "$(jq length <<<"$current")" -le 1 ]] || die "duplicate $(jq -r .name <<<"$desired") mappers"
   mapper_id="$(jq -r '.[0].id // empty' <<<"$current")"
   if [[ -z "$mapper_id" ]]; then
     kc_http_request POST "/clients/${uuid}/protocol-mappers/models" "$desired" >/dev/null
@@ -246,6 +250,28 @@ ensure_app_audience() {
       "$(jq -c --arg id "$mapper_id" '. + {id: $id}' <<<"$desired")" >/dev/null
     mark_changed
   fi
+}
+
+# Local C3 APIs require aud=app; azp=app identifies the login client only.
+ensure_app_audience() {
+  ensure_protocol_mapper "$1" '{"name":"fred-app-audience","protocolMapper":"oidc-audience-mapper","config":{"included.client.audience":"app"}}'
+}
+
+# Fred Weaver's ingestion worker calls the control plane as itself, with no browser flow,
+# as keycloak.serviceClients.knowledge-flow-worker of k3d/values.yaml.
+ensure_manager_worker_client() {
+  local uuid
+  uuid="$(ensure_service_client_confidential knowledge-flow-worker "$1")"
+  if ! kc get "clients/${uuid}" -r "$KEYCLOAK_REALM" -c | jq -e '.standardFlowEnabled == false and .implicitFlowEnabled == false
+      and .directAccessGrantsEnabled == false and .fullScopeAllowed == false' >/dev/null; then
+    kc update "clients/${uuid}" -r "$KEYCLOAK_REALM" -s standardFlowEnabled=false -s implicitFlowEnabled=false \
+      -s directAccessGrantsEnabled=false -s fullScopeAllowed=false >/dev/null
+    mark_changed
+  fi
+  ensure_protocol_mapper "$uuid" '{"name":"workload-audience","protocolMapper":"oidc-audience-mapper","config":{"included.custom.audience":"control-plane"}}'
+  ensure_protocol_mapper "$uuid" '{"name":"workload-client-id","protocolMapper":"oidc-hardcoded-claim-mapper","config":{"claim.name":"client_id","claim.value":"knowledge-flow-worker","jsonType.label":"String"}}'
+  ensure_protocol_mapper "$uuid" '{"name":"workload-username","protocolMapper":"oidc-usermodel-property-mapper","config":{"user.attribute":"username","claim.name":"preferred_username","jsonType.label":"String"}}'
+  printf '%s' "$uuid"
 }
 
 ensure_service_client_confidential() {
@@ -532,6 +558,7 @@ eval_worker_client_uuid="$(ensure_service_client_confidential fred-evaluation-wo
 # the client is named after the prefix, never after one Knowledge Base.
 kb_fred_samples_client_uuid="$(ensure_service_client_confidential kb-fred.samples "$KEYCLOAK_KB_FRED_SAMPLES_CLIENT_SECRET")"
 kb_fred_webdav_client_uuid="$(ensure_service_client_confidential kb-fred.webdav "$KEYCLOAK_KB_FRED_WEBDAV_CLIENT_SECRET")"
+manager_worker_client_uuid="$(ensure_manager_worker_client "$KEYCLOAK_MANAGER_WORKER_CLIENT_SECRET")"
 
 ensure_client_role app service_agent "application service agent role"
 
@@ -572,9 +599,17 @@ ensure_user_client_role "$eval_worker_service_user" app service_agent
 ensure_user_client_role "$kb_fred_samples_service_user" app service_agent
 ensure_user_client_role "$kb_fred_webdav_service_user" app service_agent
 
-# fred-agents speaks for a person on every receiver.
+# fred-agents speaks for a person on every receiver. The Knowledge Flow API delegates the
+# authenticated person to the Control Plane, which delegates the admitted person back for
+# document search. This grants trust to assert identity, never a content permission.
 ensure_delegation_client
 ensure_user_client_role "$agentic_service_user" fred-delegation delegation_caller
+delegation_uuid="$(client_uuid fred-delegation)"
+delegation_role="$(kc_http_request GET "/clients/${delegation_uuid}/roles/delegation_caller")"
+for caller in knowledge-flow control-plane; do
+  ensure_user_client_role "$(wait_for_service_account_username "$caller")" fred-delegation delegation_caller
+  kc_http_request POST "/clients/$(client_uuid "$caller")/scope-mappings/clients/${delegation_uuid}" "[${delegation_role}]" >/dev/null
+done
 
 # AUTHZ-05/06: Swift never represents a team as a Keycloak group - a team is a
 # Fred record, created later via the control-plane APIs. No groups claim is
@@ -592,4 +627,4 @@ if should_force_relogin; then
   fi
 fi
 
-log "post-install completed (app=${app_client_uuid}, agentic=${agentic_client_uuid}, knowledge-flow=${knowledge_flow_client_uuid}, control-plane=${control_plane_client_uuid}, fred-evaluation-worker=${eval_worker_client_uuid}, changes=${CHANGED})"
+log "post-install completed (app=${app_client_uuid}, agentic=${agentic_client_uuid}, knowledge-flow=${knowledge_flow_client_uuid}, control-plane=${control_plane_client_uuid}, fred-evaluation-worker=${eval_worker_client_uuid}, knowledge-flow-worker=${manager_worker_client_uuid}, changes=${CHANGED})"

@@ -55,12 +55,15 @@ services:
           printf '%s\n' "$$shell_output"
         fi
 
-        if printf '%s\n' "$$shell_output" | grep -Fxq 'langfuse'; then
-          echo "[seaweedfs-post-install] bucket langfuse already exists"
-        else
-          echo "[seaweedfs-post-install] creating bucket langfuse"
-          echo "s3.bucket.create -name langfuse" | weed shell -master=app-seaweedfs:9333 -filer=app-seaweedfs:8888
-        fi
+        # app-content-documents: Fred Weaver's documents, without versioning or lifecycle.
+        for bucket in langfuse app-content-documents; do
+          if printf '%s\n' "$$shell_output" | grep -Fxq "$$bucket"; then
+            echo "[seaweedfs-post-install] bucket $$bucket already exists"
+          else
+            echo "[seaweedfs-post-install] creating bucket $$bucket"
+            echo "s3.bucket.create -name $$bucket" | weed shell -master=app-seaweedfs:9333 -filer=app-seaweedfs:8888
+          fi
+        done
         echo "[seaweedfs-post-install] bucket initialization finished"
     networks:
       - app-network

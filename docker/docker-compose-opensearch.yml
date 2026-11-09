@@ -69,9 +69,8 @@ services:
       - -c
     command:
       - >
-        apply_securityadmin.sh && 
-        wait_for_os_init.sh &&
-        create_indice.sh metadata-index vector-index active-sessions-index chat-interactions-index feedback-index
+        apply_securityadmin.sh &&
+        wait_for_os_init.sh
     volumes:
       - vol-opensearch-certs:/usr/share/opensearch/config/certs/
       - vol-opensearch-security:/usr/share/opensearch/config/opensearch-security/

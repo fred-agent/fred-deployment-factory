@@ -115,25 +115,11 @@ The Keycloak post-install script is idempotent and enforces:
 The very first `platform_admin` goes through `POST /bootstrap/platform-admin` (AUTHZ-07) -
 see the root README.
 
-### Platform and demo-data provisioning now lives in `fred`
+### Platform and demo-data provisioning lives in `fred`
 
-This repo no longer carries any user, team, or role data - not even for local demos. Identity
-and authorization provisioning (both the Keycloak users *and* every team/platform role) is
-owned entirely by `fred`/control-plane-backend's declarative platform-import feature
-(`POST /import-export/import`, `CAN_MANAGE_PLATFORM`-gated):
-
-- The canonical demo dataset is
-  `apps/control-plane-backend/tests/fixtures/import_export/demo_provisioning/` in the `fred`
-  monorepo (`manifest.json` + `users.json`) - the single source of truth for every demo
-  identity and every team/platform role, replacing this repo's old
-  `config/configuration*.yaml` files.
-- `cd apps/control-plane-backend && make build-demo-bundle` packages that fixture into
-  `target/demo-provisioning-bundle.zip`.
-- Upload it from **Admin → Migration** in the Fred UI (or run it against
-  `apps/control-plane-backend`'s import CLI/test tooling) - one import call creates any
-  missing Keycloak identity and grants every configured team/platform role.
-
-See `docs/swift/rfc/PLATFORM-IMPORT-RFC.md` §10 in the `fred` monorepo for the full contract.
+This repo carries no user, team, or role data - not even for local demos. Fred Weaver's
+control plane owns it: `make bundle-demo` in the Fred checkout builds the demo bundle, and a
+platform administrator imports it from **Provisioning** in the Fred UI.
 
 <!-- TODO: Need to check how we can specify hard dependency between Keycloak and depending services (OpenSearch, Temporal) -->
 
@@ -142,7 +128,8 @@ See `docs/swift/rfc/PLATFORM-IMPORT-RFC.md` §10 in the `fred` monorepo for the 
 docker compose -f docker/docker-compose-seaweedfs.yml -p seaweedfs up -d
 ```
 
-The SeaweedFS post-install job pre-creates the bucket `langfuse`.
+The SeaweedFS post-install job pre-creates the buckets `langfuse` and
+`app-content-documents` (Fred Weaver's documents).
 
 - OpenSearch
 ```
@@ -197,13 +184,10 @@ Grafana is pre-provisioned with a Prometheus datasource pointing to `http://app-
 
 - self-register through Keycloak's own registration screen, then complete the AUTHZ-07
   `/bootstrap` flow to become the first `platform_admin`; or
-- upload `fred`'s demo-provisioning bundle from **Admin → Migration** (see "Platform and
-  demo-data provisioning now lives in `fred`" above), which creates the same example accounts
-  this repo used to seed directly - e.g. ``alice`` (``platform_admin``), ``gabriel``
-  (``platform_observer``), ``bob`` (``team_editor`` for ``northbridge`` and
-  ``fredlab``), ``marc`` (``team_admin`` for ``fredlab``) - all with the standard
-  `Azerty123_` password. Keycloak only ever carries the identity (username/email/password);
-  every authorization role lives in Fred, never as a Keycloak app role or group.
+- import `fred`'s demo bundle from **Provisioning** (see "Platform and demo-data
+  provisioning lives in `fred`" above). Keycloak only ever carries the identity
+  (username/email/password); every authorization role lives in Fred, never as a Keycloak
+  app role or group.
 
 Hereunder, these are the information to connect to each service with their _local service accounts_.
 
@@ -258,6 +242,7 @@ Hereunder, these are the information to connect to each service with their _loca
   - `admin` (admin)
 - Buckets:
    - `langfuse`
+   - `app-content-documents`
 
 ### OpenSearch
 
@@ -268,11 +253,7 @@ Hereunder, these are the information to connect to each service with their _loca
   - `admin` (admin)
   - `app_ro` (read-only)
   - `app_rw` (read-write)
- - Indexes:
-   - `metadata-index`
-   - `vector-index`
-   - `active-sessions-index`
-   - `chat-interactions-index`
+ - Indexes: none at install; Fred Weaver creates `document-vectors` and `weaver-kpi`
 
 ### Temporal
 

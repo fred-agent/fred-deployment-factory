@@ -93,8 +93,11 @@ services:
         until tctl --address "$$TEMPORAL_CLI_ADDRESS" cluster health; do
           sleep 2
         done
-        tctl --address "$$TEMPORAL_CLI_ADDRESS" --ns default namespace describe >/dev/null 2>&1 || \
-          tctl --address "$$TEMPORAL_CLI_ADDRESS" --ns default namespace register
+        # fred-weaver: Fred Weaver's namespace, as on k3d.
+        for namespace in default fred-weaver; do
+          tctl --address "$$TEMPORAL_CLI_ADDRESS" --ns "$$namespace" namespace describe >/dev/null 2>&1 || \
+            tctl --address "$$TEMPORAL_CLI_ADDRESS" --ns "$$namespace" namespace register
+        done
     networks:
       - app-network
     depends_on:

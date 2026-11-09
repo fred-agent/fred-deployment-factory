@@ -1,43 +1,62 @@
 # Local development stack
 
-The recommended starting point is **Weaver alone on k3d**, documented in the
-[README](../README.md). This file is the technical
-reference for infrastructure, applications and diagnostics.
+Two local forms of Fred Weaver, both documented in the [README](../README.md):
+**k3d**, which deploys as production does, and **Docker Compose**, the fast loop to
+debug an application on the host. This file is the technical reference for
+infrastructure, applications and diagnostics.
 
-For **Swift and Weaver side by side**, see
-[their boundaries](SWIFT-WEAVER.md), which also covers the reset
-procedure. The Docker walkthrough and the Swift/published-release subsection below
-are legacy Swift workflows; they are not Weaver startup instructions. Weaver's
-current local deployment path is k3d.
+For **Swift and Weaver side by side on k3d**, see [their boundaries](SWIFT-WEAVER.md),
+which also covers the reset procedure. Swift on Docker Compose stays on branch `swift`.
 
 For raw Compose internals (network, `.env`, per-service files), see
 [`../docker/README.md`](../docker/README.md).
 
-**Prerequisites (Compose):** Docker, Docker Compose (`docker compose`), `bash`.
+**Prerequisites (Compose):** Docker, Docker Compose (`docker compose`), `bash`, `jq`,
+`curl`, plus the build tools of a Fred Weaver checkout (Rust, uv, Node).
 
-## Quick start (Docker Compose)
+## Docker Compose: Weaver on the host
+
+The Compose services and k3d publish the same host ports: stop one before starting the
+other (`make k3d-stop`, `make docker-stop`).
 
 ```bash
-make docker-up                  # base stack: core Fred services
+make docker-up                  # base stack: PostgreSQL, Keycloak, SeaweedFS, OpenSearch, Temporal
 make docker-up STACK=extended   # + Prometheus, Grafana, ClickHouse, Langfuse
 ```
 
-Optional — browser SSO callbacks to Keycloak on localhost:
+`make docker-up` prepares what Weaver relies on, as `make k3d-up` does for the line
+`weaver`, on `localhost` ports; the token issuer is `http://keycloak:8080/realms/app`, as
+on k3d:
 
-```bash
-grep -q '127.0.0.1.*app-keycloak' /etc/hosts || echo "127.0.0.1 app-keycloak" | sudo tee -a /etc/hosts
-```
+| Service | What Weaver gets |
+| --- | --- |
+| PostgreSQL `:5432` | The empty database `fred_weaver`. Its roles and schemas are Fred's `deploy/postgres/bootstrap.sql` |
+| Keycloak `:8080` | Realm `app`, the clients `app`, `agentic`, `knowledge-flow`, `control-plane`, `knowledge-flow-worker` and the delegation client `fred-delegation` |
+| SeaweedFS `:8333` | The documents bucket `app-content-documents` |
+| OpenSearch `:9200` | Security initialized; Fred creates its indexes and search pipeline |
+| Temporal `:7233` | The namespace `fred-weaver` |
 
-The Keycloak post-install ensures that browser access tokens include the `app`
-audience required by Fred's local C3 API profiles. This does not enable delegated
-execution. To repair an existing realm after updating this checkout, run:
+Every application connects with the administrator of each service (OpenSearch, S3)
+and the local default secrets (`Azerty123_`). The least-privilege identities of k3d
+are not provisioned on Docker.
 
-```bash
-KEYCLOAK_FORCE_RELOGIN=false bash docker/keycloak/keycloak-post-install.sh
-```
+`make docker-app FRED=weaver APP=fred DIR=<checkout> [KEY_FILE=<key file>]` then runs that
+checkout on the host, as `make k3d-app` deploys it. `bin/docker-app` types, in the checkout:
 
-Then sign out and sign in again to obtain a new token. Re-running the script
-updates the same audience mapper without creating duplicates.
+| Step | What it does | On k3d |
+| --- | --- | --- |
+| `make setup-env` | `config/.env` of each application: local secrets, bootstrap token, `KEY_FILE`'s key | `fred-secrets`, `fred-model-credentials` |
+| `make docker-prepare` | Database roles and schemas, Control Plane schema, worker contract (replayable) | The chart's `postgresBootstrap` hook and migration Jobs |
+| `make run` | The six processes, each with its `configuration_prod.yaml` (`configuration_worker.yaml` for the worker) | The six deployments, with `values-weaver.yaml` |
+
+The configurations carry k3d's values with `localhost` addresses; only the log format
+differs (text, not JSON). The monitor needs Kubernetes and does not run on Docker.
+The first login is Fred's [first start](https://github.com/ThalesGroup/fred/blob/weaver/deploy/k3d/README.md#first-start),
+the same as on k3d.
+
+To repair an existing realm after updating this checkout, run
+`KEYCLOAK_FORCE_RELOGIN=false bash docker/keycloak/keycloak-post-install.sh`, then sign
+out and sign in again. The script is idempotent.
 
 Pausing and resuming (a reboot, or closing the laptop for the day):
 
@@ -61,218 +80,24 @@ make docker-wipe       # containers & volumes
 make docker-destroy    # containers, volumes, network, and images
 ```
 
+Weaver is installed from scratch only: after a Fred schema change, `make docker-wipe`,
+then `make docker-up` and `make docker-app` again.
+
 Extended-profile endpoints: Prometheus `:9090`, Grafana `:3002`, ClickHouse `:8123/play`,
 Langfuse `:3001`. Per-service targets also exist (`make keycloak-up`, `make opensearch-up`,
 `make temporal-up`, …).
-
-## Full bootstrap walkthrough: from `docker-up` to a validated platform
-
-`make docker-up` only gives you empty infra (§"What `docker-up` / the local `k3d-up` commands provisions"
-below) — zero users, zero teams, zero apps running. This is the exact, copy-pasteable
-sequence to go from that empty infra to a `platform_admin` account, demo data, all four
-Fred apps running prod-like, and both automated and UI-driven validation green. **Every
-step matters — skipping step 1 is the single most common cause of "works on my machine,
-fails in review."** All `make` commands below run inside the sibling `fred` monorepo
-checkout, not this repo.
-
-> **Fast path.** `make setup-env` (once) → `make run` → `cd apps/control-plane-backend
-> && make bootstrap-local BOOTSTRAP_USER=<you> BOOTSTRAP_PASSWORD=<pw>` gets you steps
-> 1-3 in one line, pausing only for the one step that has to stay manual (registering
-> yourself in Keycloak, see step 3 below). Before importing the demo bundle (step 4),
-> populate its 15 named users in Keycloak — one command from **this** repo,
-> `local-testing/demo/seed-keycloak-users.sh` (see step 4). Then `make
-> activate-all-capabilities BOOTSTRAP_USER=<you> BOOTSTRAP_PASSWORD=<pw>` (step 5b) — or
-> the same two actions from the UI once the frontend is up, **Admin > Migration** and
-> **Admin > Capabilities**. Read on if you want to understand each step, if something
-> fails and you need to debug by hand, or if you don't want the demo bundle.
-
-> **Since CAPAB-01 / CTRLP-14 (2026-07-17): don't skip step 5b.** Every tool (MCP
-> server) and every agent template is now admin-gated by default, platform-wide —
-> matching production policy. Importing the demo bundle (step 4) creates the demo
-> teams with **zero usable tools and zero visible agent templates** — that's expected,
-> not broken. If you stop after step 2 and jump straight to the frontend or
-> `make validation-report`, every demo user looks like they have no agents at all.
-> Step 5b is the one-time admin action that turns that on — it's still a manual step
-> today (we're converging on a better default — see the note at the end of 5b) but it
-> only takes two commands, or one click of "select all" in **Admin > Capabilities**.
-
-**0. Infra up** (this repo)
-
-```bash
-make docker-up   # Keycloak, Postgres, OpenSearch, Temporal — infra only, zero business data
-```
-
-**1. Prepare the three backends' `.env` files** (`fred` repo root)
-
-```bash
-make setup-env
-```
-
-Creates each backend's `.env` from its `.env.template` if missing, fills in every
-blank secret placeholder (Keycloak client secrets, Postgres/
-OpenSearch/MinIO passwords) with the same fixed local value this repo seeds
-everywhere (`Azerty123_`), points `CONFIG_FILE` at `configuration_prod.yaml` in all
-three — the one config each app ships that actually matches deployed behaviour (real
-ports, `bootstrap_token_file`, real backends) — and prompts once for a model provider
-API key. Never overwrites a value you already set; safe to re-run any time.
-
-**2. Start every Fred app** (`fred` repo root)
-
-```bash
-make run          # control-plane :8222, fred-agents :8000, knowledge-flow :8111, frontend :5173
-```
-
-One terminal, `Ctrl+C` stops all four. (Prefer separate terminals for debugging one
-app at a time? `make run-control-plane`, `make run-fred-agents`,
-`make run-knowledge-flow`, `make run-frontend` — each also exist standalone.)
-
-**3. Become `platform_admin` — the AUTHZ-07 root bootstrap** (second terminal, `fred/apps/control-plane-backend`)
-
-Fred never creates accounts in Keycloak, on purpose: **Keycloak authenticates, Fred
-authorizes** (`docs/swift/platform/REBAC.md` in the `fred` repo) — the same
-boundary a real SSO deployment has, so a compromised or buggy Fred can never mint
-identities in your corporate IdP. That means the one unavoidable manual step: self-
-register a user through **Keycloak's own** registration screen — no Fred frontend
-needed yet: open `http://localhost:8080/realms/app/account` → "Register". Then:
-
-```bash
-make bootstrap-local BOOTSTRAP_USER=<your-username> BOOTSTRAP_PASSWORD=<your-password>
-```
-
-Runs `bootstrap-token` (writes `target/bootstrap-token`; never overwrites, never
-printed by the app), pauses once for you to confirm you've registered above, then
-logs in and bootstraps in one shot. One-shot and permanent — a second run reports
-"already platform_admin" instead of erroring. You are now the platform's root
-`platform_admin`.
-
-**4. Import the demo dataset**
-
-The import assigns teams/roles to the 15 named demo users (`alice`, `bob`, `marc`, …). Unlike
-step 3's identity boundary, the import path *can* create a missing Keycloak identity for
-you (when the bundle entry carries a `password`, which the demo fixture's entries all
-do) — but relying on that is slower per-user than a bulk seed, and it still fails closed
-(aborts the whole import, doesn't silently skip) on any username it can't resolve either
-way. Populate them first, one command, from **this** repo:
-
-```bash
-cd ../fred-deployment-factory/local-testing/demo
-./seed-keycloak-users.sh    # reads the 15 usernames from fred's users.json, idempotent
-```
-
-This script (and this repo's other `local-testing/` scripts) assume `fred` and
-`fred-deployment-factory` are checked out as **sibling directories** under the same
-parent — override with `SWIFT_SRC=/path/to/fred ./seed-keycloak-users.sh` if yours
-isn't laid out that way. The script prints exactly which path it's checking before it
-can fail, so a wrong layout is never a silent mystery.
-
-Then, back in `fred/apps/control-plane-backend`:
-
-```bash
-TOKEN=$(curl -s http://localhost:8080/realms/app/protocol/openid-connect/token \
-  -d grant_type=password -d client_id=app \
-  -d username=<your-username> -d password=<your-password> \
-  | python3 -c 'import sys,json;print(json.load(sys.stdin)["access_token"])')
-
-make build-demo-bundle    # zips tests/fixtures/import_export/demo_provisioning/ → target/demo-provisioning-bundle.zip
-
-curl -s -X POST http://localhost:8222/control-plane/v1/import-export/import \
-  -H "Authorization: Bearer $TOKEN" -F file=@target/demo-provisioning-bundle.zip
-```
-
-Same effect as uploading from **Admin → Migration** in the UI once the frontend is up.
-See the `fred` monorepo's `validation/README.md` for who's who and why, or this repo's
-[`local-testing/demo/README.md`](../local-testing/demo/README.md) for a local quick-reference.
-Import runs async (returns a `task_id`); give it a few seconds before moving on.
-
-Want a much larger, statistically-varied dataset instead (3000 users / 100 teams, for
-authorization-at-scale testing)? See [`local-testing/bench/README.md`](../local-testing/bench/README.md).
-
-**5. (merged into step 2)** Every app — `fred-agents`, `knowledge-flow-backend`,
-`frontend` — is already running: `make run` in step 2 started all four together.
-Nothing further to do here.
-
-**5b. Authorize Tools and Agents for the demo teams (CAPAB-01 / CTRLP-14)**
-
-Every capability — every MCP tool *and* every agent template — is `admin_gated`: a
-team can't see or use one until a `platform_admin` explicitly grants it. Nothing
-earlier in this walkthrough does that (import only provisions
-identities/teams/roles, not capability grants), so right now every demo team has an
-empty toolbox and an empty agent-template list. Simplest local-dev fix: flip every
-capability to platform-wide `default_on` — a deliberate admin action via this API,
-not a manifest default, so it doesn't violate the "nothing ships
-admin-gated-by-default" policy it's gating.
-
-`fred-agents` is already up since step 2, so this works right away — no ordering
-gotcha to worry about. From `fred/apps/control-plane-backend`:
-
-```bash
-make activate-all-capabilities BOOTSTRAP_USER=<your-username> BOOTSTRAP_PASSWORD=<your-password>
-```
-
-Wraps the same GET `/admin/capabilities` → PUT `.../default-on` loop this used to be —
-one command, no `jq` dependency, an actionable error if `fred-agents` isn't reachable
-yet (check its terminal from step 2) instead of a silent empty list.
-
-A capability with *required* team settings refuses default-on (`409`, reported, not
-fatal) — it needs a value only a team can supply, so it can't have a platform-wide
-default. For those, grant it to one demo team explicitly instead, with whatever
-settings it needs (needs a token — reuse the snippet from step 4):
-
-```bash
-curl -s -X PUT "http://localhost:8222/control-plane/v1/admin/capabilities/<id>/teams/<team_id>" \
-  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
-  -d '{"settings": {}}'
-```
-
-None of the current demo/stock capabilities require this — `activate-all-capabilities`
-above is normally enough. Same effect as **Admin → Capabilities** in the UI once the frontend is up —
-a "Tools" / "Agents" toggle at the top filters the same catalog by `kind`, and both
-are just admin actions on top of what this step already did.
-
-*Why this is a manual step today:* the demo bundle predates per-team capability
-grants and doesn't provision them; the "right" fix is a better default at import
-time, still being worked out. Until then, this is the one extra hop — do it once,
-right after step 5, and everything downstream (agents having tools, templates being
-visible, `validation-report`, the self-test) behaves exactly like before.
-
-**6. Run the automated cross-app validation suite** (from the `fred` repo root)
-
-Prepare password-grant login and the test team's agent/capability/model access as
-explained in [Fred's validation prerequisites](https://github.com/ThalesGroup/fred/blob/swift/validation/README.md#prerequisites).
-A successful browser login does not prove that password-grant login is enabled.
-For the Docker setup in this walkthrough:
-
-```bash
-make integration-test-docker
-```
-
-Logs in as every demo user from step 4 and asserts the full authorization matrix
-end-to-end. Writes `validation/report.md` (PASS/FAIL grouped by real-world claim, not
-by test name) and returns pytest's exit code. See `fred`'s `validation/README.md` for
-what it checks.
-
-Failures here that look like "no tools available", "template not found", or an agent
-answering with none of its expected capabilities almost always mean step 5b was
-skipped — go back and run it.
-
-**7. Finish with the UI self-test** (VALID-02 — real pipeline, no mocks, browser-driven)
-
-Log into the frontend (`http://localhost:5173`) as the `platform_admin` from step 3 →
-**Admin → Self-test** (`/admin/self-test`) → run it. It drives create-folder → ingest →
-real agent execution → assert marker → delete through the actual browser UI — the one
-check the pytest suite in step 6 cannot do for you.
 
 ## Identity provider portability
 
 The default `make docker-up` path remains the Keycloak baseline. These opt-in
 local profiles accompany [Fred issue #2862](https://github.com/ThalesGroup/fred/issues/2862)
 and [draft PR #2863](https://github.com/ThalesGroup/fred/pull/2863). Follow the
-full bootstrap walkthrough above for each profile; run `make validation-report`
+Docker Compose path above for each profile; run `make validation-report`
 from the sibling `fred` checkout after starting its applications. The UI
 self-test still needs a browser. Use a fresh test deployment when comparing
 provider identities, personal spaces or administrator bootstrap state.
 
-1. **Keycloak baseline:** run the walkthrough above without an OIDC overlay.
+1. **Keycloak baseline:** run the Docker Compose path above without an OIDC overlay.
    Save it with `make checkpoint-save NAME=kc-baseline` before changing the realm.
 2. **Keycloak with generic OIDC claims:** run `make keycloak-generic-oidc STRICT=1`,
    generate the three Fred backend configs with
@@ -503,22 +328,15 @@ The k3d foundation creates `fred_swift` (Swift), `keycloak`, `data` (tabular/vec
 `temporal_visibility`; a post-install Job creates each line's database, here `fred_weaver`.
 
 Keycloak also gets the `fred-delegation` client with its `delegation_caller` role, granted
-to the `agentic` service account: holding it is what lets fred-agents speak for a person
-once the Fred apps turn delegation on. For apps run on the host, the fred repository's
-`make delegation` checks the workload token and switches it on; for the k3d `fred-app`
-release, set `security.delegation.act_for_people: true` in the fred-agents configuration
-and `security.delegation.accept_delegated_calls: true` in the control-plane-backend and
-knowledge-flow-backend configurations.
+to the `agentic`, `knowledge-flow` and `control-plane` service accounts, on Docker as on
+k3d: holding it is what lets a workload speak for a person. Weaver's configurations
+(k3d values, and the `configuration_prod.yaml` files run on the host) turn delegation on.
 
 Every identity and role - platform (`platform_admin`/`platform_observer`) and team
 (`team_admin`/`team_editor`/`team_analyst`/`team_member`) - is provisioned afterwards by
 `fred`/control-plane-backend's declarative platform-import feature
-(`POST /import-export/import`), not by this repo. See "Full bootstrap walkthrough" above
-for the exact step-by-step sequence (`make bootstrap-token` → become `platform_admin` →
-`make build-demo-bundle` + import), and [`../docker/README.md`](../docker/README.md)
-("Platform and demo-data provisioning now lives in `fred`") for the underlying contract.
-Capability grants (which tools/agents each team can use) are a separate, later step —
-none of the above provisions them; see step 5b.
+(the **Provisioning** import), not by this repo. See the Docker Compose path above for
+the first login.
 
 ## Configuration
 
