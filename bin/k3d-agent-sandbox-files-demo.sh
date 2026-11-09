@@ -21,6 +21,19 @@ require_file "$model_key_file"
 require_file "$fred_repo/deploy/sandbox/agent-sandbox-files.yaml"
 require_file "$fred_repo/libs/fred-runtime/fred_runtime/skills/summarize-document/SKILL.md"
 require_file "$fred_repo/libs/fred-runtime/fred_runtime/skills/tabular-evidence/SKILL.md"
+normalized_model_key="$demo/model-api-key"
+python3 - "$model_key_file" "$normalized_model_key" <<'NORMALIZE_MODEL_KEY'
+import os
+import sys
+from pathlib import Path
+
+key = Path(sys.argv[1]).read_bytes().strip()
+if not key or len(key.split()) != 1:
+    raise SystemExit('MODEL_API_KEY_FILE must contain one nonempty key')
+fd = os.open(sys.argv[2], os.O_CREAT | os.O_WRONLY | os.O_TRUNC, 0o600)
+with os.fdopen(fd, 'wb') as stream:
+    stream.write(key)
+NORMALIZE_MODEL_KEY
 python3 -c 'import yaml' >/dev/null || { printf 'Python PyYAML is required\n' >&2; exit 1; }
 mapfile -t cluster_nodes < <(kube get nodes -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}')
 ((${#cluster_nodes[@]} > 0)) || { printf 'No k3d nodes found\n' >&2; exit 1; }
@@ -79,7 +92,7 @@ kube -n fred create secret tls fred-sandbox-file-gateway-tls \
   --cert="$demo/gateway.crt" --key="$demo/gateway.key" \
   --dry-run=client -o yaml | kube apply -f -
 kube -n fred create secret generic fred-model-credentials \
-  --from-file=OPENAI_API_KEY="$model_key_file" --dry-run=client -o yaml | kube apply -f -
+  --from-file=OPENAI_API_KEY="$normalized_model_key" --dry-run=client -o yaml | kube apply -f -
 for namespace in fred-sandbox-system fred-sandbox-csi; do
   kube -n "$namespace" create configmap real-kflow-gateway-ca \
     --from-file=ca.crt="$demo/gateway-ca.crt" --dry-run=client -o yaml | kube apply -f -
