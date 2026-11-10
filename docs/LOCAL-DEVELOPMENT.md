@@ -40,14 +40,14 @@ Every application connects with the administrator of each service (OpenSearch, S
 and the local default secrets (`Azerty123_`). The least-privilege identities of k3d
 are not provisioned on Docker.
 
-`make docker-app FRED=weaver APP=fred DIR=<checkout> [KEY_FILE=<key file>]` then runs that
-checkout on the host, as `make k3d-app` deploys it. `bin/docker-app` types, in the checkout:
+`make docker-prepare DIR=<checkout>` then prepares that checkout to run on the host, as
+`make k3d-app` deploys it, and starts nothing. `bin/docker-prepare` types, in the checkout:
 
 | Step | What it does | On k3d |
 | --- | --- | --- |
-| `make setup-env` | `config/.env` of each application: local secrets, bootstrap token, `KEY_FILE`'s key | `fred-secrets`, `fred-model-credentials` |
+| `make setup-env` | `config/.env` of each application: local secrets, bootstrap token, the exported `MISTRAL_API_KEY`/`OPENAI_API_KEY` | `fred-secrets`, `fred-model-credentials` |
 | `make docker-prepare` | Database roles and schemas, Control Plane schema, worker contract (replayable) | The chart's `postgresBootstrap` hook and migration Jobs |
-| `make run` | The six processes, each with its `configuration_prod.yaml` (`configuration_worker.yaml` for the worker) | The six deployments, with `values-weaver.yaml` |
+| `make run`, typed by you or your coding assistant | The six processes, each with its `configuration_prod.yaml` (`configuration_worker.yaml` for the worker) | The six deployments, with `values-weaver.yaml` |
 
 The configurations carry k3d's values with `localhost` addresses; only the log format
 differs (text, not JSON). The monitor needs Kubernetes and does not run on Docker.
@@ -81,7 +81,7 @@ make docker-destroy    # containers, volumes, network, and images
 ```
 
 Weaver is installed from scratch only: after a Fred schema change, `make docker-wipe`,
-then `make docker-up` and `make docker-app` again.
+then `make docker-up` and `make docker-prepare` again.
 
 Extended-profile endpoints: Prometheus `:9090`, Grafana `:3002`, ClickHouse `:8123/play`,
 Langfuse `:3001`. Per-service targets also exist (`make keycloak-up`, `make opensearch-up`,

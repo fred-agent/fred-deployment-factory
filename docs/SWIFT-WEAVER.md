@@ -22,7 +22,7 @@ marketplace content is transferred by these commands.
 
 | Index | Swift | Weaver |
 | --- | --- | --- |
-| Document | `vector-index-mistral` | `document-vectors` |
+| Document | `vector-index-mistral` | `document-vectors-<organization_id>`, one per organization |
 | Application logs | `app-logs-index` | none: stdout, collected into `k3d-logs-*` |
 | KPI | `kpi-index` | `weaver-kpi` |
 

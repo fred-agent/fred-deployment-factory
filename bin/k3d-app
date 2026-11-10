@@ -41,6 +41,18 @@ if [[ "$action" != destroy ]]; then
 fi
 [[ "$action" == template ]] && { echo "Rendered for FRED=$FRED, without building or changing the cluster."; exit 0; }
 
+# Weaver's model keys are the developer's exported ones, as on Docker Compose: each one
+# becomes a key of fred-model-credentials. Without any, the secret must already exist.
+if [[ "$action" == sync && "$FRED" == weaver && -n "${MISTRAL_API_KEY:-}${OPENAI_API_KEY:-}" ]]; then
+  keys="$(mktemp)"; trap 'rm -f "$keys"' EXIT; chmod 600 "$keys"
+  for name in MISTRAL_API_KEY OPENAI_API_KEY; do
+    if [[ -n "${!name:-}" ]]; then printf '%s=%s\n' "$name" "${!name}" >>"$keys"; fi
+  done
+  kubectl --context k3d-fred -n fred-weaver create secret generic fred-model-credentials \
+    --from-env-file="$keys" --dry-run=client -o yaml | kubectl --context k3d-fred apply -f - >/dev/null
+  echo "fred-model-credentials: $(cut -d= -f1 "$keys" | paste -sd, -) from the shell"
+fi
+
 if [[ "$action" == sync && -n "${DIR:-}" && -x "$DIR/deploy/k3d/build" ]]; then
   IMAGE_TAG="k3d-fred-$key" "$DIR/deploy/k3d/build"
   mapfile -t built <"$K3D_APP_OUT/images.txt"

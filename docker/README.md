@@ -253,7 +253,7 @@ Hereunder, these are the information to connect to each service with their _loca
   - `admin` (admin)
   - `app_ro` (read-only)
   - `app_rw` (read-write)
- - Indexes: none at install; Fred Weaver creates `document-vectors` and `weaver-kpi`
+ - Indexes: none at install; Fred Weaver creates `document-vectors-<organization_id>` (one corpus per organization) and `weaver-kpi`
 
 ### Temporal
 

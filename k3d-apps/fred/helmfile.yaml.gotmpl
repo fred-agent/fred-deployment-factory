@@ -44,8 +44,9 @@ releases:
       - {{ . | quote }}
       {{- end }}
     hooks:
-      # The model key is the operator's, created before deploying, as in production.
-      # Without it the pods would wait until the sync times out.
+      # The model keys are the operator's, created before deploying, as in production
+      # (on Weaver, make k3d-app creates them from MISTRAL_API_KEY/OPENAI_API_KEY).
+      # Without them the pods would wait until the sync times out.
       - events: [presync]
         showlogs: true
         command: kubectl

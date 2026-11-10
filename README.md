@@ -8,19 +8,53 @@ Run Fred on your machine, from this directory. Pick one:
 They use the same ports: run only one at a time.
 
 Once: install Docker (and for k3d: k3d, kubectl, Helm, Helmfile) and your checkout's build
-tools, add `127.0.0.1 keycloak swift.localhost weaver.localhost` to `/etc/hosts`, and keep
-your Mistral key in a file that contains only the key.
+tools, add `127.0.0.1 keycloak swift.localhost weaver.localhost` to `/etc/hosts`, and export
+your model key in your shell profile, for example `~/.bashrc`:
+
+```bash
+export MISTRAL_API_KEY=...    # and/or
+export OPENAI_API_KEY=...
+```
+
+Fred Weaver accepts either or both. An organization owner chooses chat models and the
+documents' embedding model in **Models**; a provider without its key stays unavailable.
+
+## Docker Compose
+
+```bash
+make docker-up                          # the backing services: PostgreSQL, Keycloak, OpenSearch, Temporal...
+make docker-prepare DIR=/path/to/fred   # prepares your checkout, starts nothing, prints the bootstrap token
+make -C /path/to/fred run               # every Fred process in this terminal
+```
+
+Instead of `make run`, start each component in its own terminal
+(`make -C /path/to/fred/apps/<component> run`), or ask your coding assistant to start Fred.
+`docker-prepare` lists both. Then open <http://localhost:5173>.
+
+| I want to | Run |
+| --- | --- |
+| Restart Fred | `make -C /path/to/fred run` again |
+| Change or add a model key | Export it, then `make docker-prepare` again |
+| Pause / resume | `make docker-stop` / `make docker-start` |
+| **Start over (deletes everything)** | **`make docker-wipe`**, then `make docker-up` |
 
 ## k3d
 
 ```bash
 make k3d-up
-kubectl --context k3d-fred -n fred-<line> create secret generic fred-model-credentials \
-  --from-file=OPENAI_API_KEY=/path/to/key-file            # once per line: swift or weaver
-make k3d-app FRED=weaver APP=fred DIR=/path/to/fred       # Weaver: your checkout
+make k3d-app FRED=weaver APP=fred DIR=/path/to/fred       # Weaver: your checkout, your exported keys
 make k3d-app FRED=swift APP=fred                          # Swift: the published release
 ```
 
+Weaver initializes the demo organizations on Mistral. Choose another provider
+explicitly, with the keys it needs exported:
+`VALUES=k3d-apps/fred/models-openai.yaml` (OpenAI only) or
+`VALUES=k3d-apps/fred/models-mistral-openai.yaml` (Acme on Mistral, Globex on OpenAI).
+Choose before the first deployment: the policy is initialized once, then administered in
+**Models**.
+
+Swift reads its Mistral key from a secret created once:
+`kubectl --context k3d-fred -n fred-swift create secret generic fred-model-credentials --from-file=OPENAI_API_KEY=/path/to/key-file`.
 Open <http://weaver.localhost:8088> or <http://swift.localhost:8088>.
 
 | I want to | Run |
@@ -30,26 +64,13 @@ Open <http://weaver.localhost:8088> or <http://swift.localhost:8088>.
 | Find out what is wrong | `make k3d-health` |
 | **Start over (deletes everything)** | **`make k3d-wipe`**, then `make k3d-up` |
 
-## Docker Compose
-
-```bash
-make docker-up
-make docker-app FRED=weaver APP=fred DIR=/path/to/fred KEY_FILE=/path/to/key-file
-```
-
-Open <http://localhost:5173>.
-
-| I want to | Run |
-| --- | --- |
-| Restart Fred | The same `make docker-app` again (`KEY_FILE` only to change the key) |
-| Pause / resume | `make docker-stop` / `make docker-start` |
-| **Start over (deletes everything)** | **`make docker-wipe`**, then `make docker-up` |
-
 ## First login
 
-Both `make k3d-app` and `make docker-app` print how to read the bootstrap token. Then
-follow Fred's [first start](https://github.com/ThalesGroup/fred/blob/weaver/deploy/k3d/README.md#first-start):
-platform admin, demo bundle, models, first answer from documents.
+1. Open Fred and register: the realm starts empty.
+2. Paste the bootstrap token when Fred asks for it, then accept the terms. `make docker-prepare`
+   prints it; on k3d, `make k3d-app` prints the command that reads it.
+3. Continue with Fred's [first start](https://github.com/ThalesGroup/fred/blob/weaver/deploy/k3d/README.md#first-start):
+   demo bundle, models, first answer from documents.
 
 ## More
 

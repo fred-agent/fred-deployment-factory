@@ -1,0 +1,23 @@
+# OpenAI only: the demo organizations' initial model policies use the `openai`
+# source of values-weaver.yaml instead of `mistral`. Use with OPENAI_API_KEY exported:
+#   make k3d-app FRED=weaver APP=fred DIR=... VALUES=k3d-apps/fred/models-openai.yaml
+# The initialization runs once after provisioning; the Owner administers the policy in
+# Models afterwards. Helm replaces lists, so both organizations are repeated.
+x-openai-organization: &openai
+  sources: [openai]
+  permitted:
+    - {source_id: openai, upstream_model_id: gpt-4.1-mini}
+    - {source_id: openai, upstream_model_id: gpt-4.1}
+    - {source_id: openai, upstream_model_id: text-embedding-3-small}
+  default: {source_id: openai, upstream_model_id: gpt-4.1-mini}
+  fallback: null
+  embedding: {source_id: openai, upstream_model_id: text-embedding-3-small}
+  reasoning_enabled: []
+
+applications:
+  control-plane-backend:
+    configuration:
+      platform:
+        organization_models:
+          - {organization: Acme, <<: *openai}
+          - {organization: Globex, <<: *openai}

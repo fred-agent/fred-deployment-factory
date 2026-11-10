@@ -34,12 +34,17 @@ applications:
               audience: app
               client_id: agentic
         inference_credentials:
-        - api_key_env: OPENAI_API_KEY
+        - api_key_env: MISTRAL_API_KEY
           api_root: https://api.mistral.ai/v1
           credential_binding: mistral
+        - api_key_env: OPENAI_API_KEY
+          api_root: https://api.openai.com/v1
+          credential_binding: openai
         knowledge_flow_url: http://knowledge-flow-backend:8000/knowledge-flow/v2
         model_sources:
-        - enabled: true
+        - embedding_models:
+          - mistral-embed
+          enabled: true
           inference:
             api_root: https://api.mistral.ai/v1
             auth:
@@ -56,7 +61,7 @@ applications:
               provider_scopes:
               - GET /v1/models
               - POST /v1/chat/completions
-              secret_env_var: OPENAI_API_KEY
+              secret_env_var: MISTRAL_API_KEY
             complete_inventory_guaranteed: true
             kind: discovered
             qualification: mixed_capabilities_v1
@@ -64,10 +69,41 @@ applications:
           revision: 1
           source_id: mistral
           visibility_scope: local-test-mistral-account
+        # OpenAI's model list carries no capability metadata, so discovery cannot
+        # establish any aptitude: the instance declares the offers it approves, chat
+        # except the attested embedding models. Refreshing a declared list needs no key.
+        - embedding_models:
+          - text-embedding-3-small
+          - text-embedding-3-large
+          enabled: true
+          inference:
+            api_root: https://api.openai.com/v1
+            auth:
+              kind: api_key
+            credential_binding: openai
+            dialect: openai
+            route: standard
+            wire: openai_chat
+          inventory:
+            kind: declared
+            models:
+            - id: gpt-4.1-mini
+            - id: gpt-4.1
+            - id: text-embedding-3-small
+            - id: text-embedding-3-large
+          revision: 1
+          source_id: openai
+          visibility_scope: local-test-openai-account
+        # Initial policies of the demo organizations, applied once after provisioning:
+        # Mistral here. The operator chooses another provider explicitly with
+        # VALUES=k3d-apps/fred/models-openai.yaml or models-mistral-openai.yaml.
         organization_models:
         - default:
             source_id: mistral
             upstream_model_id: mistral-small-latest
+          embedding:
+            source_id: mistral
+            upstream_model_id: mistral-embed
           fallback: null
           organization: Acme
           permitted:
@@ -75,12 +111,17 @@ applications:
             upstream_model_id: mistral-small-latest
           - source_id: mistral
             upstream_model_id: mistral-medium-latest
+          - source_id: mistral
+            upstream_model_id: mistral-embed
           reasoning_enabled: []
           sources:
           - mistral
         - default:
             source_id: mistral
             upstream_model_id: mistral-small-latest
+          embedding:
+            source_id: mistral
+            upstream_model_id: mistral-embed
           fallback: null
           organization: Globex
           permitted:
@@ -88,6 +129,8 @@ applications:
             upstream_model_id: mistral-small-latest
           - source_id: mistral
             upstream_model_id: mistral-medium-latest
+          - source_id: mistral
+            upstream_model_id: mistral-embed
           reasoning_enabled: []
           sources:
           - mistral
@@ -156,11 +199,18 @@ applications:
         secretKeyRef:
           key: POSTGRES_CP_PASSWORD
           name: fred-secrets
+    - name: MISTRAL_API_KEY
+      valueFrom:
+        secretKeyRef:
+          key: MISTRAL_API_KEY
+          name: fred-model-credentials
+          optional: true
     - name: OPENAI_API_KEY
       valueFrom:
         secretKeyRef:
           key: OPENAI_API_KEY
           name: fred-model-credentials
+          optional: true
     - name: SSL_CERT_FILE
       value: /etc/fred/node-ca/ca-certificates.crt
     - name: KEYCLOAK_CONTROL_PLANE_CLIENT_SECRET
@@ -283,9 +333,12 @@ applications:
         gcu_version: v1
         openai_compat: false
       inference_credentials:
-      - api_key_env: OPENAI_API_KEY
+      - api_key_env: MISTRAL_API_KEY
         api_root: https://api.mistral.ai/v1
         credential_binding: mistral
+      - api_key_env: OPENAI_API_KEY
+        api_root: https://api.openai.com/v1
+        credential_binding: openai
       observability:
         kpi:
           opensearch:
@@ -344,12 +397,18 @@ applications:
           key: SEAWEEDFS_ADMIN_PASSWORD
           name: fred-secrets
           optional: false
+    - name: MISTRAL_API_KEY
+      valueFrom:
+        secretKeyRef:
+          key: MISTRAL_API_KEY
+          name: fred-model-credentials
+          optional: true
     - name: OPENAI_API_KEY
       valueFrom:
         secretKeyRef:
           key: OPENAI_API_KEY
           name: fred-model-credentials
-          optional: false
+          optional: true
     - name: WEB_RESEARCH_PROVIDER_KEY
       valueFrom:
         secretKeyRef:
@@ -417,11 +476,6 @@ applications:
       tls: []
   knowledge-flow-backend:
     configuration:
-      chat_model:
-        name: mistral-small-latest
-        provider: openai
-        settings:
-          base_url: https://api.mistral.ai/v1
       control_plane_url: http://control-plane-backend:8222/control-plane/v1
       crossencoder_model:
         settings:
@@ -434,12 +488,13 @@ applications:
           timeout:
             connect: 10
             read: 120
-      embedding_model:
-        name: mistral-embed
-        provider: openai
-        settings:
-          base_url: https://api.mistral.ai/v1
-          check_embedding_ctx_length: false
+      inference_credentials:
+      - api_key_env: MISTRAL_API_KEY
+        api_root: https://api.mistral.ai/v1
+        credential_binding: mistral
+      - api_key_env: OPENAI_API_KEY
+        api_root: https://api.openai.com/v1
+        credential_binding: openai
       observability:
         kpi:
           opensearch:
@@ -506,12 +561,18 @@ applications:
         secretKeyRef:
           key: kf-api-opensearch-password
           name: fred-ingestion
+    - name: MISTRAL_API_KEY
+      valueFrom:
+        secretKeyRef:
+          key: MISTRAL_API_KEY
+          name: fred-model-credentials
+          optional: true
     - name: OPENAI_API_KEY
       valueFrom:
         secretKeyRef:
           key: OPENAI_API_KEY
           name: fred-model-credentials
-          optional: false
+          optional: true
     - name: KEYCLOAK_KNOWLEDGE_FLOW_CLIENT_SECRET
       valueFrom:
         secretKeyRef:
@@ -538,17 +599,13 @@ applications:
       name: node-ca
   knowledge-flow-worker:
     configuration:
-      chat_model:
-        name: mistral-small-latest
-        provider: openai
-        settings:
-          base_url: https://api.mistral.ai/v1
-      embedding_model:
-        name: mistral-embed
-        provider: openai
-        settings:
-          base_url: https://api.mistral.ai/v1
-          check_embedding_ctx_length: false
+      inference_credentials:
+      - api_key_env: MISTRAL_API_KEY
+        api_root: https://api.mistral.ai/v1
+        credential_binding: mistral
+      - api_key_env: OPENAI_API_KEY
+        api_root: https://api.openai.com/v1
+        credential_binding: openai
       manager_processing:
         allow_insecure: true
         audience: control-plane
@@ -609,20 +666,22 @@ applications:
           collection_name: null
           index: document-vectors
           type: opensearch
-      vision_model:
-        name: pixtral-12b-2409
-        provider: openai
-        settings:
-          base_url: https://api.mistral.ai/v1
     deployment:
       enabled: true
     enabled: true
     extraEnvVars:
+    - name: MISTRAL_API_KEY
+      valueFrom:
+        secretKeyRef:
+          key: MISTRAL_API_KEY
+          name: fred-model-credentials
+          optional: true
     - name: OPENAI_API_KEY
       valueFrom:
         secretKeyRef:
           key: OPENAI_API_KEY
           name: fred-model-credentials
+          optional: true
     - name: COLUMNS
       value: '250'
     - name: SSL_CERT_FILE

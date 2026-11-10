@@ -71,8 +71,11 @@ application defined in its own repository follows the
 
 ## Credentials and the first login
 
-Model keys are Kubernetes Secrets that you create, one per line. The factory never takes
-them from a checkout or your shell. Without one, the deployment stops before syncing.
+Model keys are Kubernetes Secrets, one per line. On Weaver, `make k3d-app` creates
+`fred-model-credentials` from your exported `MISTRAL_API_KEY` and `OPENAI_API_KEY`; on
+Swift you create it. The factory never takes keys from a checkout. Without the Secret,
+the deployment stops before syncing. A key selects no model: the demo organizations'
+initial provider is the `VALUES` overlay you choose (see the README).
 
 The platform starts empty: the factory creates no demo people or organizations. Keycloak is
 common to both lines, so one account signs in to both, but each line has its own bootstrap
@@ -90,5 +93,5 @@ A cluster from before this layout is not upgraded: `make k3d-up` refuses one wit
 ## What is not here
 
 This repository contains no GKE/GCP deployment. Docker Compose is a separate debug loop for
-Weaver only, run on the host from a checkout (README, "Docker Compose", `make docker-app`); it is not
+Weaver only, run on the host from a checkout (README, "Docker Compose", `make docker-prepare`); it is not
 a selector for these k3d commands. Swift on Docker Compose stays on branch `swift`.

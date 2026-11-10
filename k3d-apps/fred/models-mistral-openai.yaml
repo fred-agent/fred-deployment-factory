@@ -1,0 +1,31 @@
+# Both providers: Acme keeps the Mistral policy of values-weaver.yaml and Globex uses
+# OpenAI, so the two corpora have different embedding models in their own indexes.
+# Use with MISTRAL_API_KEY and OPENAI_API_KEY exported:
+#   make k3d-app FRED=weaver APP=fred DIR=... VALUES=k3d-apps/fred/models-mistral-openai.yaml
+# The initialization runs once after provisioning; the Owner administers the policy in
+# Models afterwards. Helm replaces lists, so both organizations are repeated.
+applications:
+  control-plane-backend:
+    configuration:
+      platform:
+        organization_models:
+          - organization: Acme
+            sources: [mistral]
+            permitted:
+              - {source_id: mistral, upstream_model_id: mistral-small-latest}
+              - {source_id: mistral, upstream_model_id: mistral-medium-latest}
+              - {source_id: mistral, upstream_model_id: mistral-embed}
+            default: {source_id: mistral, upstream_model_id: mistral-small-latest}
+            fallback: null
+            embedding: {source_id: mistral, upstream_model_id: mistral-embed}
+            reasoning_enabled: []
+          - organization: Globex
+            sources: [openai]
+            permitted:
+              - {source_id: openai, upstream_model_id: gpt-4.1-mini}
+              - {source_id: openai, upstream_model_id: gpt-4.1}
+              - {source_id: openai, upstream_model_id: text-embedding-3-small}
+            default: {source_id: openai, upstream_model_id: gpt-4.1-mini}
+            fallback: null
+            embedding: {source_id: openai, upstream_model_id: text-embedding-3-small}
+            reasoning_enabled: []

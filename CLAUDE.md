@@ -8,8 +8,8 @@ README's separate infrastructure and application commands and `docs/LOCAL-DEVELO
 The **local deployment** of Fred and its applications, in two forms:
 
 - **Docker Compose (Weaver only)** — the backing services on the host (`make docker-up`); the
-  Fred Weaver apps run from a checkout (`make docker-app FRED=weaver APP=fred DIR=...`, the
-  same vocabulary as `k3d-app`), each with its `configuration_prod.yaml` pointing to these
+  Fred Weaver apps run from a checkout prepared by `make docker-prepare DIR=...` (then
+  `make run` there), each with its `configuration_prod.yaml` pointing to these
   services. k3d and Docker share one first start (Fred's `deploy/k3d/README.md`), one issuer
   (`http://keycloak:8080/realms/app`) and the same values; only step 1 differs. Keep it so. It is the fast loop to debug
   an app, not a second deployment: k3d is the one that deploys as production does. Docker

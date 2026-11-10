@@ -185,13 +185,15 @@ opensearch:
               technique: arithmetic_mean
               parameters: {weights: [0.5, 0.5]}
   # One account, role and mapping per name. The indexes are the ones Weaver's values name.
+  # Each organization's corpus is its own index, `document-vectors-<organization_id>`,
+  # created by the ingestion worker at the organization's first indexing.
   identities:
     fred-kf-ingestion:
       password: *opensearch-ingestion
       role:
         cluster_permissions: &search-cluster [cluster_monitor, cluster_composite_ops, "cluster:admin/search/pipeline/get"]
         index_permissions:
-          - index_patterns: [document-vectors, weaver-kpi]
+          - index_patterns: [document-vectors-*, weaver-kpi]
             allowed_actions: &index-owner [crud, create_index, manage]
     # One connection serves search and observability; only the latter may write.
     fred-kf-api:
@@ -199,8 +201,8 @@ opensearch:
       role:
         cluster_permissions: *search-cluster
         index_permissions:
-          - index_patterns: [document-vectors]
-            # The adapter checks the index and its mapping at startup.
+          - index_patterns: [document-vectors-*]
+            # Search checks a corpus index and its mapping before its first query.
             allowed_actions: [read, "indices:admin/get", "indices:admin/mappings/get", "indices:monitor/settings/get"]
           - index_patterns: &weaver-observability [weaver-app-logs, weaver-kpi]
             allowed_actions: *index-owner
