@@ -206,10 +206,10 @@ network-create:
 		docker network create "$(DOCKER_NETWORK_NAME)" --driver bridge
 
 env-setup:
-	@test -f "$(DOCKER_ENV_FILE)" || cp -n docker/.env.template "$(DOCKER_ENV_FILE)"
+	@test -f "$(DOCKER_ENV_FILE)" || cp docker/.env.template "$(DOCKER_ENV_FILE)"
 
 shared-env-setup:
-	@test -f "$(DOCKER_SHARED_ENV_FILE)" || cp -n docker/.env.template "$(DOCKER_SHARED_ENV_FILE)"
+	@test -f "$(DOCKER_SHARED_ENV_FILE)" || cp docker/.env.template "$(DOCKER_SHARED_ENV_FILE)"
 
 # Initialize/migrate shared authentication before stopping the old data stack.
 # Migration may need the legacy Swift PostgreSQL just once to copy its realm.
@@ -347,7 +347,7 @@ ifeq ($(DOCKER_ENV),weaver)
 endif
 	$(MAKE) preflight-check
 ifeq ($(DOCKER_ENV),weaver)
-	@echo 'Backing services ready. Next: export MISTRAL_API_KEY=... (or OPENAI_API_KEY=...), then make docker-prepare DIR=/path/to/fred'
+	@echo 'Backing services ready. Next: make docker-prepare DIR=/path/to/fred (it needs a model key: exported MISTRAL_API_KEY/OPENAI_API_KEY, or one already in the checkout)'
 else
 	@echo 'Swift backing services ready. Run make run in the Swift checkout.'
 endif

@@ -424,7 +424,7 @@ kc_http_request() {
     status="${response##*$'\n'}"
 
     if [[ "$status" == "401" && "$attempt" -lt "$max_attempts" ]]; then
-      warn "received 401 on ${method} ${path}; refreshing admin token and retrying"
+      # The admin token lives about a minute: refresh it silently; a real refusal fails below.
       KEYCLOAK_ADMIN_HTTP_TOKEN="$(kc_http_admin_token)"
       ((attempt++))
       continue
@@ -470,7 +470,7 @@ kc_http_request_optional_404() {
     status="${response##*$'\n'}"
 
     if [[ "$status" == "401" && "$attempt" -lt "$max_attempts" ]]; then
-      warn "received 401 on ${method} ${path}; refreshing admin token and retrying"
+      # The admin token lives about a minute: refresh it silently; a real refusal fails below.
       KEYCLOAK_ADMIN_HTTP_TOKEN="$(kc_http_admin_token)"
       ((attempt++))
       continue
