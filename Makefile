@@ -19,8 +19,9 @@ $(error This command prepares every Fred release line and takes no such variable
 endif
 endif
 
-# Docker and k3d have independent selectors. Existing Docker commands keep Swift.
-DOCKER_ENV ?= swift
+# Docker and k3d have independent selectors. Docker defaults to Weaver; Swift is
+# supported through the docker-swift-* launchers.
+DOCKER_ENV ?= weaver
 ifeq ($(filter $(DOCKER_ENV),swift weaver),)
 $(error Invalid DOCKER_ENV '$(DOCKER_ENV)'. Use DOCKER_ENV=swift or DOCKER_ENV=weaver)
 endif
@@ -179,26 +180,26 @@ else
 endif
 
 # Explicit launchers keep day-to-day commands short. The common lifecycle
-# targets above and below remain available with DOCKER_ENV=weaver as well.
-docker-weaver-up: ## Switch to Weaver's data on the usual ports, keeping shared Keycloak (STACK=extended for all services)
-	@$(MAKE) DOCKER_ENV=weaver docker-up
+# targets above and below remain available with DOCKER_ENV=swift as well.
+docker-swift-up: ## Switch to Swift's data on the usual ports, keeping shared Keycloak (STACK=extended for all services)
+	@$(MAKE) DOCKER_ENV=swift docker-up
 
-docker-weaver-start: ## Switch to and resume Weaver containers and their existing data
-	@$(MAKE) DOCKER_ENV=weaver docker-start
+docker-swift-start: ## Switch to and resume Swift containers and their existing data
+	@$(MAKE) DOCKER_ENV=swift docker-start
 
-docker-weaver-stop: ## Stop Weaver while keeping its containers and data
-	@$(MAKE) DOCKER_ENV=weaver docker-stop
+docker-swift-stop: ## Stop Swift while keeping its containers and data
+	@$(MAKE) DOCKER_ENV=swift docker-stop
 
-docker-weaver-down: ## Remove Weaver containers, preserving its volumes
-	@$(MAKE) DOCKER_ENV=weaver docker-down
+docker-swift-down: ## Remove Swift containers, preserving its volumes
+	@$(MAKE) DOCKER_ENV=swift docker-down
 
-docker-weaver-wipe: ## Delete only Weaver containers and volumes
-	@$(MAKE) DOCKER_ENV=weaver docker-wipe
+docker-swift-wipe: ## Delete only Swift containers and volumes
+	@$(MAKE) DOCKER_ENV=swift docker-wipe
 
-docker-weaver-env: ## Show Weaver endpoints and browser DNS setup
-	@$(MAKE) DOCKER_ENV=weaver docker-env
+docker-swift-env: ## Show Swift endpoints and browser DNS setup
+	@$(MAKE) DOCKER_ENV=swift docker-env
 
-.PHONY: docker-env docker-config docker-switch shared-env-setup docker-weaver-up docker-weaver-start docker-weaver-stop docker-weaver-down docker-weaver-wipe docker-weaver-env
+.PHONY: docker-env docker-config docker-switch shared-env-setup docker-swift-up docker-swift-start docker-swift-stop docker-swift-down docker-swift-wipe docker-swift-env
 
 network-create:
 	@docker network inspect "$(DOCKER_NETWORK_NAME)" >/dev/null 2>&1 || \

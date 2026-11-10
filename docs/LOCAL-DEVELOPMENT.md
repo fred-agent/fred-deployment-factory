@@ -14,19 +14,19 @@ For raw Compose internals (network, `.env`, per-service files), see
 **Prerequisites (Compose):** Docker, Docker Compose (`docker compose`), `bash`, `jq`,
 `curl`, plus the build tools of a Fred Weaver checkout (Rust, uv, Node).
 
-## Docker Compose: Swift or Weaver on the host
+## Docker Compose: Weaver (default) or Swift on the host
 
 The Compose services and k3d publish the same host ports: stop one before starting the
 other (`make k3d-stop`, `make docker-stop`).
 
 ```bash
-make docker-up                  # Swift infrastructure, including OpenFGA
-make docker-down                # leave Swift; keep its data and shared Keycloak
-make docker-weaver-up            # Weaver infrastructure, same ports, separate data
+make docker-up                  # Weaver infrastructure
+make docker-down                # leave Weaver; keep its data and shared Keycloak
+make docker-swift-up            # Swift infrastructure (support), including OpenFGA; same ports, separate data
 # Add STACK=extended for Prometheus, Grafana, ClickHouse and Langfuse
 ```
 
-`make docker-weaver-up` prepares what Weaver relies on, as `make k3d-up` does for the line
+`make docker-up` prepares what Weaver relies on, as `make k3d-up` does for the line
 `weaver`, on `localhost` ports; the token issuer is `http://keycloak:8080/realms/app`, as
 on k3d:
 
@@ -63,13 +63,13 @@ out and sign in again. The script is idempotent.
 Pausing and resuming (a reboot, or closing the laptop for the day):
 
 ```bash
-make docker-weaver-stop     # stop Weaver containers, keep them
-make docker-weaver-start    # resume them, in dependency order
+make docker-stop     # stop Weaver containers, keep them
+make docker-start    # resume them, in dependency order
 ```
 
-`docker-weaver-start` resumes the existing data containers without rerunning their
+`docker-start` resumes the existing data containers without rerunning their
 post-install jobs. Shared Keycloak and its dedicated database are kept across
-stops and switches. Use `docker-weaver-up`
+stops and switches. Use `docker-up`
 only to build the stack from nothing. Services carry `restart: unless-stopped`,
 so after a host reboot they come back on their own — unless you stopped them
 with `docker-stop`, which is remembered.
@@ -77,13 +77,13 @@ with `docker-stop`, which is remembered.
 Cleanup:
 
 ```bash
-make docker-weaver-down       # remove Weaver containers; keep data and shared authentication
-make docker-weaver-wipe       # delete only Weaver data containers and volumes
+make docker-down       # remove Weaver containers; keep data and shared authentication
+make docker-wipe       # delete only Weaver data containers and volumes
 ```
 
-Weaver is installed from scratch only: after a Fred schema change, `make docker-weaver-wipe`,
-then `make docker-weaver-up` and `make docker-prepare` again. Ordinary switches require no wipe.
-Return to Swift with `make docker-weaver-down`, then `make docker-up`.
+Weaver is installed from scratch only: after a Fred schema change, `make docker-wipe`,
+then `make docker-up` and `make docker-prepare` again. Ordinary switches require no wipe.
+Switch to Swift with `make docker-down`, then `make docker-swift-up`.
 See [Docker data boundaries](../docker/README.md#switch-between-swift-and-weaver).
 
 Extended-profile endpoints: Prometheus `:9090`, Grafana `:3002`, ClickHouse `:8123/play`,
@@ -96,7 +96,7 @@ to import Fred's Prometheus template and check collected values.
 
 ## Identity provider portability
 
-The default `make docker-up` path remains the Keycloak baseline. These opt-in
+These Swift profiles start from `make docker-swift-up`, the Keycloak baseline. These opt-in
 local profiles accompany [Fred issue #2862](https://github.com/ThalesGroup/fred/issues/2862)
 and [draft PR #2863](https://github.com/ThalesGroup/fred/pull/2863). Follow the
 Docker Compose path above for each profile; run `make validation-report`
@@ -130,7 +130,7 @@ provider identities, personal spaces or administrator bootstrap state.
    configs and a private credentials file under `/tmp/fred-idp-tests/zitadel/`.
    Follow the ZITADEL procedure below for identity and delegation checks.
 
-Use `make checkpoint-restore NAME=kc-baseline` followed by `make docker-up` to
+Use `make checkpoint-restore NAME=kc-baseline` followed by `make docker-swift-up` to
 return to the saved baseline without reprovisioning from scratch. Keep each
 profile's complete configuration in a separate temporary `CONFIG_FILE`.
 Use the Fred generator or the ZITADEL provisioner: the tracked example overlays
@@ -351,8 +351,8 @@ the first login.
 
 ## Configuration
 
-`make docker-up` regenerates `docker/.env` from `docker/.env.template` — edit
-the template for custom values. Keycloak backend client secrets:
+`make docker-up` creates `docker/.env.weaver` (`docker/.env` for Swift and shared Keycloak)
+from `docker/.env.template` when missing — edit the template for custom values. Keycloak backend client secrets:
 
 - **Compose:** `KEYCLOAK_AGENTIC_CLIENT_SECRET`, `KEYCLOAK_KNOWLEDGE_FLOW_CLIENT_SECRET`,
   `KEYCLOAK_CONTROL_PLANE_CLIENT_SECRET` in `docker/.env.template`.

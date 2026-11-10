@@ -9,7 +9,7 @@ role/team bundle from the `fred` monorepo.
 
 ## 1. Populate Keycloak
 
-From this repo, with the local stack up (`make docker-up`):
+From this repo, with the local stack up (`make docker-swift-up`):
 
 ```bash
 ./scripts/keycloak-add-user.sh --count 3000 --prefix user

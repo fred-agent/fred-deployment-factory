@@ -24,7 +24,7 @@ documents' embedding model in **Models**; a provider without its key stays unava
 Weaver:
 
 ```bash
-make docker-weaver-up                   # the backing services: PostgreSQL, Keycloak, OpenSearch, Temporal...
+make docker-up                          # the backing services: PostgreSQL, Keycloak, OpenSearch, Temporal...
 make docker-prepare DIR=/path/to/fred   # prepares your checkout, starts nothing, prints the bootstrap token
 make -C /path/to/fred run               # every Fred process in this terminal
 ```
@@ -33,10 +33,10 @@ Instead of `make run`, start each component in its own terminal
 (`make -C /path/to/fred/apps/<component> run`), or ask your coding assistant to start Fred.
 `docker-prepare` lists both. Then open <http://localhost:5173>.
 
-Swift: `make docker-up`, then `make run` in the Swift checkout.
+Swift, in support: `make docker-swift-up`, then `make run` in the Swift checkout.
 
-Stop the application processes before switching. Swift to Weaver: `make docker-down`, then
-`make docker-weaver-up`. Weaver to Swift: `make docker-weaver-down`, then `make docker-up`.
+Stop the application processes before switching. Weaver to Swift: `make docker-down`, then
+`make docker-swift-up`. Swift to Weaver: `make docker-swift-down`, then `make docker-up`.
 Each stack keeps its own PostgreSQL and persistent data; Keycloak and its database stay
 shared. Ports stay the same; switching requires no wipe.
 
@@ -44,8 +44,8 @@ shared. Ports stay the same; switching requires no wipe.
 | --- | --- |
 | Restart Fred | `make -C /path/to/fred run` again |
 | Change or add a model key | Export it, then `make docker-prepare` again |
-| Pause / resume Weaver | `make docker-weaver-stop` / `make docker-weaver-start` |
-| **Reset Weaver data** | **`make docker-weaver-wipe`**, then `make docker-weaver-up` |
+| Pause / resume | `make docker-stop` / `make docker-start` |
+| **Reset Weaver data** | **`make docker-wipe`**, then `make docker-up` |
 
 Optional Zabbix 7.0 LTS monitoring: `make docker-up USE_ZABBIX=true` (and
 `make docker-start USE_ZABBIX=true` after stopping), or `make zabbix-up` on an existing

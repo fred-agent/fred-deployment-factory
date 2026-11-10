@@ -1,6 +1,6 @@
 # Local testing — demo vs. bench
 
-Two ready-made local datasets you can load on top of `make docker-up`, depending on what
+Two ready-made local datasets you can load on top of `make docker-swift-up`, depending on what
 you're trying to see:
 
 | Scenario | What it's for | Guide |
@@ -8,7 +8,7 @@ you're trying to see:
 | 🎭 **demo** | A small, curated team with one persona per role (`platform_admin`, `team_admin`, `team_editor`, `team_analyst`, `team_member`, …) — for manually demoing Fred or checking "does this role see what it should". | [`demo/README.md`](demo/README.md) |
 | 📈 **bench** | 3000 synthetic users across 100 teams — for load-testing and observing authorization call volume/latency at scale (teams-list bootstrap, imports, …). | [`bench/README.md`](bench/README.md) |
 
-Both assume you've already done the base bootstrap — `make docker-up`, then bootstrapped the
+Both assume you've already done the base bootstrap — `make docker-swift-up`, then bootstrapped the
 first `platform_admin` — described in [`../docs/LOCAL-DEVELOPMENT.md`](../docs/LOCAL-DEVELOPMENT.md)
 ("Full bootstrap walkthrough", steps 1-3). This folder picks up from there.
 
@@ -24,4 +24,4 @@ Shared helpers used by both scenarios, for driving the local Keycloak directly
 | [`scripts/keycloak-lib.sh`](scripts/keycloak-lib.sh) | Shared config/helpers the scripts above source — not meant to be run directly. |
 
 Both take usernames, not full identities — run them from this repo with the local stack
-(`make docker-up`) up.
+(`make docker-swift-up`) up.

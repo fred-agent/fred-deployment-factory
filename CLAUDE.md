@@ -7,7 +7,7 @@ README's separate infrastructure and application commands and `docs/LOCAL-DEVELO
 
 The **local deployment** of Fred and its applications, in two forms:
 
-- **Docker Compose (Weaver only)** — the backing services on the host (`make docker-up`); the
+- **Docker Compose (Weaver by default, Swift in support with `docker-swift-*`)** — the backing services on the host (`make docker-up`); the
   Fred Weaver apps run from a checkout prepared by `make docker-prepare DIR=...` (then
   `make run` there), each with its `configuration_prod.yaml` pointing to these
   services. k3d and Docker share one first start (Fred's `deploy/k3d/README.md`), one issuer

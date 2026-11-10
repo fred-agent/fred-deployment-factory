@@ -37,23 +37,24 @@ Run from the repository root, after stopping the application processes from the
 checkout you are leaving:
 
 ```bash
-make docker-down               # leave Swift; preserve its data
-make docker-weaver-up          # stop Swift data containers, create/start Weaver
-# Or: make docker-weaver-up STACK=extended
-make docker-weaver-env         # usual endpoints, selected data profile
-make docker-weaver-stop        # stop Weaver data; keep containers and volumes
-make docker-start              # stop Weaver data and resume existing Swift data
-make docker-weaver-start       # stop Swift data and resume existing Weaver data
+make docker-down               # leave Weaver; preserve its data
+make docker-swift-up           # stop Weaver data containers, create/start Swift
+# Or: make docker-swift-up STACK=extended
+make docker-swift-env          # usual endpoints, selected data profile
+make docker-swift-stop         # stop Swift data; keep containers and volumes
+make docker-start              # stop Swift data and resume existing Weaver data
+make docker-swift-start        # stop Weaver data and resume existing Swift data
 ```
 
-Use `docker-up` or `docker-weaver-up` the first time a stack is created. Use
-`docker-start` or `docker-weaver-start` to resume it without rerunning its
+Weaver is the default; Swift is in support. Use `docker-up` or `docker-swift-up` the
+first time a stack is created. Use `docker-start` or `docker-swift-start` to resume it
+without rerunning its
 initialization jobs. Add `STACK=extended` to start the extended services too.
 Every switch stops all data services of the other environment, including its
 extended services. Keycloak and its database stay running.
 
-The generic targets accept `DOCKER_ENV=weaver`, for example
-`make postgres-up DOCKER_ENV=weaver` and `make preflight-check DOCKER_ENV=weaver`.
+The generic targets accept `DOCKER_ENV=swift`, for example
+`make postgres-up DOCKER_ENV=swift` and `make preflight-check DOCKER_ENV=swift`.
 The independent k3d application selector remains `FRED=swift|weaver`.
 
 ### Configuration and storage
@@ -85,7 +86,7 @@ On the first launch with an existing Swift Keycloak database, the launcher copie
 that database into the dedicated shared volume. It briefly stops Keycloak for a
 consistent copy, retains the source database, and preserves existing accounts and
 clients. A failed restore is rolled back and the old Keycloak is restarted.
-An initialized shared realm is never overwritten. `docker-weaver-up` reconciles
+An initialized shared realm is never overwritten. `docker-up` reconciles
 the service clients required by the current Weaver bootstrap without forcing
 users to log in again; it preserves their accounts. Resume commands do not run
 post-install jobs.
@@ -117,16 +118,16 @@ Swift, `fred_weaver` for Weaver). Keycloak remains at
 unchanged, including frontend `5173`. No Weaver-specific proxy targets or CORS
 ports are needed.
 
-`make docker-weaver-down` removes Weaver's data containers but keeps their volumes.
-`make docker-weaver-wipe` deletes Weaver's data containers and volumes. The Swift
+`make docker-down` removes Weaver's data containers but keeps their volumes.
+`make docker-wipe` deletes Weaver's data containers and volumes. The `docker-swift-*`
 commands affect Swift data in the same way. These commands leave shared Keycloak,
 its database and the shared network intact. The existing checkpoint commands
-support Swift's data volumes only; they do not back up or restore shared authentication.
+support Swift's data volumes only (`DOCKER_ENV=swift`); they do not back up or restore shared authentication.
 
 To inspect a project or run the focused offline command/configuration tests:
 
 ```bash
-make -s docker-config DOCKER_ENV=weaver SVC=postgres
+make -s docker-config DOCKER_ENV=swift SVC=postgres
 make -s docker-config SVC=keycloak
 python3 -m unittest bin/test_docker_environments.py
 ```

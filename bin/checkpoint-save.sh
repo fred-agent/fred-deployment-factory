@@ -81,6 +81,6 @@ echo "[3/3] Saved: ${SAVED} volumes, Skipped: ${SKIPPED} volumes — ${total_siz
 echo ""
 echo "Checkpoint '${CHECKPOINT_NAME}' saved to ${CHECKPOINT_DIR}"
 echo ""
-echo "Restart the stack:                  make docker-up"
+echo "Restart the stack:                  make docker-swift-up"
 echo "Restore this checkpoint later:      make checkpoint-restore NAME=${CHECKPOINT_NAME}"
 echo "Restore and restart in one shot:    make docker-restart-from-checkpoint NAME=${CHECKPOINT_NAME}"

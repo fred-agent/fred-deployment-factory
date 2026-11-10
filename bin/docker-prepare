@@ -12,7 +12,7 @@ fail() { printf '%s\n' "$1" >&2; exit 1; }
 DIR="$(cd "$DIR" && pwd)"
 [[ -f "$DIR/apps/control-plane/Cargo.toml" ]] || fail "DIR=$DIR is not a Fred Weaver checkout (it has no apps/control-plane/Cargo.toml)"
 [[ "$(docker inspect -f '{{.State.Health.Status}}' weaver-app-postgres 2>/dev/null)" == healthy ]] \
-  || fail "The Docker Compose services are not running: make docker-weaver-up first"
+  || fail "The Docker Compose services are not running: make docker-up first"
 
 # setup-env copies each exported key and refuses to continue without any.
 make -C "$DIR" setup-env

@@ -168,8 +168,8 @@ if Path(sys.argv[0]).name == "psql":
             self.assertEqual(path.read_text(), "POSTGRES_FRED_DB=my_custom_database\n")
 
     def test_explicit_launcher_selects_its_own_env_file(self):
-        self.assertIn(f"Env file: {ROOT}/docker/.env\n", make("-s", "docker-env"))
-        self.assertIn(f"Env file: {ROOT}/docker/.env.weaver\n", make("-s", "docker-weaver-env"))
+        self.assertIn(f"Env file: {ROOT}/docker/.env.weaver\n", make("-s", "docker-env"))
+        self.assertIn(f"Env file: {ROOT}/docker/.env\n", make("-s", "docker-swift-env"))
 
     def test_switch_prepares_shared_auth_then_stops_other_stack(self):
         for variant, prefix, other in (("swift", "", "weaver"), ("weaver", "weaver-", "swift")):
@@ -212,8 +212,8 @@ esac
             calls = directory / "calls.jsonl"
             env = {"PATH": f"{directory}:{os.environ['PATH']}", "CALLS": str(calls)}
             config = ("DOCKER_ENV_FILE=docker/.env.template", "DOCKER_SHARED_ENV_FILE=docker/.env.template")
-            for down, up, prefix in (("docker-down", "docker-weaver-up", "weaver-"),
-                                      ("docker-weaver-down", "docker-up", "")):
+            for down, up, prefix in (("docker-swift-down", "docker-up", "weaver-"),
+                                      ("docker-down", "docker-swift-up", "")):
                 with self.subTest(up=up):
                     calls.write_text("")
                     make("-s", down, *config, env_overrides=env)
@@ -265,7 +265,7 @@ printf '%s\\n' "$*" >> "$CALLS"
                     )
                     if running == "app-postgres":
                         self.assertNotEqual(result.returncode, 0)
-                        self.assertIn("make docker-weaver-up first", result.stderr)
+                        self.assertIn("make docker-up first", result.stderr)
                         self.assertFalse(calls.exists())
                     else:
                         self.assertEqual(result.returncode, 0, result.stderr)

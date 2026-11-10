@@ -14,7 +14,7 @@ monorepo.
 
 ## 1. Populate Keycloak
 
-From this repo, with the local stack up (`make docker-up`):
+From this repo, with the local stack up (`make docker-swift-up`):
 
 ```bash
 ./seed-keycloak-users.sh
