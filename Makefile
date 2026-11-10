@@ -347,7 +347,7 @@ ifeq ($(DOCKER_ENV),weaver)
 endif
 	$(MAKE) preflight-check
 ifeq ($(DOCKER_ENV),weaver)
-	@echo 'Backing services ready. Next: make docker-prepare DIR=/path/to/fred (it needs a model key: exported MISTRAL_API_KEY/OPENAI_API_KEY, or one already in the checkout)'
+	@echo 'Backing services ready. Next: make docker-prepare DIR=/path/to/fred (it needs MISTRAL_API_KEY, exported or already in the checkout)'
 else
 	@echo 'Swift backing services ready. Run make run in the Swift checkout.'
 endif

@@ -9,15 +9,15 @@ They use the same ports: run only one at a time.
 
 Once: install Docker (and for k3d: k3d, kubectl, Helm, Helmfile) and your checkout's build
 tools, add `127.0.0.1 keycloak app-keycloak swift.localhost weaver.localhost` to `/etc/hosts`,
-and export your model key in your shell profile, for example `~/.bashrc`:
+and export your **Mistral** key in your shell profile, for example `~/.bashrc`:
 
 ```bash
-export MISTRAL_API_KEY=...    # and/or
-export OPENAI_API_KEY=...
+export MISTRAL_API_KEY=...    # required: the demo organizations Acme and Globex use Mistral
+export OPENAI_API_KEY=...     # optional: a real OpenAI key (sk-...), only for the k3d choice below
 ```
 
-Fred Weaver accepts either or both. An organization owner chooses chat models and the
-documents' embedding model in **Models**; a provider without its key stays unavailable.
+Never put a Mistral key in `OPENAI_API_KEY` (Swift's old convention): Weaver reads each key
+under its provider's name. After a change: `make docker-prepare` again, then restart Fred.
 
 ## Docker Compose
 
@@ -66,7 +66,8 @@ explicitly, with the keys it needs exported:
 Choose before the first deployment: the policy is initialized once, then administered in
 **Models**.
 
-Swift reads its Mistral key from a secret created once:
+Swift, unlike Weaver, reads its Mistral key under the name `OPENAI_API_KEY`, from a
+secret created once:
 `kubectl --context k3d-fred -n fred-swift create secret generic fred-model-credentials --from-file=OPENAI_API_KEY=/path/to/key-file`.
 Open <http://weaver.localhost:8088> or <http://swift.localhost:8088>.
 
