@@ -1,0 +1,63 @@
+services:
+  zabbix-post-install-job:
+    image: mirror.gcr.io/postgres:15.12-alpine3.20
+    volumes:
+      - ./postgres-post-install-job/create_env.sh:/usr/local/bin/create_env.sh
+    environment:
+      POSTGRES_ADMIN_USER: ${POSTGRES_ADMIN_USER:-admin}
+      PGPASSWORD: ${POSTGRES_ADMIN_PASSWORD:-Azerty123_}
+      POSTGRES_ZABBIX_USER: ${POSTGRES_ZABBIX_USER:-zabbix}
+      POSTGRES_ZABBIX_PASSWORD: ${ZABBIX_DB_PASSWORD:-Azerty123_}
+      POSTGRES_ZABBIX_DB: ${POSTGRES_ZABBIX_DB:-zabbix}
+    entrypoint:
+      - /bin/bash
+      - -ec
+    command:
+      - |-
+        create_env.sh \
+          --admin "$$POSTGRES_ADMIN_USER" \
+          --host "app-postgres" \
+          --user "$$POSTGRES_ZABBIX_USER" \
+          --password "$$POSTGRES_ZABBIX_PASSWORD" \
+          --database "$$POSTGRES_ZABBIX_DB"
+    networks:
+      - app-network
+
+  zabbix-server:
+    image: zabbix/zabbix-server-pgsql:alpine-7.0-latest
+    restart: unless-stopped
+    environment:
+      DB_SERVER_HOST: app-postgres
+      POSTGRES_USER: ${POSTGRES_ZABBIX_USER:-zabbix}
+      POSTGRES_PASSWORD: ${ZABBIX_DB_PASSWORD:-Azerty123_}
+      POSTGRES_DB: ${POSTGRES_ZABBIX_DB:-zabbix}
+    networks:
+      - app-network
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    depends_on:
+      zabbix-post-install-job:
+        condition: service_completed_successfully
+
+  zabbix-web:
+    image: zabbix/zabbix-web-nginx-pgsql:alpine-7.0-latest
+    restart: unless-stopped
+    environment:
+      DB_SERVER_HOST: app-postgres
+      POSTGRES_USER: ${POSTGRES_ZABBIX_USER:-zabbix}
+      POSTGRES_PASSWORD: ${ZABBIX_DB_PASSWORD:-Azerty123_}
+      POSTGRES_DB: ${POSTGRES_ZABBIX_DB:-zabbix}
+      ZBX_SERVER_HOST: zabbix-server
+      PHP_TZ: ${ZABBIX_TIMEZONE:-Europe/Paris}
+    ports:
+      - 127.0.0.1:${ZABBIX_PORT:-8085}:8080/tcp
+    networks:
+      - app-network
+    depends_on:
+      zabbix-server:
+        condition: service_started
+
+networks:
+  app-network:
+    external: true
+    name: ${DOCKER_NETWORK_NAME:-fred-shared-network}

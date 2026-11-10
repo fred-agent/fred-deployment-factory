@@ -47,6 +47,10 @@ shared. Ports stay the same; switching requires no wipe.
 | Pause / resume Weaver | `make docker-weaver-stop` / `make docker-weaver-start` |
 | **Reset Weaver data** | **`make docker-weaver-wipe`**, then `make docker-weaver-up` |
 
+Optional Zabbix 7.0 LTS monitoring: `make docker-up USE_ZABBIX=true` (and
+`make docker-start USE_ZABBIX=true` after stopping), or `make zabbix-up` on an existing
+stack. Follow the [Zabbix Compose procedure](docker/README.md#optional-zabbix-70-lts).
+
 ## k3d
 
 ```bash

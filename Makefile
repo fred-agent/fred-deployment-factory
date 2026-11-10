@@ -63,6 +63,7 @@ STACK ?= base
 ifeq ($(filter $(STACK),base extended),)
 $(error Invalid STACK '$(STACK)'. Use STACK=base or STACK=extended)
 endif
+USE_ZABBIX ?= false
 
 # Service groups for `docker-up`. The base group is always launched; the
 # extended group is appended only when STACK=extended.
@@ -70,11 +71,14 @@ DOCKER_BASE_SERVICES := postgres-up keycloak-up seaweedfs-up opensearch-up tempo
 ifeq ($(DOCKER_ENV),swift)
 DOCKER_BASE_SERVICES += openfga-up
 endif
-DOCKER_EXTENDED_SERVICES := clickhouse-up langfuse-up prometheus-up grafana-up
+DOCKER_EXTENDED_SERVICES := clickhouse-up langfuse-up prometheus-up grafana-up logging-up
 ifeq ($(STACK),extended)
 DOCKER_UP_SERVICES := $(DOCKER_BASE_SERVICES) $(DOCKER_EXTENDED_SERVICES)
 else
 DOCKER_UP_SERVICES := $(DOCKER_BASE_SERVICES)
+endif
+ifeq ($(USE_ZABBIX),true)
+DOCKER_UP_SERVICES += zabbix-up
 endif
 
 # Application data projects. Shared Keycloak has its own persistent PostgreSQL
@@ -83,17 +87,20 @@ DOCKER_REST_PROJECTS_BASE := seaweedfs opensearch temporal
 ifeq ($(DOCKER_ENV),swift)
 DOCKER_REST_PROJECTS_BASE += openfga
 endif
-DOCKER_REST_PROJECTS_EXTENDED := clickhouse langfuse prometheus grafana
+DOCKER_REST_PROJECTS_EXTENDED := clickhouse langfuse prometheus grafana logging
 ifeq ($(STACK),extended)
 DOCKER_REST_PROJECTS := $(DOCKER_REST_PROJECTS_BASE) $(DOCKER_REST_PROJECTS_EXTENDED)
 else
 DOCKER_REST_PROJECTS := $(DOCKER_REST_PROJECTS_BASE)
 endif
+ifeq ($(USE_ZABBIX),true)
+DOCKER_REST_PROJECTS += zabbix
+endif
 
 # `docker-stop` ignores STACK and stops every project, mirroring `all-down`:
 # stopping something that is already stopped is free, and a half-stopped stack
 # is worse than an over-stopped one.
-DOCKER_ALL_PROJECTS := postgres $(DOCKER_REST_PROJECTS_BASE) $(DOCKER_REST_PROJECTS_EXTENDED)
+DOCKER_ALL_PROJECTS := postgres $(DOCKER_REST_PROJECTS_BASE) $(DOCKER_REST_PROJECTS_EXTENDED) zabbix
 
 ##@ Help
 help: ## Show this help message
@@ -281,6 +288,41 @@ grafana-up: prometheus-up
 	@echo "Launching Grafana..."
 	$(DOCKER_COMPOSE_BASE)grafana.yml -p $(DOCKER_PROJECT_PREFIX)grafana up -d
 
+FRED_CHECKOUT ?= ../fred
+FRED_LOG_DIR ?= /tmp/fred-structured-logs
+export FRED_LOG_DIR
+
+fred-json: logging-up ## Run Fred APIs, workers and frontend with JSON logs in Grafana (FRED_CHECKOUT=...)
+	python3 "$(CURDIR)/bin/fred-local-logs.py" --checkout "$(FRED_CHECKOUT)" --log-dir "$(FRED_LOG_DIR)" --mode json
+
+fred-text: ## Run the same Fred services with readable terminal logs
+	python3 "$(CURDIR)/bin/fred-local-logs.py" --checkout "$(FRED_CHECKOUT)" --log-dir "$(FRED_LOG_DIR)" --mode text
+
+fred-stop: ## Stop only the Fred processes started by fred-json/fred-text
+	python3 "$(CURDIR)/bin/fred-local-logs.py" --checkout "$(FRED_CHECKOUT)" --log-dir "$(FRED_LOG_DIR)" --stop
+
+logging-up: ## Start Loki, Alloy and Grafana for local JSON log exploration
+	@mkdir -p -m 700 "$(FRED_LOG_DIR)"
+	@chmod 700 "$(FRED_LOG_DIR)"
+	$(DOCKER_COMPOSE_BASE)logging.yml -p $(DOCKER_PROJECT_PREFIX)logging up -d
+	$(DOCKER_COMPOSE_BASE)grafana.yml -p $(DOCKER_PROJECT_PREFIX)grafana up -d
+
+logging-down: ## Stop Loki and Alloy, keeping log data
+	$(DOCKER_COMPOSE_BASE)logging.yml -p $(DOCKER_PROJECT_PREFIX)logging down
+
+zabbix-up: postgres-up ## Start optional Zabbix 7.0 LTS and provision Fred metrics hosts
+	@echo "Launching Zabbix..."
+	$(DOCKER_COMPOSE_BASE)zabbix.yml -p $(DOCKER_PROJECT_PREFIX)zabbix up -d --remove-orphans
+	$(MAKE) zabbix-provision-fred
+
+ZABBIX_TEMPLATE_FILE ?= $(FRED_CHECKOUT)/deploy/zabbix/fred-prometheus-by-http.yaml
+
+zabbix-provision-fred: ## Import Fred's template and configure its local dev metrics hosts
+	python3 bin/zabbix-provision-fred.py --template "$(ZABBIX_TEMPLATE_FILE)"
+
+zabbix-down: ## Stop and remove optional Zabbix containers (keep its database in PostgreSQL)
+	$(DOCKER_COMPOSE_BASE)zabbix.yml -p $(DOCKER_PROJECT_PREFIX)zabbix down --remove-orphans
+
 openfga-post-install:
 	@echo "Running OpenFGA post-install..."
 	$(DOCKER_HELPER_ENV) bash docker/openfga/openfga-post-install.sh
@@ -375,6 +417,8 @@ docker-down: all-down ## Remove the selected data containers; keep volumes and s
 
 all-down: env-setup
 	@echo "Stopping Docker stack services..."
+	$(DOCKER_COMPOSE_BASE)logging.yml -p $(DOCKER_PROJECT_PREFIX)logging down
+	$(DOCKER_COMPOSE_BASE)zabbix.yml -p $(DOCKER_PROJECT_PREFIX)zabbix down --remove-orphans
 	$(DOCKER_COMPOSE_BASE)grafana.yml -p $(DOCKER_PROJECT_PREFIX)grafana down
 	$(DOCKER_COMPOSE_BASE)prometheus.yml -p $(DOCKER_PROJECT_PREFIX)prometheus down
 	$(DOCKER_COMPOSE_BASE)langfuse.yml -p $(DOCKER_PROJECT_PREFIX)langfuse down
@@ -389,6 +433,8 @@ endif
 
 docker-wipe: all-down ## Delete selected data containers and volumes; keep shared Keycloak and its database
 	@echo -e "\n--- WIPE IN PROGRESS ---"
+	$(DOCKER_COMPOSE_BASE)logging.yml -p $(DOCKER_PROJECT_PREFIX)logging down -v
+	$(DOCKER_COMPOSE_BASE)zabbix.yml -p $(DOCKER_PROJECT_PREFIX)zabbix down -v --remove-orphans
 	$(DOCKER_COMPOSE_BASE)grafana.yml -p $(DOCKER_PROJECT_PREFIX)grafana down -v
 	$(DOCKER_COMPOSE_BASE)prometheus.yml -p $(DOCKER_PROJECT_PREFIX)prometheus down -v
 	$(DOCKER_COMPOSE_BASE)langfuse.yml -p $(DOCKER_PROJECT_PREFIX)langfuse down -v
@@ -404,6 +450,8 @@ endif
 
 docker-destroy: all-down ## Delete selected data containers/volumes and their images; keep shared authentication/network
 	@echo -e "\n--- destroy IN PROGRESS ---"
+	$(DOCKER_COMPOSE_BASE)logging.yml -p $(DOCKER_PROJECT_PREFIX)logging down -v --rmi all
+	$(DOCKER_COMPOSE_BASE)zabbix.yml -p $(DOCKER_PROJECT_PREFIX)zabbix down -v --rmi all --remove-orphans
 	$(DOCKER_COMPOSE_BASE)grafana.yml -p $(DOCKER_PROJECT_PREFIX)grafana down -v --rmi all
 	$(DOCKER_COMPOSE_BASE)prometheus.yml -p $(DOCKER_PROJECT_PREFIX)prometheus down -v --rmi all
 	$(DOCKER_COMPOSE_BASE)langfuse.yml -p $(DOCKER_PROJECT_PREFIX)langfuse down -v --rmi all
@@ -483,7 +531,7 @@ BRANCH ?= swift
 ecosystem-audit: ## Do the sibling checkouts agree on Fred's libraries? Branch, constraints, locks, npm: make ecosystem-audit [BRANCH=swift]
 	@bin/ecosystem-audit --branch "$(BRANCH)" --fetch
 
-.PHONY: docker-prepare help network-create env-setup keycloak-post-install postgres-up keycloak-up seaweedfs-up opensearch-up clickhouse-up langfuse-up prometheus-up grafana-up temporal-up preflight-check docker-up docker-start docker-stop docker-down all-down docker-wipe docker-destroy checkpoint-save checkpoint-restore docker-restart-from-checkpoint checkpoint-list checkpoint-delete check-pure-infrastructure ecosystem-audit keycloak-token-short keycloak-token-normal keycloak-token-status
+.PHONY: docker-prepare fred-json fred-text fred-stop logging-up logging-down zabbix-up zabbix-provision-fred zabbix-down help network-create env-setup keycloak-post-install postgres-up keycloak-up seaweedfs-up opensearch-up clickhouse-up langfuse-up prometheus-up grafana-up temporal-up preflight-check docker-up docker-start docker-stop docker-down all-down docker-wipe docker-destroy checkpoint-save checkpoint-restore docker-restart-from-checkpoint checkpoint-list checkpoint-delete check-pure-infrastructure ecosystem-audit keycloak-token-short keycloak-token-normal keycloak-token-status
 
 ##@ Optional ZITADEL identity-provider test
 ZITADEL_COMPOSE = docker compose --env-file docker/zitadel/.env -f docker/zitadel/compose.yaml -p fred-zitadel

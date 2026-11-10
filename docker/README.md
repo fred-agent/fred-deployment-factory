@@ -289,6 +289,100 @@ It also scrapes the native metrics endpoints exposed in Docker Compose mode for:
 
 Grafana is pre-provisioned with a Prometheus datasource pointing to `http://app-prometheus:9090` on the shared Docker network.
 
+### Optional Zabbix 7.0 LTS
+
+Zabbix uses a dedicated `zabbix` database and user in the shared `app-postgres`
+instance. It is disabled by default in both the `base` and `extended` stacks.
+Its server joins `fred-shared-network` to reach Compose exporters. The web UI
+listens on localhost only. Docker Compose, a running Docker daemon, and Fred's
+Prometheus template are the prerequisites; Fred's application processes can be
+started separately.
+
+From the root of this repository, run:
+
+```bash
+make docker-up USE_ZABBIX=true
+docker compose -f docker/docker-compose-zabbix.yml -p zabbix ps
+```
+
+Use `make docker-start USE_ZABBIX=true` to resume it after `make docker-stop`.
+On an existing stack, `make zabbix-up` starts Zabbix directly. The Zabbix
+database is created in `app-postgres` only when Zabbix starts. Set
+`POSTGRES_ZABBIX_USER`, `POSTGRES_ZABBIX_DB`, `ZABBIX_DB_PASSWORD`,
+`ZABBIX_PORT`, or `ZABBIX_TIMEZONE` in `docker/.env` before the first start.
+`USE_ZABBIX` is a Make variable, so pass it on the command line or export it
+in your shell.
+
+`make zabbix-up` waits for the Zabbix API, imports Fred's template, and
+configures the four development exporters. Rerunning it checks the existing
+hosts without duplicating them. The template is read from the sibling Fred
+checkout at `../fred/deploy/zabbix/fred-prometheus-by-http.yaml`. If that file
+is absent, an already imported template is reused. On a fresh Zabbix database,
+pass the template's local path until it is available on your Fred branch:
+
+```bash
+make zabbix-up ZABBIX_TEMPLATE_FILE=/path/to/fred-prometheus-by-http.yaml
+```
+
+Open <http://localhost:8085> and sign in as `Admin` / `zabbix` on a fresh
+installation. Change the administrator password before sharing this instance.
+The default database password is for local development only.
+
+The stock **Zabbix server** host uses **Linux by Zabbix agent**, but this
+minimal project does not run an agent. To avoid an unrelated availability
+alarm, set that host to **Disabled** under **Data collection > Hosts**. If the
+alarm is already open, close it under **Monitoring > Problems**. Leave the
+Prometheus template host enabled.
+
+To import or recheck Fred's configuration without starting Zabbix again, run:
+
+```bash
+make zabbix-provision-fred
+```
+
+The provisioning command stops if a host with the same name has a different
+template or metrics URL.
+Set `ZABBIX_API_URL`, `ZABBIX_ADMIN_USER`, or `ZABBIX_ADMIN_PASSWORD` in the
+environment if the local Zabbix API or credentials differ from the defaults.
+
+The HTTP scraping targets are defined in `bin/zabbix-provision-fred.py` and
+installed as `{$FRED.METRICS.URL}` macros on these hosts:
+
+| Fred process | `{$FRED.METRICS.URL}` |
+| --- | --- |
+| Agents API | `http://host.docker.internal:9000/metrics` |
+| Knowledge Flow API | `http://host.docker.internal:9111/metrics` |
+| Knowledge Flow worker | `http://host.docker.internal:9112/metrics` |
+| Control Plane API | `http://host.docker.internal:9222/metrics` |
+
+The Zabbix template defines the HTTP agent request, discovery, and numeric
+metric items. The provisioning script configures scraping after Compose starts
+Zabbix.
+For a Compose exporter, use its service name and port on
+`fred-shared-network`. Use a separate Zabbix host for each exporter instance.
+
+After two one-minute polls (discovery, then item values), open **Monitoring >
+Latest data** and select a Fred host. `fred.prometheus.raw` and
+`fred.prometheus.parsed` should be supported, with discovered numeric series
+and values. **Data collection > Hosts** shows the template and URL macro for
+each host.
+
+The three APIs start with `make run` in the Fred checkout. Start the Knowledge
+Flow worker separately with `make -C apps/knowledge-flow-backend run-worker`.
+The Control Plane worker can run separately too, but its current
+development configuration has no `/metrics` exporter. A host for a stopped
+process will show an unsupported HTTP item until that process starts.
+
+The existing OpenFGA exporter can serve as a template smoke test at
+`http://openfga:2112/metrics`. It does not validate Fred metrics.
+
+`make zabbix-down` removes the Zabbix containers and keeps their database in
+the shared PostgreSQL volume. `make zabbix-up` resumes the saved database.
+`make docker-stop` also stops Zabbix; resume it with
+`make docker-start USE_ZABBIX=true` or `make zabbix-up`. `make docker-wipe`
+deletes the Zabbix database along with the other PostgreSQL databases. Existing
+data in the former `zabbix_vol-zabbix-db` volume is not migrated automatically.
+
 ## Access the service interfaces
 
 > :key: For development purposes, the password for nominative or service accounts is `Azerty123_`
@@ -386,3 +480,83 @@ Hereunder, these are the information to connect to each service with their _loca
 
 - URLs:
   - http://$(DOCKER_COMPOSE_HOST_FQDN):$(PROMETHEUS_PORT) (web UI / API, default: `9090`)
+
+## Local structured logs
+
+With the existing Docker foundation running, `make logging-up` starts Loki and Alloy
+and the existing Grafana on http://localhost:3002. It preserves `docker/.env`.
+Open http://localhost:3002/d/fred-local-logs/fred-logs (also the default home dashboard).
+The compact view shows **timestamp · severity · service · message**, with stable
+service colors and Grafana's native severity colors.
+Use the **Service** and **Severity** dropdowns to select one or more values.
+Expand a line for all parsed fields and its original **raw_record**, then use
+the include/exclude buttons to add **Field filters**; clear them to reset the view.
+The dashboard keeps raw records in Loki unchanged and formats only query results.
+Native text lines remain visible when All is selected. Severity appears once, in
+Grafana's native level column beside the timestamp. In expanded details, `severity`
+is the collected severity and the only severity-related field shown. An Extract
+fields panel transformation maps it to Grafana's internal level column, preserving
+native colors without adding another field to log details. Loki still stores
+`detected_level` as structured metadata (`discover_log_levels` defaults to true);
+the query uses it only as a fallback for native text without Fred severity, then
+hides it from the dashboard results. The query also hides redundant `level` fields
+and duplicate `service_extracted`, `service_role_extracted` and
+`severity_extracted` fields created when JSON keys match collected labels.
+Original fields remain available in `raw_record`.
+Refresh is manual by default so an expanded log stays open; the refresh menu
+can enable automatic updates.
+
+Local Docker Grafana is pinned to 12.4.11 for the native log panel and field-filter
+controls; `GRAFANA_IMAGE` overrides the image. For free-form queries, open **Explore**,
+select the **Fred Logs** datasource and use `{environment="dev"} | json`.
+
+Select `app.log_format: json` in local Fred API/worker configuration, and capture
+stdout/stderr to one `*.log` file per process under `/tmp/fred-structured-logs`.
+The launcher restricts this directory to its owner (0700) and captured logs to
+0600; Alloy reads the mounted directory as container root.
+Override that directory with `FRED_LOG_DIR=/absolute/path make logging-up`.
+The directory must be readable by the collector. Docker applications opt in with
+the container label `fred.logs=true`; unrelated dependency logs are not collected.
+The Docker socket grants the collector Docker API access even when mounted read-only.
+
+Loki retains logs for 72 hours in a named volume; Alloy persists reader positions.
+The collector recognizes Python seconds/nanoseconds, nginx ISO timestamps and audit
+epoch timestamps, preserves original lines and keeps native text diagnostics.
+Only environment, source, service, service role, severity and source file/container
+are labels; operation and identity references remain queryable JSON fields.
+
+Useful queries:
+
+```logql
+{environment="dev", severity=~"ERROR|CRITICAL"} | json
+{environment="dev"} | json | correlation_id="YOUR_ID"
+{environment="dev", service_role="worker"} | json | document_id="YOUR_ID"
+{environment="dev", service="frontend"} | json | http_status >= 400
+```
+
+`make logging-down` stops collection without deleting stored logs. The extended
+Docker stack includes logging; the ordinary stop/down/wipe commands handle it too.
+This validates local output and field queries; GKE timestamp/severity promotion
+still requires a canary in Cloud Logging.
+
+### Switch Fred between terminal and Grafana
+
+From deployment-factory, with Fred dependencies and per-app `.env` files prepared:
+
+```bash
+make fred-json FRED_CHECKOUT=../fred-wt-sl-output
+# Ctrl+C stops all six Fred processes; collectors stay running.
+make fred-text FRED_CHECKOUT=../fred-wt-sl-output
+```
+
+From another terminal, `make fred-stop` stops only the recorded launcher session.
+The launcher checks for an existing session and refuses to replace it silently.
+It uses temporary copies of `configuration_prod.yaml`, selecting only the log mode
+and local inter-service URLs for Knowledge Flow and Control Plane. Tracked
+configurations and `.env` files are untouched. API reloads watch the source packages.
+The launcher uses these ports: Control Plane 9661, Knowledge Flow 9331, Fred Agents 8000 and
+frontend 9583; the frontend proxies all three APIs. Workers use existing installed
+Python environments directly, avoiding repeated model downloads.
+JSON mode writes append-only component log files; text mode prints to the terminal.
+The session record is `FRED_LOG_DIR/session.json`. Only one launcher session may use
+a log directory. Existing API processes must be stopped before starting this session.

@@ -90,6 +90,10 @@ Extended-profile endpoints: Prometheus `:9090`, Grafana `:3002`, ClickHouse `:81
 Langfuse `:3001`. Per-service targets also exist (`make keycloak-up`, `make opensearch-up`,
 `make temporal-up`, …).
 
+Zabbix 7.0 LTS is an opt-in Compose project outside both `STACK` profiles. Run
+`make zabbix-up` and use the [Zabbix procedure](../docker/README.md#optional-zabbix-70-lts)
+to import Fred's Prometheus template and check collected values.
+
 ## Identity provider portability
 
 The default `make docker-up` path remains the Keycloak baseline. These opt-in

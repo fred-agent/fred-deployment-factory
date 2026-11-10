@@ -12,7 +12,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 PROJECTS = (
     "postgres", "keycloak", "seaweedfs", "opensearch", "openfga", "temporal",
-    "clickhouse", "langfuse", "prometheus", "grafana",
+    "clickhouse", "langfuse", "prometheus", "grafana", "logging", "zabbix",
 )
 
 
@@ -65,7 +65,7 @@ class DockerEnvironmentTests(unittest.TestCase):
         self.assertEqual(resources(swift, "networks"), {"fred-shared-network"})
         self.assertEqual(host_ports(swift), {
             5432, 8080, 9333, 8081, 8888, 8333, 9200, 5601, 9080, 9081,
-            3000, 7233, 8233, 8123, 9002, 3001, 3030, 9090, 3002,
+            3000, 7233, 8233, 8123, 9002, 3001, 3030, 9090, 3002, 3100, 12345, 8085,
         })
 
     def test_data_volumes_are_distinct_and_ports_are_identical(self):
