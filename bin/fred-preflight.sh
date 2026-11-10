@@ -10,10 +10,8 @@ set -euo pipefail
 #    service-account rights
 # 2) Temporal UI, Langfuse endpoints + S3 bucket diagnostics
 #
-# `make docker-up` always produces an empty realm (AUTHZ-07): no demo users, no
-# demo teams. This script therefore validates INFRASTRUCTURE shape only
-# (clients, role definitions, service accounts) - it makes no assertion about specific
-# users or team memberships, because none exist at docker-up time. The first
+# A fresh installation starts with an empty realm; shared identities are kept
+# when switching data stacks. This checks infrastructure, not specific users. The first
 # platform_admin is created afterward via POST /bootstrap/platform-admin
 # (control-plane, fred monorepo); any further identity/team provisioning is a
 # separate, later, declarative import step owned by fred, not this repo.
@@ -21,6 +19,7 @@ set -euo pipefail
 
 # Configuration (override with env vars if needed)
 KC="${KC:-http://localhost:8080}"
+SEAWEEDFS_CONTAINER="${SEAWEEDFS_CONTAINER:-app-seaweedfs}"
 REALM="${REALM:-app}"
 
 KC_ADMIN_USER="${KC_ADMIN_USER:-admin}"
@@ -394,7 +393,7 @@ if [[ -n "${ADM}" ]]; then
           | jq -r '.[].name' | sort -u || true
       )"
       if contains_line "$EXPECTED_GROUPS_SCOPE_NAME" "$app_default_scopes"; then
-        mark_warning "Client scope '${EXPECTED_GROUPS_SCOPE_NAME}' is still attached to the app client's default scopes (residual state from a prior run or hand provisioning) - not read by any Swift authorization path, but 'make docker-wipe && make docker-up' gives a from-scratch proof"
+        mark_warning "Client scope '${EXPECTED_GROUPS_SCOPE_NAME}' is still attached to the app client's default scopes; inspect the shared realm configuration (a data-stack wipe preserves Keycloak)"
       else
         ok "Client scope '${EXPECTED_GROUPS_SCOPE_NAME}' exists but is not attached to app default scopes, as expected"
       fi
@@ -614,16 +613,16 @@ else
 fi
 
 if command -v docker >/dev/null 2>&1; then
-  if docker ps --format '{{.Names}}' 2>/dev/null | grep -Fxq "app-seaweedfs"; then
+  if docker ps --format '{{.Names}}' 2>/dev/null | grep -Fxq "$SEAWEEDFS_CONTAINER"; then
     candidate_bucket_payload="$(
-      docker exec app-seaweedfs sh -lc \
+      docker exec "$SEAWEEDFS_CONTAINER" sh -lc \
         'bucket_output="$(echo "s3.bucket.list" | weed shell -master=127.0.0.1:9333 -filer=127.0.0.1:8888 2>&1)"; rc="$?"; printf "__RC__=%s\n" "$rc"; printf "%s" "$bucket_output"' \
         || true
     )"
     seaweedfs_bucket_listing_rc="$(sed -n '1s/^__RC__=//p' <<<"${candidate_bucket_payload}")"
     seaweedfs_bucket_listing="$(sed '1d' <<<"${candidate_bucket_payload}")"
     if [[ "${seaweedfs_bucket_listing_rc}" != "0" ]]; then
-      mark_warning "Could not list buckets from app-seaweedfs; skipping Langfuse bucket existence checks"
+      mark_warning "Could not list buckets from $SEAWEEDFS_CONTAINER; skipping Langfuse bucket existence checks"
     else
       langfuse_unique_buckets=()
       while IFS= read -r bucket_line; do
@@ -642,7 +641,7 @@ if command -v docker >/dev/null 2>&1; then
       done
     fi
   else
-    mark_warning "Container 'app-seaweedfs' not found; skipping Langfuse bucket existence checks"
+    mark_warning "Container '$SEAWEEDFS_CONTAINER' not found; skipping Langfuse bucket existence checks"
   fi
 else
   mark_warning "docker CLI unavailable; skipping Langfuse bucket existence checks"

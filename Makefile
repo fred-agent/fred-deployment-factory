@@ -19,13 +19,40 @@ $(error This command prepares every Fred release line and takes no such variable
 endif
 endif
 
-DOCKER_COMPOSE_BASE := docker compose -f docker/docker-compose-
+# Docker and k3d have independent selectors. Existing Docker commands keep Swift.
+DOCKER_ENV ?= swift
+ifeq ($(filter $(DOCKER_ENV),swift weaver),)
+$(error Invalid DOCKER_ENV '$(DOCKER_ENV)'. Use DOCKER_ENV=swift or DOCKER_ENV=weaver)
+endif
+include docker/environments/$(DOCKER_ENV).env
+DOCKER_SHARED_ENV_FILE ?= $(CURDIR)/docker/.env
+ifeq ($(DOCKER_ENV),swift)
+DOCKER_ENV_FILE ?= $(CURDIR)/docker/.env
+else
+DOCKER_ENV_FILE ?= $(CURDIR)/docker/.env.weaver
+endif
+# Recompute the default env-file path when an explicit launcher calls Make
+# recursively with another environment; command-line overrides still propagate.
+export $(filter-out DOCKER_ENV_FILE,$(filter DOCKER_%,$(.VARIABLES)))
+unexport DOCKER_ENV_FILE
+DOCKER_COMPOSE_BASE := docker compose --env-file "$(DOCKER_ENV_FILE)" -f docker/docker-compose-
+DOCKER_SHARED_COMPOSE_BASE := docker compose --env-file "$(DOCKER_SHARED_ENV_FILE)" -f docker/docker-compose-
 
-# `make docker-up` starts the backing services of Fred Weaver; `make docker-prepare` prepares
-# a Weaver checkout to run on the host against them, as k3d's install hooks do. One mode: a
-# fresh, empty deployment (empty Keycloak realm: clients and service accounts only, no
-# demo users or groups). The database `fred_weaver` is created empty: its SQL owners and
-# schemas are Fred's bootstrap, as on k3d. Swift on Docker Compose stays on branch swift.
+# Both environments use the same endpoints; their data is selected at launch.
+DOCKER_KEYCLOAK_URL := http://localhost:8080
+DOCKER_OPENFGA_URL := http://localhost:9080
+DOCKER_HELPER_ENV = ENV_FILE="$(DOCKER_ENV_FILE)" \
+	KEYCLOAK_CONTAINER="app-keycloak" \
+	KEYCLOAK_SERVER_URL="$(DOCKER_KEYCLOAK_URL)" \
+	KC="$(DOCKER_KEYCLOAK_URL)" FGA="$(DOCKER_OPENFGA_URL)" \
+	OPENFGA_URL="$(DOCKER_OPENFGA_URL)" \
+	SEAWEEDFS_CONTAINER="$(DOCKER_CONTAINER_PREFIX)app-seaweedfs"
+DOCKER_KEYCLOAK_HELPER_ENV = ENV_FILE="$(DOCKER_SHARED_ENV_FILE)" \
+	KEYCLOAK_CONTAINER="app-keycloak" KEYCLOAK_SERVER_URL="$(DOCKER_KEYCLOAK_URL)"
+
+# New data stacks contain no business/demo data. The shared Keycloak realm is
+# kept across switches; platform authorization and business data belong to the
+# selected application database. Bootstrap a fresh platform through Fred.
 
 # STACK selects Docker Compose services only; k3d has one fixed service set:
 #   base (default) → minimal stack: drops ClickHouse, Langfuse (+ its Redis),
@@ -40,6 +67,9 @@ endif
 # Service groups for `docker-up`. The base group is always launched; the
 # extended group is appended only when STACK=extended.
 DOCKER_BASE_SERVICES := postgres-up keycloak-up seaweedfs-up opensearch-up temporal-up
+ifeq ($(DOCKER_ENV),swift)
+DOCKER_BASE_SERVICES += openfga-up
+endif
 DOCKER_EXTENDED_SERVICES := clickhouse-up langfuse-up prometheus-up grafana-up
 ifeq ($(STACK),extended)
 DOCKER_UP_SERVICES := $(DOCKER_BASE_SERVICES) $(DOCKER_EXTENDED_SERVICES)
@@ -47,10 +77,12 @@ else
 DOCKER_UP_SERVICES := $(DOCKER_BASE_SERVICES)
 endif
 
-# Compose projects for `docker-start` / `docker-stop`, in dependency order.
-# postgres and keycloak are started first and awaited individually, so they are
-# not repeated here.
+# Application data projects. Shared Keycloak has its own persistent PostgreSQL
+# and remains running when either application's data stack is stopped or wiped.
 DOCKER_REST_PROJECTS_BASE := seaweedfs opensearch temporal
+ifeq ($(DOCKER_ENV),swift)
+DOCKER_REST_PROJECTS_BASE += openfga
+endif
 DOCKER_REST_PROJECTS_EXTENDED := clickhouse langfuse prometheus grafana
 ifeq ($(STACK),extended)
 DOCKER_REST_PROJECTS := $(DOCKER_REST_PROJECTS_BASE) $(DOCKER_REST_PROJECTS_EXTENDED)
@@ -61,7 +93,7 @@ endif
 # `docker-stop` ignores STACK and stops every project, mirroring `all-down`:
 # stopping something that is already stopped is free, and a half-stopped stack
 # is worse than an over-stopped one.
-DOCKER_ALL_PROJECTS := postgres keycloak $(DOCKER_REST_PROJECTS_BASE) $(DOCKER_REST_PROJECTS_EXTENDED)
+DOCKER_ALL_PROJECTS := postgres $(DOCKER_REST_PROJECTS_BASE) $(DOCKER_REST_PROJECTS_EXTENDED)
 
 ##@ Help
 help: ## Show this help message
@@ -120,31 +152,76 @@ k3d-%:
 	@echo 'Removed command. Use make k3d-up, or make k3d-app FRED=swift|weaver APP=...; see make help.' >&2
 	@exit 2
 
-##@ Docker Compose: backing services of Fred Weaver, run on the host
+##@ Docker Compose: Swift or Weaver data on the usual ports
 docker-up docker-start docker-stop preflight-check: export STACK := $(STACK)
+docker-env: ## Show the selected Docker environment and its connection endpoints
+	@printf 'DOCKER_ENV=%s\nEnv file: %s\nNetwork: %s\nProject prefix: %s\n' "$(DOCKER_ENV)" "$(DOCKER_ENV_FILE)" "$(DOCKER_NETWORK_NAME)" "$(DOCKER_PROJECT_PREFIX)"
+	@printf 'PostgreSQL: localhost:5432\nKeycloak: http://app-keycloak:8080\nS3: http://localhost:8333\nOpenSearch: https://localhost:9200\nTemporal: localhost:7233\n'
+ifeq ($(DOCKER_ENV),swift)
+	@printf 'OpenFGA: %s\n' "$(DOCKER_OPENFGA_URL)"
+endif
+	@printf 'Browser DNS (/etc/hosts if needed): 127.0.0.1 app-keycloak\n'
+	@printf 'Shared authentication: keycloak (app-keycloak), database in keycloak_vol-keycloak-postgres-data\n'
+
+docker-config: env-setup shared-env-setup ## Render one Compose project as JSON without launching it (SVC=postgres)
+	@test -n "$(filter $(SVC),keycloak $(DOCKER_ALL_PROJECTS))" || { echo "Use SVC=<project>: keycloak $(DOCKER_ALL_PROJECTS)" >&2; exit 1; }
+ifeq ($(SVC),keycloak)
+	@$(DOCKER_SHARED_COMPOSE_BASE)keycloak.yml -p keycloak config --format json
+else
+	@$(DOCKER_COMPOSE_BASE)$(SVC).yml -p $(DOCKER_PROJECT_PREFIX)$(SVC) config --format json
+endif
+
+# Explicit launchers keep day-to-day commands short. The common lifecycle
+# targets above and below remain available with DOCKER_ENV=weaver as well.
+docker-weaver-up: ## Switch to Weaver's data on the usual ports, keeping shared Keycloak (STACK=extended for all services)
+	@$(MAKE) DOCKER_ENV=weaver docker-up
+
+docker-weaver-start: ## Switch to and resume Weaver containers and their existing data
+	@$(MAKE) DOCKER_ENV=weaver docker-start
+
+docker-weaver-stop: ## Stop Weaver while keeping its containers and data
+	@$(MAKE) DOCKER_ENV=weaver docker-stop
+
+docker-weaver-down: ## Remove Weaver containers, preserving its volumes
+	@$(MAKE) DOCKER_ENV=weaver docker-down
+
+docker-weaver-wipe: ## Delete only Weaver containers and volumes
+	@$(MAKE) DOCKER_ENV=weaver docker-wipe
+
+docker-weaver-env: ## Show Weaver endpoints and browser DNS setup
+	@$(MAKE) DOCKER_ENV=weaver docker-env
+
+.PHONY: docker-env docker-config docker-switch shared-env-setup docker-weaver-up docker-weaver-start docker-weaver-stop docker-weaver-down docker-weaver-wipe docker-weaver-env
+
 network-create:
-	@echo "Creating 'fred-shared-network'..."
-	docker network create fred-shared-network --driver bridge || echo "Network already exists or error occurred."
+	@docker network inspect "$(DOCKER_NETWORK_NAME)" >/dev/null 2>&1 || \
+		docker network create "$(DOCKER_NETWORK_NAME)" --driver bridge
 
 env-setup:
-	@echo "Setting up .env file..."
-	cp docker/.env.template docker/.env
-	@echo "NOTE: Remember to customize docker/.env if needed."
+	@test -f "$(DOCKER_ENV_FILE)" || cp -n docker/.env.template "$(DOCKER_ENV_FILE)"
+
+shared-env-setup:
+	@test -f "$(DOCKER_SHARED_ENV_FILE)" || cp -n docker/.env.template "$(DOCKER_SHARED_ENV_FILE)"
+
+# Initialize/migrate shared authentication before stopping the old data stack.
+# Migration may need the legacy Swift PostgreSQL just once to copy its realm.
+docker-switch: keycloak-up env-setup
+	@$(MAKE) DOCKER_ENV=$(if $(filter weaver,$(DOCKER_ENV)),swift,weaver) docker-stop
 
 keycloak-post-install:
 	@echo "Running Keycloak post-install..."
-	bash docker/keycloak/keycloak-post-install.sh
+	$(DOCKER_KEYCLOAK_HELPER_ENV) bash docker/keycloak/keycloak-post-install.sh
 
-postgres-up: network-create env-setup
+postgres-up: docker-switch
 	@echo "Launching PostgreSQL..."
-	$(DOCKER_COMPOSE_BASE)postgres.yml -p postgres up -d --wait postgres
-	$(DOCKER_COMPOSE_BASE)postgres.yml -p postgres up -d --no-deps --force-recreate postgres-post-install-job
+	$(DOCKER_COMPOSE_BASE)postgres.yml -p $(DOCKER_PROJECT_PREFIX)postgres up -d --wait postgres
+	$(DOCKER_COMPOSE_BASE)postgres.yml -p $(DOCKER_PROJECT_PREFIX)postgres up -d --no-deps --force-recreate postgres-post-install-job
 	@echo "Waiting for PostgreSQL post-install job..."
 	@set -euo pipefail; \
-		rc="$$(docker wait app-postgres-post-install-job)"; \
+		rc="$$(docker wait $(DOCKER_CONTAINER_PREFIX)app-postgres-post-install-job)"; \
 		if [ "$$rc" != "0" ]; then \
 			echo "PostgreSQL post-install job failed (exit $$rc). Showing logs:"; \
-			docker logs app-postgres-post-install-job || true; \
+			docker logs $(DOCKER_CONTAINER_PREFIX)app-postgres-post-install-job || true; \
 			exit 1; \
 		fi
 
@@ -155,67 +232,82 @@ mock-oidc-down: ## Stop the local generic OIDC test provider
 	docker compose -f docker/docker-compose-mock-oidc.yml -p mock-oidc down
 
 keycloak-generic-oidc: ## Opt in to generic OIDC token claims on the local Keycloak realm
-	STRICT="$(STRICT)" bash docker/keycloak/generic-oidc-profile.sh apply
+	$(DOCKER_KEYCLOAK_HELPER_ENV) STRICT="$(STRICT)" bash docker/keycloak/generic-oidc-profile.sh apply
 
 keycloak-generic-oidc-revert: ## Restore the local Keycloak baseline claims and admin roles
-	bash docker/keycloak/generic-oidc-profile.sh revert
+	$(DOCKER_KEYCLOAK_HELPER_ENV) bash docker/keycloak/generic-oidc-profile.sh revert
 
-keycloak-up: postgres-up
-	@echo "Launching Keycloak..."
-	$(DOCKER_COMPOSE_BASE)keycloak.yml -p keycloak up -d
-	$(MAKE) keycloak-post-install
+keycloak-up: network-create shared-env-setup
+	@echo "Ensuring shared Keycloak and its database are running..."
+	DOCKER_SHARED_ENV_FILE="$(DOCKER_SHARED_ENV_FILE)" bash docker/keycloak/up-shared.sh
 
-seaweedfs-up: keycloak-up
+seaweedfs-up: postgres-up
 	@echo "Launching SeaweedFS..."
-	$(DOCKER_COMPOSE_BASE)seaweedfs.yml -p seaweedfs up -d
+	$(DOCKER_COMPOSE_BASE)seaweedfs.yml -p $(DOCKER_PROJECT_PREFIX)seaweedfs up -d
 	@echo "Waiting for SeaweedFS post-install job..."
 	@set -euo pipefail; \
-		rc="$$(docker wait app-seaweedfs-post-install-job)"; \
+		rc="$$(docker wait $(DOCKER_CONTAINER_PREFIX)app-seaweedfs-post-install-job)"; \
 		if [ "$$rc" != "0" ]; then \
 			echo "SeaweedFS post-install job failed (exit $$rc). Showing logs:"; \
-			docker logs app-seaweedfs-post-install-job || true; \
+			docker logs $(DOCKER_CONTAINER_PREFIX)app-seaweedfs-post-install-job || true; \
 			exit 1; \
 		fi
 
-opensearch-up: keycloak-up
+opensearch-up: postgres-up
 	@echo "Launching OpenSearch..."
-	$(DOCKER_COMPOSE_BASE)opensearch.yml -p opensearch up -d
+	$(DOCKER_COMPOSE_BASE)opensearch.yml -p $(DOCKER_PROJECT_PREFIX)opensearch up -d
 
-clickhouse-up: network-create env-setup
+clickhouse-up: docker-switch
 	@echo "Launching ClickHouse..."
-	$(DOCKER_COMPOSE_BASE)clickhouse.yml -p clickhouse up -d
+	$(DOCKER_COMPOSE_BASE)clickhouse.yml -p $(DOCKER_PROJECT_PREFIX)clickhouse up -d
 	@echo "Waiting for ClickHouse post-install job..."
 	@set -euo pipefail; \
-		rc="$$(docker wait app-clickhouse-post-install-job)"; \
+		rc="$$(docker wait $(DOCKER_CONTAINER_PREFIX)app-clickhouse-post-install-job)"; \
 		if [ "$$rc" != "0" ]; then \
 			echo "ClickHouse post-install job failed (exit $$rc). Showing logs:"; \
-			docker logs app-clickhouse-post-install-job || true; \
+			docker logs $(DOCKER_CONTAINER_PREFIX)app-clickhouse-post-install-job || true; \
 			exit 1; \
 		fi
 
 langfuse-up: postgres-up clickhouse-up
 	@echo "Launching Langfuse..."
-	$(DOCKER_COMPOSE_BASE)langfuse.yml -p langfuse up -d
+	$(DOCKER_COMPOSE_BASE)langfuse.yml -p $(DOCKER_PROJECT_PREFIX)langfuse up -d
 
-prometheus-up: network-create env-setup
+prometheus-up: docker-switch
 	@echo "Launching Prometheus..."
-	$(DOCKER_COMPOSE_BASE)prometheus.yml -p prometheus up -d
+	$(DOCKER_COMPOSE_BASE)prometheus.yml -p $(DOCKER_PROJECT_PREFIX)prometheus up -d
 
 grafana-up: prometheus-up
 	@echo "Launching Grafana..."
-	$(DOCKER_COMPOSE_BASE)grafana.yml -p grafana up -d
+	$(DOCKER_COMPOSE_BASE)grafana.yml -p $(DOCKER_PROJECT_PREFIX)grafana up -d
 
-temporal-up: keycloak-up
+openfga-post-install:
+	@echo "Running OpenFGA post-install..."
+	$(DOCKER_HELPER_ENV) bash docker/openfga/openfga-post-install.sh
+
+openfga-up: postgres-up
+	@echo "Launching OpenFGA..."
+	$(DOCKER_COMPOSE_BASE)openfga.yml -p $(DOCKER_PROJECT_PREFIX)openfga up -d
+	$(MAKE) openfga-post-install
+
+temporal-up: postgres-up
 	@echo "Launching Temporal..."
-	$(DOCKER_COMPOSE_BASE)temporal.yml -p temporal up -d
+	$(DOCKER_COMPOSE_BASE)temporal.yml -p $(DOCKER_PROJECT_PREFIX)temporal up -d
 
 preflight-check:
 	@echo "Running FRED preflight..."
-	bash bin/fred-preflight.sh
+	$(DOCKER_HELPER_ENV) bash bin/fred-preflight.sh
 
-docker-up: $(DOCKER_UP_SERVICES) ## Launch the backing services of Fred Weaver (empty realm and database); no application
+docker-up: $(DOCKER_UP_SERVICES) ## Switch to the selected data stack on the usual ports, keeping shared authentication
+ifeq ($(DOCKER_ENV),weaver)
+	$(MAKE) keycloak-post-install KEYCLOAK_FORCE_RELOGIN=false
+endif
 	$(MAKE) preflight-check
+ifeq ($(DOCKER_ENV),weaver)
 	@echo 'Backing services ready. Next: export MISTRAL_API_KEY=... (or OPENAI_API_KEY=...), then make docker-prepare DIR=/path/to/fred'
+else
+	@echo 'Swift backing services ready. Run make run in the Swift checkout.'
+endif
 
 docker-prepare: ## Prepare a Fred Weaver checkout to run on the host (starts nothing): DIR=/path/to/fred, model keys exported
 	@bin/docker-prepare
@@ -226,9 +318,19 @@ docker-prepare: ## Prepare a Fred Weaver checkout to run on the host (starts not
 # Keycloak must answer OIDC discovery before opensearch-dashboards boots, or
 # the dashboards security plugin exits with "Failed when trying to obtain the
 # endpoints from your IdP".
-docker-start: ## Resume the existing Docker stack in dependency order (no recreate, no re-provision)
+# Start the persistent containers directly: Compose start can also launch their
+# completed dependency jobs even when only persistent services are requested.
+docker-start: docker-switch ## Switch to and resume the existing data stack (no data-container recreate or re-provision)
 	@set -uo pipefail; \
-		compose_start() { $(DOCKER_COMPOSE_BASE)$$1.yml -p $$1 start >/dev/null 2>&1 || true; }; \
+		start_project() { \
+			local project="$$1" name policy containers=(); \
+			while IFS= read -r name; do \
+				policy="$$(docker inspect --format '{{.HostConfig.RestartPolicy.Name}}' "$$name")"; \
+				[ "$$policy" != unless-stopped ] || containers+=("$$name"); \
+			done < <(docker ps -a --filter "label=com.docker.compose.project=$(DOCKER_PROJECT_PREFIX)$$project" --format '{{.Names}}'); \
+			[ "$${#containers[@]}" -gt 0 ] || return 0; \
+			docker start "$${containers[@]}" >/dev/null 2>&1 || true; \
+		}; \
 		await() { \
 			name="$$1"; tries=90; state=""; \
 			for _ in $$(seq 1 $$tries); do \
@@ -244,16 +346,16 @@ docker-start: ## Resume the existing Docker stack in dependency order (no recrea
 		}; \
 		await_project() { \
 			rc=0; \
-			for name in $$(docker ps -a --filter "label=com.docker.compose.project=$$1" --format '{{.Names}}'); do \
+			for name in $$(docker ps -a --filter "label=com.docker.compose.project=$(DOCKER_PROJECT_PREFIX)$$1" --format '{{.Names}}'); do \
 				case "$$name" in *-install-job|*-migrate|*-admin-tools) continue;; esac; \
 				await "$$name" || rc=1; \
 			done; \
 			return $$rc; \
 		}; \
-		echo "Resuming PostgreSQL..."; compose_start postgres; await app-postgres || exit 1; \
-		echo "Resuming Keycloak..."; compose_start keycloak; await app-keycloak || exit 1; \
+		echo "Resuming PostgreSQL..."; start_project postgres; await $(DOCKER_CONTAINER_PREFIX)app-postgres || exit 1; \
+		echo "Waiting for shared Keycloak..."; await app-keycloak || exit 1; \
 		echo "Resuming $(DOCKER_REST_PROJECTS)..."; \
-		for project in $(DOCKER_REST_PROJECTS); do compose_start "$$project"; done; \
+		for project in $(DOCKER_REST_PROJECTS); do start_project "$$project"; done; \
 		overall=0; \
 		for project in $(DOCKER_REST_PROJECTS); do await_project "$$project" || overall=1; done; \
 		if [ "$$overall" = 0 ]; then echo "Docker stack is up."; else \
@@ -263,61 +365,66 @@ docker-start: ## Resume the existing Docker stack in dependency order (no recrea
 # Stop without deleting: the counterpart to `docker-start`. `docker-down`
 # removes the containers, which would force a full re-provision on the next
 # start; this keeps them so `docker-start` can resume them.
-docker-stop: ## Stop the Docker stack but keep the containers (resume with `docker-start`)
+docker-stop: env-setup ## Stop the selected data stack; keep its containers and shared authentication
 	@echo "Stopping Docker stack services (containers kept)..."
 	@for project in $(DOCKER_ALL_PROJECTS); do \
-		$(DOCKER_COMPOSE_BASE)$$project.yml -p $$project stop 2>/dev/null || true; \
+		$(DOCKER_COMPOSE_BASE)$$project.yml -p $(DOCKER_PROJECT_PREFIX)$$project stop 2>/dev/null || true; \
 	done
 
-docker-down: all-down ## Stop the Docker stack
+docker-down: all-down ## Remove the selected data containers; keep volumes and shared authentication
 
-all-down:
+all-down: env-setup
 	@echo "Stopping Docker stack services..."
-	$(DOCKER_COMPOSE_BASE)grafana.yml -p grafana down
-	$(DOCKER_COMPOSE_BASE)prometheus.yml -p prometheus down
-	$(DOCKER_COMPOSE_BASE)langfuse.yml -p langfuse down
-	$(DOCKER_COMPOSE_BASE)temporal.yml -p temporal down
-	$(DOCKER_COMPOSE_BASE)clickhouse.yml -p clickhouse down
-	$(DOCKER_COMPOSE_BASE)opensearch.yml -p opensearch down
-	$(DOCKER_COMPOSE_BASE)seaweedfs.yml -p seaweedfs down
-	$(DOCKER_COMPOSE_BASE)keycloak.yml -p keycloak down
-	$(DOCKER_COMPOSE_BASE)postgres.yml -p postgres down
+	$(DOCKER_COMPOSE_BASE)grafana.yml -p $(DOCKER_PROJECT_PREFIX)grafana down
+	$(DOCKER_COMPOSE_BASE)prometheus.yml -p $(DOCKER_PROJECT_PREFIX)prometheus down
+	$(DOCKER_COMPOSE_BASE)langfuse.yml -p $(DOCKER_PROJECT_PREFIX)langfuse down
+	$(DOCKER_COMPOSE_BASE)temporal.yml -p $(DOCKER_PROJECT_PREFIX)temporal down
+	$(DOCKER_COMPOSE_BASE)clickhouse.yml -p $(DOCKER_PROJECT_PREFIX)clickhouse down
+	$(DOCKER_COMPOSE_BASE)opensearch.yml -p $(DOCKER_PROJECT_PREFIX)opensearch down
+ifeq ($(DOCKER_ENV),swift)
+	$(DOCKER_COMPOSE_BASE)openfga.yml -p $(DOCKER_PROJECT_PREFIX)openfga down
+endif
+	$(DOCKER_COMPOSE_BASE)seaweedfs.yml -p $(DOCKER_PROJECT_PREFIX)seaweedfs down
+	$(DOCKER_COMPOSE_BASE)postgres.yml -p $(DOCKER_PROJECT_PREFIX)postgres down
 
-docker-wipe: all-down ## Stop Docker stack, delete containers & volumes
+docker-wipe: all-down ## Delete selected data containers and volumes; keep shared Keycloak and its database
 	@echo -e "\n--- WIPE IN PROGRESS ---"
-	$(DOCKER_COMPOSE_BASE)grafana.yml -p grafana down -v
-	$(DOCKER_COMPOSE_BASE)prometheus.yml -p prometheus down -v
-	$(DOCKER_COMPOSE_BASE)langfuse.yml -p langfuse down -v
-	$(DOCKER_COMPOSE_BASE)temporal.yml -p temporal down -v
-	$(DOCKER_COMPOSE_BASE)clickhouse.yml -p clickhouse down -v
-	$(DOCKER_COMPOSE_BASE)opensearch.yml -p opensearch down -v
-	$(DOCKER_COMPOSE_BASE)seaweedfs.yml -p seaweedfs down -v
-	$(DOCKER_COMPOSE_BASE)keycloak.yml -p keycloak down -v
-	$(DOCKER_COMPOSE_BASE)postgres.yml -p postgres down -v
+	$(DOCKER_COMPOSE_BASE)grafana.yml -p $(DOCKER_PROJECT_PREFIX)grafana down -v
+	$(DOCKER_COMPOSE_BASE)prometheus.yml -p $(DOCKER_PROJECT_PREFIX)prometheus down -v
+	$(DOCKER_COMPOSE_BASE)langfuse.yml -p $(DOCKER_PROJECT_PREFIX)langfuse down -v
+	$(DOCKER_COMPOSE_BASE)temporal.yml -p $(DOCKER_PROJECT_PREFIX)temporal down -v
+	$(DOCKER_COMPOSE_BASE)clickhouse.yml -p $(DOCKER_PROJECT_PREFIX)clickhouse down -v
+	$(DOCKER_COMPOSE_BASE)opensearch.yml -p $(DOCKER_PROJECT_PREFIX)opensearch down -v
+ifeq ($(DOCKER_ENV),swift)
+	$(DOCKER_COMPOSE_BASE)openfga.yml -p $(DOCKER_PROJECT_PREFIX)openfga down -v
+endif
+	$(DOCKER_COMPOSE_BASE)seaweedfs.yml -p $(DOCKER_PROJECT_PREFIX)seaweedfs down -v
+	$(DOCKER_COMPOSE_BASE)postgres.yml -p $(DOCKER_PROJECT_PREFIX)postgres down -v
 	@echo -e "\n--- WIPE COMPLETE ---"
 
-docker-destroy: all-down ## Stop Docker stack, delete containers/volumes/network AND remove images
+docker-destroy: all-down ## Delete selected data containers/volumes and their images; keep shared authentication/network
 	@echo -e "\n--- destroy IN PROGRESS ---"
-	$(DOCKER_COMPOSE_BASE)grafana.yml -p grafana down -v --rmi all
-	$(DOCKER_COMPOSE_BASE)prometheus.yml -p prometheus down -v --rmi all
-	$(DOCKER_COMPOSE_BASE)langfuse.yml -p langfuse down -v --rmi all
-	$(DOCKER_COMPOSE_BASE)temporal.yml -p temporal down -v --rmi all
-	$(DOCKER_COMPOSE_BASE)clickhouse.yml -p clickhouse down -v --rmi all
-	$(DOCKER_COMPOSE_BASE)opensearch.yml -p opensearch down -v --rmi all
-	$(DOCKER_COMPOSE_BASE)seaweedfs.yml -p seaweedfs down -v --rmi all
-	$(DOCKER_COMPOSE_BASE)keycloak.yml -p keycloak down -v --rmi all
-	$(DOCKER_COMPOSE_BASE)postgres.yml -p postgres down -v --rmi all
-	docker network rm fred-shared-network || true
+	$(DOCKER_COMPOSE_BASE)grafana.yml -p $(DOCKER_PROJECT_PREFIX)grafana down -v --rmi all
+	$(DOCKER_COMPOSE_BASE)prometheus.yml -p $(DOCKER_PROJECT_PREFIX)prometheus down -v --rmi all
+	$(DOCKER_COMPOSE_BASE)langfuse.yml -p $(DOCKER_PROJECT_PREFIX)langfuse down -v --rmi all
+	$(DOCKER_COMPOSE_BASE)temporal.yml -p $(DOCKER_PROJECT_PREFIX)temporal down -v --rmi all
+	$(DOCKER_COMPOSE_BASE)clickhouse.yml -p $(DOCKER_PROJECT_PREFIX)clickhouse down -v --rmi all
+	$(DOCKER_COMPOSE_BASE)opensearch.yml -p $(DOCKER_PROJECT_PREFIX)opensearch down -v --rmi all
+ifeq ($(DOCKER_ENV),swift)
+	$(DOCKER_COMPOSE_BASE)openfga.yml -p $(DOCKER_PROJECT_PREFIX)openfga down -v --rmi all
+endif
+	$(DOCKER_COMPOSE_BASE)seaweedfs.yml -p $(DOCKER_PROJECT_PREFIX)seaweedfs down -v --rmi all
+	$(DOCKER_COMPOSE_BASE)postgres.yml -p $(DOCKER_PROJECT_PREFIX)postgres down -v
 	@echo -e "\n--- destroy COMPLETE ---"
 
 keycloak-token-short: ## Local Docker: use browser 60s and agentic M2M 120s access tokens
-	bash local-testing/scripts/keycloak-token-lifetime.sh short
+	$(DOCKER_KEYCLOAK_HELPER_ENV) bash local-testing/scripts/keycloak-token-lifetime.sh short
 
 keycloak-token-normal: ## Local Docker: set browser and agentic M2M access tokens to 300s
-	bash local-testing/scripts/keycloak-token-lifetime.sh normal
+	$(DOCKER_KEYCLOAK_HELPER_ENV) bash local-testing/scripts/keycloak-token-lifetime.sh normal
 
 keycloak-token-status: ## Local Docker: show browser and agentic M2M access token lifetimes
-	bash local-testing/scripts/keycloak-token-lifetime.sh status
+	$(DOCKER_KEYCLOAK_HELPER_ENV) bash local-testing/scripts/keycloak-token-lifetime.sh status
 
 ##@ Checkpoints
 checkpoint-save: ## Save current Docker stack state as a named checkpoint (NAME=<name> required)

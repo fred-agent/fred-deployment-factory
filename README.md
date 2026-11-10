@@ -3,13 +3,13 @@
 Run Fred on your machine, from this directory. Pick one:
 
 - **k3d**: Fred deployed as in production. Swift and Weaver side by side.
-- **Docker Compose**: Weaver only, run from your checkout. The fast loop to debug.
+- **Docker Compose**: Swift or Weaver, run from separate checkouts. The fast loop to debug.
 
 They use the same ports: run only one at a time.
 
 Once: install Docker (and for k3d: k3d, kubectl, Helm, Helmfile) and your checkout's build
-tools, add `127.0.0.1 keycloak swift.localhost weaver.localhost` to `/etc/hosts`, and export
-your model key in your shell profile, for example `~/.bashrc`:
+tools, add `127.0.0.1 keycloak app-keycloak swift.localhost weaver.localhost` to `/etc/hosts`,
+and export your model key in your shell profile, for example `~/.bashrc`:
 
 ```bash
 export MISTRAL_API_KEY=...    # and/or
@@ -21,8 +21,10 @@ documents' embedding model in **Models**; a provider without its key stays unava
 
 ## Docker Compose
 
+Weaver:
+
 ```bash
-make docker-up                          # the backing services: PostgreSQL, Keycloak, OpenSearch, Temporal...
+make docker-weaver-up                   # the backing services: PostgreSQL, Keycloak, OpenSearch, Temporal...
 make docker-prepare DIR=/path/to/fred   # prepares your checkout, starts nothing, prints the bootstrap token
 make -C /path/to/fred run               # every Fred process in this terminal
 ```
@@ -31,12 +33,19 @@ Instead of `make run`, start each component in its own terminal
 (`make -C /path/to/fred/apps/<component> run`), or ask your coding assistant to start Fred.
 `docker-prepare` lists both. Then open <http://localhost:5173>.
 
+Swift: `make docker-up`, then `make run` in the Swift checkout.
+
+Stop the application processes before switching. Swift to Weaver: `make docker-down`, then
+`make docker-weaver-up`. Weaver to Swift: `make docker-weaver-down`, then `make docker-up`.
+Each stack keeps its own PostgreSQL and persistent data; Keycloak and its database stay
+shared. Ports stay the same; switching requires no wipe.
+
 | I want to | Run |
 | --- | --- |
 | Restart Fred | `make -C /path/to/fred run` again |
 | Change or add a model key | Export it, then `make docker-prepare` again |
-| Pause / resume | `make docker-stop` / `make docker-start` |
-| **Start over (deletes everything)** | **`make docker-wipe`**, then `make docker-up` |
+| Pause / resume Weaver | `make docker-weaver-stop` / `make docker-weaver-start` |
+| **Reset Weaver data** | **`make docker-weaver-wipe`**, then `make docker-weaver-up` |
 
 ## k3d
 

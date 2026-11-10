@@ -35,6 +35,9 @@ jobs:
       - name: Validate the infrastructure
         run: make k3d-validate
 
+      - name: Docker switching tests
+        run: python3 -m unittest bin/test_docker_environments.py
+
       - name: Validate the applications
         run: |
           for app in fred fred-evaluator webdav-kb; do

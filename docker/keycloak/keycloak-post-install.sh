@@ -3,7 +3,7 @@ set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 COMPOSE_DIR="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
-ENV_FILE="${COMPOSE_DIR}/.env"
+ENV_FILE="${ENV_FILE:-${COMPOSE_DIR}/.env}"
 
 log() {
   printf '[keycloak-post-install] %s\n' "$*"

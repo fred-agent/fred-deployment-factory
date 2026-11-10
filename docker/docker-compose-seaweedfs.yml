@@ -1,7 +1,7 @@
 services:
 
   seaweedfs:
-    container_name: app-seaweedfs
+    container_name: ${DOCKER_CONTAINER_PREFIX:-}app-seaweedfs
     restart: unless-stopped
     image: chrislusf/seaweedfs:4.29
     environment:
@@ -20,7 +20,9 @@ services:
       - -filer.port=8888
       - -volume.max=100
     networks:
-      - app-network
+      app-network:
+        aliases:
+          - app-seaweedfs
     ports:
       - 0.0.0.0:9333:9333/tcp   # Master API
       - 0.0.0.0:8081:8080/tcp   # Volume API
@@ -38,7 +40,7 @@ services:
       start_interval: 2s
 
   seaweedfs-post-install-job:
-    container_name: app-seaweedfs-post-install-job
+    container_name: ${DOCKER_CONTAINER_PREFIX:-}app-seaweedfs-post-install-job
     image: chrislusf/seaweedfs:4.29
     environment:
       NO_PROXY: "*"
@@ -66,7 +68,9 @@ services:
         done
         echo "[seaweedfs-post-install] bucket initialization finished"
     networks:
-      - app-network
+      app-network:
+        aliases:
+          - app-seaweedfs-post-install-job
     depends_on:
       seaweedfs:
         condition: service_healthy
@@ -77,4 +81,4 @@ volumes:
 networks:
   app-network:
     external: true
-    name: fred-shared-network
+    name: ${DOCKER_NETWORK_NAME:-fred-shared-network}

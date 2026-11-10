@@ -1,12 +1,12 @@
 # Local development stack
 
-Two local forms of Fred Weaver, both documented in the [README](../README.md):
+Two local forms of Fred, both documented in the [README](../README.md):
 **k3d**, which deploys as production does, and **Docker Compose**, the fast loop to
 debug an application on the host. This file is the technical reference for
 infrastructure, applications and diagnostics.
 
 For **Swift and Weaver side by side on k3d**, see [their boundaries](SWIFT-WEAVER.md),
-which also covers the reset procedure. Swift on Docker Compose stays on branch `swift`.
+which also covers the reset procedure. Docker Compose alternates between their isolated data stacks.
 
 For raw Compose internals (network, `.env`, per-service files), see
 [`../docker/README.md`](../docker/README.md).
@@ -14,17 +14,19 @@ For raw Compose internals (network, `.env`, per-service files), see
 **Prerequisites (Compose):** Docker, Docker Compose (`docker compose`), `bash`, `jq`,
 `curl`, plus the build tools of a Fred Weaver checkout (Rust, uv, Node).
 
-## Docker Compose: Weaver on the host
+## Docker Compose: Swift or Weaver on the host
 
 The Compose services and k3d publish the same host ports: stop one before starting the
 other (`make k3d-stop`, `make docker-stop`).
 
 ```bash
-make docker-up                  # base stack: PostgreSQL, Keycloak, SeaweedFS, OpenSearch, Temporal
-make docker-up STACK=extended   # + Prometheus, Grafana, ClickHouse, Langfuse
+make docker-up                  # Swift infrastructure, including OpenFGA
+make docker-down                # leave Swift; keep its data and shared Keycloak
+make docker-weaver-up            # Weaver infrastructure, same ports, separate data
+# Add STACK=extended for Prometheus, Grafana, ClickHouse and Langfuse
 ```
 
-`make docker-up` prepares what Weaver relies on, as `make k3d-up` does for the line
+`make docker-weaver-up` prepares what Weaver relies on, as `make k3d-up` does for the line
 `weaver`, on `localhost` ports; the token issuer is `http://keycloak:8080/realms/app`, as
 on k3d:
 
@@ -61,13 +63,13 @@ out and sign in again. The script is idempotent.
 Pausing and resuming (a reboot, or closing the laptop for the day):
 
 ```bash
-make docker-stop     # stop the containers, keep them
-make docker-start    # resume them, in dependency order
+make docker-weaver-stop     # stop Weaver containers, keep them
+make docker-weaver-start    # resume them, in dependency order
 ```
 
-`docker-start` is not `docker-up`: it recreates no container and re-runs no
-post-install job, so the Keycloak realm and every volume come
-back untouched. Use it whenever the stack exists but is down; use `docker-up`
+`docker-weaver-start` resumes the existing data containers without rerunning their
+post-install jobs. Shared Keycloak and its dedicated database are kept across
+stops and switches. Use `docker-weaver-up`
 only to build the stack from nothing. Services carry `restart: unless-stopped`,
 so after a host reboot they come back on their own — unless you stopped them
 with `docker-stop`, which is remembered.
@@ -75,13 +77,14 @@ with `docker-stop`, which is remembered.
 Cleanup:
 
 ```bash
-make docker-down       # stop AND remove the containers (next start re-provisions)
-make docker-wipe       # containers & volumes
-make docker-destroy    # containers, volumes, network, and images
+make docker-weaver-down       # remove Weaver containers; keep data and shared authentication
+make docker-weaver-wipe       # delete only Weaver data containers and volumes
 ```
 
-Weaver is installed from scratch only: after a Fred schema change, `make docker-wipe`,
-then `make docker-up` and `make docker-prepare` again.
+Weaver is installed from scratch only: after a Fred schema change, `make docker-weaver-wipe`,
+then `make docker-weaver-up` and `make docker-prepare` again. Ordinary switches require no wipe.
+Return to Swift with `make docker-weaver-down`, then `make docker-up`.
+See [Docker data boundaries](../docker/README.md#switch-between-swift-and-weaver).
 
 Extended-profile endpoints: Prometheus `:9090`, Grafana `:3002`, ClickHouse `:8123/play`,
 Langfuse `:3001`. Per-service targets also exist (`make keycloak-up`, `make opensearch-up`,
@@ -98,7 +101,8 @@ self-test still needs a browser. Use a fresh test deployment when comparing
 provider identities, personal spaces or administrator bootstrap state.
 
 1. **Keycloak baseline:** run the Docker Compose path above without an OIDC overlay.
-   Save it with `make checkpoint-save NAME=kc-baseline` before changing the realm.
+   Application checkpoints exclude shared Keycloak; use the explicit revert command
+   below to undo the generic OIDC profile.
 2. **Keycloak with generic OIDC claims:** run `make keycloak-generic-oidc STRICT=1`,
    generate the three Fred backend configs with
    `scripts/prepare_identity_provider_configs.py --profile generic_oidc`, and restart
@@ -317,8 +321,11 @@ build, for local Fred libraries; it does not select a namespace.
 
 Docker Compose commands start backing services. `make k3d-up` starts
 the COTS and prepares each line's boundaries. Fred
-applications require a separate `make k3d-app` command. Both begin
+applications require a separate `make k3d-app` command. A fresh installation begins
 with an empty Keycloak realm (self-registration enabled), PostgreSQL and Temporal.
+Docker preserves shared authentication across data-stack switches; each data stack
+has its own PostgreSQL container and persistent volumes. Swift keeps its existing
+databases and OpenFGA; Weaver gets the empty `fred_weaver` database.
 Neither creates business data. There are no demo users, no Keycloak groups and no app roles baked in by either
 backend. The imported Keycloak realm template never carries team groups, and no
 script in this repo ever creates a Keycloak group.

@@ -1,5 +1,23 @@
 services:
-      
+
+  keycloak-postgres:
+    container_name: app-keycloak-postgres
+    restart: unless-stopped
+    image: ${KEYCLOAK_POSTGRES_IMAGE:-${KEYCLOAK_DEFAULT_POSTGRES_IMAGE:-pgvector/pgvector:pg15}}
+    environment:
+      POSTGRES_USER: ${POSTGRES_KEYCLOAK_USER:-keycloak_db_user}
+      POSTGRES_PASSWORD: ${POSTGRES_KEYCLOAK_PASSWORD:-Azerty123_}
+      POSTGRES_DB: ${POSTGRES_KEYCLOAK_DB:-keycloak}
+    networks:
+      - app-network
+    volumes:
+      - vol-keycloak-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
   keycloak:
     container_name: app-keycloak
     restart: unless-stopped
@@ -13,7 +31,7 @@ services:
       KC_HOSTNAME_STRICT: false
       KC_HOSTNAME_STRICT_HTTPS: false
       KC_DB: ${POSTGRES_ADMIN_DB:-postgres}
-      KC_DB_URL: jdbc:postgresql://app-postgres:5432/${POSTGRES_KEYCLOAK_DB:-keycloak}
+      KC_DB_URL: jdbc:postgresql://keycloak-postgres:5432/${POSTGRES_KEYCLOAK_DB:-keycloak}
       KC_DB_USERNAME: ${POSTGRES_KEYCLOAK_USER:-keycloak_db_user}
       KC_DB_PASSWORD: ${POSTGRES_KEYCLOAK_PASSWORD:-Azerty123_}
       KC_BOOTSTRAP_ADMIN_USERNAME: ${KC_BOOTSTRAP_ADMIN_USERNAME:-admin}
@@ -26,7 +44,7 @@ services:
     command:
       - |-
         [ ! -d /opt/keycloak/data/import ] && mkdir -p /opt/keycloak/data/import
-        sed "s#__DOCKER_COMPOSE_HOST_FQDN__#$$DOCKER_COMPOSE_HOST_FQDN#g; s#__TEMPORAL_UI_PORT__#$$TEMPORAL_UI_PORT#g" /tmp/app-realm.json.template > /opt/keycloak/data/import/app-realm.json
+        sed "s#__DOCKER_COMPOSE_HOST_FQDN__#$$DOCKER_COMPOSE_HOST_FQDN#g; s#__TEMPORAL_UI_PORT__#$$TEMPORAL_UI_PORT#g; s#docker-compose.host.fqdn#$$DOCKER_COMPOSE_HOST_FQDN#g" /tmp/app-realm.json.template > /opt/keycloak/data/import/app-realm.json
         /opt/keycloak/bin/kc.sh start-dev --import-realm
     volumes:
       - ./keycloak/app-realm.json.template:/tmp/app-realm.json.template
@@ -34,7 +52,8 @@ services:
     networks:
       app-network:
         aliases:
-          - ${DOCKER_COMPOSE_HOST_FQDN:-"app-keycloak"}
+          - app-keycloak
+          - ${DOCKER_COMPOSE_HOST_FQDN:-localhost}
     ports:
       - 0.0.0.0:8080:8080/tcp
     healthcheck:
@@ -44,6 +63,12 @@ services:
       retries: 3
       start_period: 30s
       start_interval: 10s
+    depends_on:
+      keycloak-postgres:
+        condition: service_healthy
+
+volumes:
+  vol-keycloak-postgres-data:
 
 networks:
   app-network:

@@ -2,7 +2,7 @@
 # Shared config + helpers for the keycloak-*.sh local dev-stack scripts.
 # Source this, don't execute it directly.
 
-KC_CONTAINER="app-keycloak"
+KC_CONTAINER="${KEYCLOAK_CONTAINER:-app-keycloak}"
 KC_REALM="app"
 KC_ADMIN_USER="${KC_BOOTSTRAP_ADMIN_USERNAME:-admin}"
 KC_ADMIN_PASSWORD="${KC_BOOTSTRAP_ADMIN_PASSWORD:-Azerty123_}"
@@ -13,7 +13,7 @@ kc() {
 }
 
 kc_login() {
-  kc config credentials --server http://localhost:8080 --realm master \
+  kc config credentials --server "${KEYCLOAK_SERVER_URL:-http://localhost:8080}" --realm master \
     --user "$KC_ADMIN_USER" --password "$KC_ADMIN_PASSWORD" >/dev/null 2>&1
 }
 
