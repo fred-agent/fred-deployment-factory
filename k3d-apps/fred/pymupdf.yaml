@@ -1,38 +1,60 @@
-# Optional PyMuPDF extraction: use with the matching E1 chart release.
-# This overrides only the worker image and processing profiles. Extraction groups
-# inherit the worker; the API keeps its independent image and configuration.
-# For checkout builds, build the worker with INSTALL_PYMUPDF=true explicitly.
+# Swift published releases use the matching PyMuPDF image and processors.
+# Keep the API and worker on the same variant and processor classes.
+# Dependency licenses: fred/docs/swift/COPYLEFT-DEPENDENCIES.md.
+
 x-image: &image
-  repository: ghcr.io/thalesgroup/fred-agent/knowledge-flow-worker-pymupdf
+  repository: ghcr.io/thalesgroup/fred-agent/knowledge-flow-backend-pymupdf
 
 # ── choice: the PyMuPDF processors ───────────────────────────────────────────
 # Fast: PyMuPDF4LLM for .pdf. Helm replaces lists, so the chart's other fast
 # processors are repeated unchanged.
 x-fast-input-processors: &fast-input-processors
   - suffix: ".pdf"
-    class_path: knowledge_flow_worker.core.processors.input.lightweight_markdown_processor.lite2_pdf_to_md_processor.LitePdfMarkdownProcessor
+    class_path: knowledge_flow_backend.core.processors.input.lightweight_markdown_processor.lite2_pdf_to_md_processor.LitePdfMarkdownProcessor
   - suffix: ".docx"
-    class_path: knowledge_flow_worker.core.processors.input.docx_markdown_processor.docx_markdown_processor.DocxMarkdownProcessor
+    class_path: knowledge_flow_backend.core.processors.input.docx_markdown_processor.docx_markdown_processor.DocxMarkdownProcessor
   - suffix: ".doc"
-    class_path: knowledge_flow_worker.core.processors.input.doc_markdown_processor.doc_markdown_processor.DocMarkdownProcessor
+    class_path: knowledge_flow_backend.core.processors.input.doc_markdown_processor.doc_markdown_processor.DocMarkdownProcessor
   - suffix: ".odt"
-    class_path: knowledge_flow_worker.core.processors.input.odt_markdown_processor.odt_markdown_processor.OdtMarkdownProcessor
+    class_path: knowledge_flow_backend.core.processors.input.odt_markdown_processor.odt_markdown_processor.OdtMarkdownProcessor
+  - suffix: ".msg"
+    class_path: knowledge_flow_backend.core.processors.input.email_processor.email_markdown_processor.EmailMarkdownProcessor
+  - suffix: ".eml"
+    class_path: knowledge_flow_backend.core.processors.input.email_processor.email_markdown_processor.EmailMarkdownProcessor
   - suffix: ".pptx"
-    class_path: knowledge_flow_worker.core.processors.input.pptx_markdown_processor.pptx_markdown_processor.PptxMarkdownProcessor
+    class_path: knowledge_flow_backend.core.processors.input.pptx_markdown_processor.pptx_markdown_processor.PptxMarkdownProcessor
   - suffix: ".ppt"
-    class_path: knowledge_flow_worker.core.processors.input.ppt_markdown_processor.ppt_markdown_processor.PptMarkdownProcessor
+    class_path: knowledge_flow_backend.core.processors.input.ppt_markdown_processor.ppt_markdown_processor.PptMarkdownProcessor
   - suffix: ".csv"
-    class_path: knowledge_flow_worker.core.processors.input.csv_tabular_processor.csv_tabular_processor.CsvTabularProcessor
+    class_path: knowledge_flow_backend.core.processors.input.csv_tabular_processor.csv_tabular_processor.CsvTabularProcessor
   - suffix: ".xlsx"
-    class_path: knowledge_flow_worker.core.processors.input.excel_processor.excel_processor.ExcelProcessor
+    class_path: knowledge_flow_backend.core.processors.input.excel_processor.excel_processor.ExcelProcessor
   - suffix: ".xls"
-    class_path: knowledge_flow_worker.core.processors.input.excel_processor.excel_processor.ExcelProcessor
+    class_path: knowledge_flow_backend.core.processors.input.excel_processor.excel_processor.ExcelProcessor
   - suffix: ".xlsm"
-    class_path: knowledge_flow_worker.core.processors.input.excel_processor.excel_processor.ExcelProcessor
+    class_path: knowledge_flow_backend.core.processors.input.excel_processor.excel_processor.ExcelProcessor
   - suffix: ".txt"
-    class_path: knowledge_flow_worker.core.processors.input.text_markdown_processor.text_markdown_processor.TextMarkdownProcessor
+    class_path: knowledge_flow_backend.core.processors.input.text_markdown_processor.text_markdown_processor.TextMarkdownProcessor
   - suffix: ".md"
-    class_path: knowledge_flow_worker.core.processors.input.markdown_markdown_processor.markdown_markdown_processor.MarkdownMarkdownProcessor
+    class_path: knowledge_flow_backend.core.processors.input.markdown_markdown_processor.markdown_markdown_processor.MarkdownMarkdownProcessor
+  - suffix: ".jsonl"
+    class_path: knowledge_flow_backend.core.processors.input.jsonl.jsonl_markdown_processor.JsonlMarkdownProcessor
+  - suffix: ".png"
+    class_path: knowledge_flow_backend.core.processors.input.image_processor.image_processor.ImageProcessor
+  - suffix: ".jpg"
+    class_path: knowledge_flow_backend.core.processors.input.image_processor.image_processor.ImageProcessor
+  - suffix: ".jpeg"
+    class_path: knowledge_flow_backend.core.processors.input.image_processor.image_processor.ImageProcessor
+  - suffix: ".gif"
+    class_path: knowledge_flow_backend.core.processors.input.image_processor.image_processor.ImageProcessor
+  - suffix: ".bmp"
+    class_path: knowledge_flow_backend.core.processors.input.image_processor.image_processor.ImageProcessor
+  - suffix: ".svg"
+    class_path: knowledge_flow_backend.core.processors.input.image_processor.image_processor.ImageProcessor
+  - suffix: ".webp"
+    class_path: knowledge_flow_backend.core.processors.input.image_processor.image_processor.ImageProcessor
+  - suffix: ".ico"
+    class_path: knowledge_flow_backend.core.processors.input.image_processor.image_processor.ImageProcessor
 
 # Medium and rich: PdfMarkdownProcessor with the PyMuPDF extractor (Docling by default).
 x-processing: &processing
@@ -45,6 +67,10 @@ x-processing: &processing
       pdf: { extractor: pymupdf }
 
 applications:
+  knowledge-flow-backend:
+    image: *image
+    configuration:
+      processing: *processing
   knowledge-flow-worker:
     image: *image
     configuration:

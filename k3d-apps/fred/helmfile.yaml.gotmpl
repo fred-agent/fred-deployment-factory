@@ -54,6 +54,16 @@ releases:
       {{- with env "K3D_IMAGE_VALUES" }}
       - {{ . | quote }}
       {{- end }}
+      {{- if and (eq .Environment.Name "swift") (not $checkout) (ne (env "K3D_PYMUPDF") "false") }}
+      - pymupdf.yaml
+      - applications:
+          knowledge-flow-backend:
+            image:
+              tag: "v{{ $version }}"
+          knowledge-flow-worker:
+            image:
+              tag: "v{{ $version }}"
+      {{- end }}
     hooks:
       # The model keys are the operator's, created before deploying, as in production
       # (on Weaver, make k3d-app creates them from MISTRAL_API_KEY/OPENAI_API_KEY).
