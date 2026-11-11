@@ -98,6 +98,11 @@ services:
           --user "$$POSTGRES_EVALUATION_USER" \
           --password "$$POSTGRES_EVALUATION_PASSWORD" \
           --database "$$POSTGRES_EVALUATION_DB"
+        # Fred libraries require each application to own an explicit schema.
+        psql -X -q -v ON_ERROR_STOP=1 -U "$$POSTGRES_ADMIN_USER" -h app-postgres \
+          -d "$$POSTGRES_EVALUATION_DB" -v owner="$$POSTGRES_EVALUATION_USER" <<'SQL'
+        CREATE SCHEMA IF NOT EXISTS evaluation AUTHORIZATION :"owner";
+        SQL
         create_env.sh \
           --admin "$$POSTGRES_ADMIN_USER" \
           --host "app-postgres" \
