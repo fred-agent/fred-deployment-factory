@@ -553,6 +553,9 @@ knowledge_flow_client_uuid="$(ensure_service_client_confidential knowledge-flow 
 control_plane_client_uuid="$(ensure_service_client_confidential control-plane "$KEYCLOAK_CONTROL_PLANE_CLIENT_SECRET")"
 # Evaluation worker (Fworker) — dedicated least-privilege service identity (RFC EVAL-AUTH).
 eval_worker_client_uuid="$(ensure_service_client_confidential fred-evaluation-worker "$KEYCLOAK_EVAL_WORKER_CLIENT_SECRET")"
+# Created here, not imported: without this claim Fred does not recognize the
+# token as a service account, and refuses its delegated calls.
+ensure_protocol_mapper "$eval_worker_client_uuid" '{"name":"workload-client-id","protocolMapper":"oidc-hardcoded-claim-mapper","config":{"claim.name":"client_id","claim.value":"fred-evaluation-worker","jsonType.label":"String"}}'
 # Knowledge Base pod. Names are dotted under a prefix their contributor owns,
 # and Fred claims that prefix for the client that first publishes under it — so
 # the client is named after the prefix, never after one Knowledge Base.
