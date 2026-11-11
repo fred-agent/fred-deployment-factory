@@ -18,18 +18,20 @@ spec.loader.exec_module(launcher)
 
 
 class LocalLoggingTests(unittest.TestCase):
-    def test_config_switch_preserves_source_and_relative_catalog(self):
+    def test_config_switch_preserves_source_and_anchors_relative_paths(self):
         with tempfile.TemporaryDirectory() as temporary:
-            directory = Path(temporary)
-            source = directory / "configuration_prod.yaml"
-            original = "app:\n  log_format: text\n  log_level: info\npolicies:\n  purge_catalog_path: ./conversation_policy_catalog.yaml\n"
+            app = Path(temporary) / "control-plane"
+            (app / "config").mkdir(parents=True)
+            source = app / "config/configuration_prod.yaml"
+            original = "app:\n  log_format: text\n  log_level: info\npolicies:\n  purge_catalog_path: ./config/lifecycle_policy_catalog.yaml\n"
             source.write_text(original)
-            output = directory / "generated.yaml"
+            output = Path(temporary) / "generated.yaml"
             launcher.prepare_config(source, output, "json")
             self.assertEqual(source.read_text(), original)
             self.assertIn("log_format: json", output.read_text())
             self.assertIn(
-                str(directory / "conversation_policy_catalog.yaml"), output.read_text()
+                f"purge_catalog_path: {app}/config/lifecycle_policy_catalog.yaml",
+                output.read_text(),
             )
             self.assertEqual(output.stat().st_mode & 0o777, 0o600)
             launcher.prepare_config(source, output, "text")
@@ -43,52 +45,48 @@ class LocalLoggingTests(unittest.TestCase):
                 launcher.prepare_config(source, Path(temporary) / "out.yaml", "json")
             self.assertEqual(source.read_text(), "app:\n  log_level: info\n")
 
-    def test_local_service_urls_use_the_launched_ports(self):
-        for path, source_port, target_port in (
-            ("knowledge-flow/v1", 8111, 9331),
-            ("control-plane/v1", 8222, 9661),
-        ):
-            for host in ("127.0.0.1", "localhost", "remote.example"):
-                with (
-                    self.subTest(path=path, host=host),
-                    tempfile.TemporaryDirectory() as temporary,
-                ):
-                    source = Path(temporary) / "source.yaml"
-                    original = (
-                        "app:\n  log_format: text\nservice:\n"
-                        f'  base_url: "http://{host}:{source_port}/{path}"\n'
-                    )
-                    source.write_text(original)
-                    output = Path(temporary) / "generated.yaml"
-                    launcher.prepare_config(source, output, "json")
-                    port = source_port if host == "remote.example" else target_port
-                    self.assertIn(
-                        f'base_url: "http://{host}:{port}/{path}"', output.read_text()
-                    )
-                    self.assertEqual(source.read_text(), original)
+    def test_components_match_the_weaver_checkout_commands(self):
+        self.assertEqual(
+            [(name, target) for name, _, target, _ in launcher.COMPONENTS],
+            [
+                ("control-plane", "run"),
+                ("knowledge-flow-backend", "run"),
+                ("knowledge-flow-worker", "run"),
+                ("fred-agents", "run"),
+                ("fred-agents-worker", "run-worker"),
+                ("frontend", "run"),
+            ],
+        )
+
+    def test_unprepared_checkout_is_refused(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            app = Path(temporary) / "fred/apps/control-plane"
+            app.mkdir(parents=True)
+            (app / "Makefile").write_text("")
+            result = subprocess.run(
+                [sys.executable, str(LAUNCHER), "--checkout", str(Path(temporary) / "fred"),
+                 "--log-dir", str(Path(temporary) / "logs"), "--component", "control-plane"],
+                capture_output=True, text=True, timeout=10,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("make docker-prepare", result.stderr)
 
     def run_worker(self, directory, mode):
         checkout = directory / "fred"
-        app = checkout / "apps/control-plane-backend"
+        app = checkout / "apps/knowledge-flow-worker"
         (app / "config").mkdir(parents=True)
-        (app / ".venv/bin").mkdir(parents=True)
-        (app / ".venv/bin/python").symlink_to(sys.executable)
-        (app / "Makefile").write_text("")
-        (app / "config/configuration_prod.yaml").write_text(
+        (app / "config/.env").write_text("")
+        (app / "config/configuration_worker.yaml").write_text(
             "app:\n  log_format: text\n"
         )
-        package = app / "control_plane_backend"
-        package.mkdir()
-        (package / "__init__.py").write_text("")
-        (
-            package / "main_worker.py"
-        ).write_text("""import json, os, subprocess, sys, time
+        (app / "worker.py").write_text("""import json, os, subprocess, sys, time
 from pathlib import Path
 mode = 'json' if 'log_format: json' in Path(os.environ['CONFIG_FILE']).read_text() else 'text'
 child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(120)'])
 print(json.dumps({'mode': mode, 'child_pid': child.pid}) if mode == 'json' else 'TEXT child_pid=' + str(child.pid), flush=True)
 time.sleep(120)
 """)
+        (app / "Makefile").write_text(f"run:\n\t@{sys.executable} worker.py\n")
         logs = directory / "logs"
         process = subprocess.Popen(
             [
@@ -99,7 +97,7 @@ time.sleep(120)
                 "--log-dir",
                 str(logs),
                 "--component",
-                "control-plane-worker",
+                "knowledge-flow-worker",
                 "--mode",
                 mode,
             ],
@@ -116,7 +114,7 @@ time.sleep(120)
             try:
                 deadline = time.monotonic() + 5
                 while time.monotonic() < deadline:
-                    output = logs / "control-plane-worker.log"
+                    output = logs / "knowledge-flow-worker.log"
                     if output.exists() and output.read_text():
                         break
                     time.sleep(0.05)
@@ -146,7 +144,7 @@ time.sleep(120)
                         "--log-dir",
                         str(logs),
                         "--component",
-                        "control-plane-worker",
+                        "knowledge-flow-worker",
                     ],
                     capture_output=True,
                     text=True,
@@ -193,7 +191,7 @@ time.sleep(120)
                 output, _ = process.communicate(timeout=20)
                 self.assertEqual(process.returncode, 0)
                 self.assertIn("TEXT child_pid=", output)
-                self.assertFalse((logs / "control-plane-worker.log").exists())
+                self.assertFalse((logs / "knowledge-flow-worker.log").exists())
             finally:
                 if process.poll() is None:
                     process.send_signal(signal.SIGTERM)

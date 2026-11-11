@@ -28,6 +28,7 @@ Start Fred, one of:
   - one component per terminal:   make -C $DIR/apps/<component> run
       control-plane, knowledge-flow-backend, knowledge-flow-worker, fred-agents, frontend,
       and the capability worker:  make -C $DIR/apps/fred-agents run-worker
+  - everything, logs in Grafana:  make fred-json FRED_CHECKOUT=$DIR (from deployment-factory)
   - or ask your coding assistant to start Fred.
 
 First login, once Fred runs:

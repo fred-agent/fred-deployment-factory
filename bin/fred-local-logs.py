@@ -17,35 +17,33 @@ import sys
 import tempfile
 import time
 
+# name, application directory, make target, configuration read by that target.
+# The commands and configurations are those of a Fred Weaver checkout prepared by
+# `make docker-prepare`; the launcher only selects the log format.
 COMPONENTS = (
-    ("control-plane", "control-plane-backend", "api", 9661),
-    ("knowledge-flow", "knowledge-flow-backend", "api", 9331),
-    ("fred-agents", "fred-agents", "api", 8000),
-    ("control-plane-worker", "control-plane-backend", "worker", 0),
-    ("knowledge-flow-worker", "knowledge-flow-backend", "worker", 0),
-    ("frontend", "frontend", "frontend", 9583),
+    ("control-plane", "control-plane", "run", "configuration_prod.yaml"),
+    ("knowledge-flow-backend", "knowledge-flow-backend", "run", "configuration_prod.yaml"),
+    ("knowledge-flow-worker", "knowledge-flow-worker", "run", "configuration_worker.yaml"),
+    ("fred-agents", "fred-agents", "run", "configuration_prod.yaml"),
+    ("fred-agents-worker", "fred-agents", "run-worker", "configuration_prod.yaml"),
+    ("frontend", "frontend", "run", None),
 )
+# Ports the APIs and the frontend publish with their tracked configuration.
+PORTS = {"control-plane": 8222, "knowledge-flow-backend": 8111, "fred-agents": 8000, "frontend": 5173}
 
 
 def prepare_config(source: Path, output: Path, mode: str) -> None:
+    """Copy one configuration, changing only `app.log_format`.
+
+    Relative paths resolve against the application directory, the process's
+    working directory, so the copy anchors them there.
+    """
     text = source.read_text()
     text, count = re.subn(r"(?m)^(  log_format:)\s*[^\n]*$", rf"\1 {mode}", text)
     if count != 1:
         raise ValueError(f"Expected one app.log_format in {source}")
-    # The policy catalog resolves relative to the selected config file.
-    text = text.replace(
-        "./conversation_policy_catalog.yaml",
-        str(source.parent / "conversation_policy_catalog.yaml"),
-    )
-    for path, source_port, target_port in (
-        ("knowledge-flow/v1", 8111, 9331),
-        ("control-plane/v1", 8222, 9661),
-    ):
-        for host in ("127.0.0.1", "localhost"):
-            text = text.replace(
-                f"http://{host}:{source_port}/{path}",
-                f"http://{host}:{target_port}/{path}",
-            )
+    app_dir = source.parent.parent
+    text = re.sub(r"(?m)^(\s*[A-Za-z_]+:\s+)\./", lambda m: f"{m.group(1)}{app_dir}/", text)
     output.write_text(text)
     output.chmod(0o600)
 
@@ -118,14 +116,16 @@ def main() -> int:
     selected = [
         item for item in COMPONENTS if not args.component or item[0] == args.component
     ]
-    for name, app, role, port in selected:
-        if not (checkout / "apps" / app / "Makefile").exists():
-            raise ValueError(f"Missing Fred app: {app}")
-        if (
-            role != "frontend"
-            and not (checkout / "apps" / app / ".venv/bin/python").exists()
-        ):
-            raise ValueError(f"Install dependencies first for {app}")
+    for name, app, target, config in selected:
+        cwd = checkout / "apps" / app
+        if not (cwd / "Makefile").exists():
+            raise ValueError(f"{checkout} is not a Fred Weaver checkout: no apps/{app}")
+        if config and not (cwd / "config/.env").exists():
+            raise ValueError(
+                f"{name}: no config/.env; prepare the checkout first: "
+                f"make docker-prepare DIR={checkout}"
+            )
+        port = PORTS.get(name)
         if port:
             with socket.socket() as probe:
                 probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -155,55 +155,22 @@ def main() -> int:
         contextlib.ExitStack() as stack,
     ):
         try:
-            for name, app, role, port in selected:
+            for name, app, target, config in selected:
                 if stopping:
                     break
                 cwd = checkout / "apps" / app
                 env = os.environ.copy()
                 env.update(
                     PYTHONUNBUFFERED="1",
-                    NO_PROXY="localhost,127.0.0.1,app-keycloak,::1",
-                    no_proxy="localhost,127.0.0.1,app-keycloak,::1",
+                    NO_PROXY="localhost,127.0.0.1,::1",
+                    no_proxy="localhost,127.0.0.1,::1",
                 )
-                if role == "frontend":
-                    env.update(
-                        VITE_PORT=str(port),
-                        VITE_BACKEND_URL="http://localhost:8000",
-                        VITE_BACKEND_URL_FRED_AGENTS="http://localhost:8000",
-                        VITE_BACKEND_URL_KNOWLEDGE="http://localhost:9331",
-                        VITE_BACKEND_URL_CONTROL_PLANE="http://localhost:9661",
-                    )
-                    command = ["make", "run"]
-                else:
-                    config = Path(config_dir) / f"{name}.yaml"
-                    prepare_config(
-                        cwd / "config/configuration_prod.yaml", config, args.mode
-                    )
-                    env.update(
-                        CONFIG_FILE=str(config),
-                        ENV_FILE=str(cwd / "config/.env"),
-                        FRED_LOCAL_DELEGATION_FILE=str(
-                            cwd / "config/.delegation.local.json"
-                        )
-                        if (cwd / "config/.delegation.local.json").exists()
-                        else "",
-                    )
-                    if role == "api":
-                        command = [
-                            "make",
-                            "rrun",
-                            f"CONFIG_FILE={config}",
-                            f"PORT={port}",
-                        ]
-                    else:
-                        package = app.replace("-", "_")
-                        env["KF_WORKER_METRICS_PORT"] = "9112"
-                        env["PATH"] = str(cwd / ".venv/bin") + os.pathsep + env["PATH"]
-                        command = [
-                            str(cwd / ".venv/bin/python"),
-                            "-m",
-                            f"{package}.main_worker",
-                        ]
+                if config:
+                    copy = Path(config_dir) / f"{name}.yaml"
+                    prepare_config(cwd / "config" / config, copy, args.mode)
+                    # The process environment takes precedence over config/.env.
+                    env["CONFIG_FILE"] = str(copy)
+                command = ["make", target]
                 output = (
                     stack.enter_context(
                         os.fdopen(
@@ -247,7 +214,7 @@ def main() -> int:
                 flush=True,
             )
             print(
-                "Fred UI: http://localhost:9583 — Ctrl+C stops this session", flush=True
+                "Fred UI: http://localhost:5173 — Ctrl+C stops this session", flush=True
             )
             while not stopping:
                 for name, process in zip((item[0] for item in selected), processes):

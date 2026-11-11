@@ -33,6 +33,9 @@ Instead of `make run`, start each component in its own terminal
 (`make -C /path/to/fred/apps/<component> run`), or ask your coding assistant to start Fred.
 `docker-prepare` lists both. Then open <http://localhost:5173>.
 
+To explore the logs in Grafana instead: `make fred-json FRED_CHECKOUT=/path/to/fred`, then open
+<http://localhost:3002/d/fred-local-logs/fred-logs> ([details](docker/README.md#local-structured-logs)).
+
 Swift, in support: `make docker-swift-up`, then `make run` in the Swift checkout.
 
 Stop the application processes before switching. Weaver to Swift: `make docker-down`, then

@@ -542,22 +542,23 @@ still requires a canary in Cloud Logging.
 
 ### Switch Fred between terminal and Grafana
 
-From deployment-factory, with Fred dependencies and per-app `.env` files prepared:
+From deployment-factory, with a Fred Weaver checkout prepared by `make docker-prepare`:
 
 ```bash
-make fred-json FRED_CHECKOUT=../fred-wt-sl-output
+make fred-json FRED_CHECKOUT=/path/to/fred   # starts Loki/Alloy/Grafana, then Fred
 # Ctrl+C stops all six Fred processes; collectors stay running.
-make fred-text FRED_CHECKOUT=../fred-wt-sl-output
+make fred-text FRED_CHECKOUT=/path/to/fred   # the same processes, readable logs in this terminal
 ```
 
-From another terminal, `make fred-stop` stops only the recorded launcher session.
-The launcher checks for an existing session and refuses to replace it silently.
-It uses temporary copies of `configuration_prod.yaml`, selecting only the log mode
-and local inter-service URLs for Knowledge Flow and Control Plane. Tracked
-configurations and `.env` files are untouched. API reloads watch the source packages.
-The launcher uses these ports: Control Plane 9661, Knowledge Flow 9331, Fred Agents 8000 and
-frontend 9583; the frontend proxies all three APIs. Workers use existing installed
-Python environments directly, avoiding repeated model downloads.
-JSON mode writes append-only component log files; text mode prints to the terminal.
-The session record is `FRED_LOG_DIR/session.json`. Only one launcher session may use
-a log directory. Existing API processes must be stopped before starting this session.
+It starts what `make -C /path/to/fred run` starts, with the same commands and ports:
+Control Plane (8222), Knowledge Flow API (8111) and worker, Fred Agents API (8000)
+and capability worker, frontend (<http://localhost:5173>). The only difference is
+`app.log_format`, set in a temporary copy of each configuration; tracked
+configurations and `.env` files are untouched. JSON mode appends one log file per
+component to `FRED_LOG_DIR` (default `/tmp/fred-structured-logs`), the directory
+Alloy reads; text mode prints to the terminal.
+
+Logs: <http://localhost:3002/d/fred-local-logs/fred-logs> (user `admin`, the local
+password `Azerty123_`). From another terminal, `make fred-stop` stops only the
+recorded launcher session. The launcher refuses to start while a Fred port is
+occupied or another session owns the log directory.
