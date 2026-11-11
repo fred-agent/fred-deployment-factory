@@ -1,5 +1,5 @@
-<!-- TODO: Rajouter l'histoire du .env pour templatiser les déploiements  -->
-<!-- TODO: Rajouter Kube dashboard dans le kubernetes -->
+<!-- TODO: describe how .env templates the deployments -->
+<!-- TODO: add the Kubernetes dashboard to the kubernetes setup -->
 # Deployment factory for Fred using Docker Compose
 
 The `deployment-factory` repository provides the Docker Compose based deployment setup for the `fred-agent` projects ecosystem. It serves as a centralized environment to orchestrate and run the common infrastructure services required by the other `fred-agent` projects.
