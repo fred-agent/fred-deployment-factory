@@ -90,13 +90,14 @@ services:
           --user "$$POSTGRES_OPENFGA_USER" \
           --password "$$POSTGRES_OPENFGA_PASSWORD" \
           --database "$$POSTGRES_OPENFGA_DBNAME"
+        fi
+        # fred-agent-evaluator runs against both Swift and Weaver.
         create_env.sh \
           --admin "$$POSTGRES_ADMIN_USER" \
           --host "app-postgres" \
           --user "$$POSTGRES_EVALUATION_USER" \
           --password "$$POSTGRES_EVALUATION_PASSWORD" \
           --database "$$POSTGRES_EVALUATION_DB"
-        fi
         create_env.sh \
           --admin "$$POSTGRES_ADMIN_USER" \
           --host "app-postgres" \

@@ -32,7 +32,7 @@ on k3d:
 
 | Service | What Weaver gets |
 | --- | --- |
-| PostgreSQL `:5432` | The empty database `fred_weaver`. Its roles and schemas are Fred's `deploy/postgres/bootstrap.sql` |
+| PostgreSQL `:5432` | The empty database `fred_weaver`. Its roles and schemas are Fred's `deploy/postgres/bootstrap.sql`. Also `evaluation` for fred-agent-evaluator |
 | Keycloak `:8080` | Realm `app`, the clients `app`, `agentic`, `knowledge-flow`, `control-plane`, `knowledge-flow-worker` and the delegation client `fred-delegation` |
 | SeaweedFS `:8333` | The documents bucket `app-content-documents` |
 | OpenSearch `:9200` | Security initialized; Fred creates its indexes and search pipeline |
@@ -334,7 +334,8 @@ applications require a separate `make k3d-app` command. A fresh installation beg
 with an empty Keycloak realm (self-registration enabled), PostgreSQL and Temporal.
 Docker preserves shared authentication across data-stack switches; each data stack
 has its own PostgreSQL container and persistent volumes. Swift keeps its existing
-databases and OpenFGA; Weaver gets the empty `fred_weaver` database.
+databases and OpenFGA; Weaver gets the empty `fred_weaver` database. Both get the
+`evaluation` database of fred-agent-evaluator.
 Neither creates business data. There are no demo users, no Keycloak groups and no app roles baked in by either
 backend. The imported Keycloak realm template never carries team groups, and no
 script in this repo ever creates a Keycloak group.
