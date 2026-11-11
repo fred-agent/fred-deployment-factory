@@ -212,9 +212,17 @@ The Keycloak post-install script is idempotent and enforces:
   `query-users`/`view-users` (plus `manage-users` for `control-plane` always, and for
   `knowledge-flow` when `KEYCLOAK_KF_ENABLE_MANAGE_USERS=true`); every one of the four service
   accounts, including `fred-evaluation-worker`, gets `app:service_agent` (the evaluation worker
-  gets `service_agent` only, no `realm-management` role - least privilege, RFC EVAL-AUTH). No
+  gets no `realm-management` role - least privilege, RFC EVAL-AUTH). No
   group-scoped role (`query-groups`/`view-groups`) is ever granted - no app calls a Keycloak
   group-admin API (Fred is the sole authorization source).
+- trusted delegation: a `fred-delegation` client (issues no tokens) carries the
+  `delegation_caller` role. `agentic`, `knowledge-flow`, `control-plane`, and
+  `fred-evaluation-worker` hold it; the last three also get a scope mapping to `fred-delegation`.
+  Their service tokens therefore carry `resource_access.fred-delegation.roles: [delegation_caller]`
+  and `fred-delegation` in `aud`, so receivers accept them speaking for a person. The
+  evaluation worker uses this to call the agent pods' `POST /agents/evaluate` with its own
+  service token plus `?person=&run=&agent=`. This trusts the caller to assert an identity; it
+  grants no content permission.
 - client roles: only `app:service_agent` exists on the `app` client - the legacy
   `admin`/`editor`/`viewer` roles were removed from the tracked realm import entirely (AUTHZ-07);
   team and platform roles live in Fred, never as Keycloak app roles or groups

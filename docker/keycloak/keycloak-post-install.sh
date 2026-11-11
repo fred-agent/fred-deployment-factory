@@ -601,12 +601,14 @@ ensure_user_client_role "$kb_fred_webdav_service_user" app service_agent
 
 # fred-agents speaks for a person on every receiver. The Knowledge Flow API delegates the
 # authenticated person to the Control Plane, which delegates the admitted person back for
-# document search. This grants trust to assert identity, never a content permission.
+# document search. The evaluation worker calls POST /agents/evaluate on the agent pods
+# with its own service token plus ?person=&run=&agent=, speaking for the person who
+# launched the run. This grants trust to assert identity, never a content permission.
 ensure_delegation_client
 ensure_user_client_role "$agentic_service_user" fred-delegation delegation_caller
 delegation_uuid="$(client_uuid fred-delegation)"
 delegation_role="$(kc_http_request GET "/clients/${delegation_uuid}/roles/delegation_caller")"
-for caller in knowledge-flow control-plane; do
+for caller in knowledge-flow control-plane fred-evaluation-worker; do
   ensure_user_client_role "$(wait_for_service_account_username "$caller")" fred-delegation delegation_caller
   kc_http_request POST "/clients/$(client_uuid "$caller")/scope-mappings/clients/${delegation_uuid}" "[${delegation_role}]" >/dev/null
 done
