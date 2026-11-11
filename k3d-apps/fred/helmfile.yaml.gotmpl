@@ -16,11 +16,19 @@ environments:
 ---
 {{- $checkout := env "DIR" }}
 {{- $version := env "RELEASE" | default .Values.pinned }}
+{{- $preparation := false }}
 {{- if and $checkout (not (isFile (printf "%s/%s" $checkout .Values.checkoutMarker))) }}
 {{- fail (printf "DIR=%s is not a checkout of Fred %s (it has no %s)" $checkout .Environment.Name .Values.checkoutMarker) }}
 {{- end }}
 {{- if not (or $checkout $version) }}
 {{- fail (printf "FRED=%s has no published release yet: use DIR=/path/to/%s/fred" .Environment.Name .Environment.Name) }}
+{{- end }}
+{{- if and (eq .Environment.Name "swift") $checkout }}
+{{- $chartValues := readFile (printf "%s/deploy/charts/fred/values.yaml" $checkout) }}
+{{- $preparation = regexMatch "(?m)^  fred-agents-preparation-worker:" $chartValues }}
+{{- end }}
+{{- if and (eq (env "K3D_PPT_PREPARATION") "true") (not $preparation) }}
+{{- fail "K3D_PPT_PREPARATION=true requires FRED=swift and a Fred checkout with the preparation worker" }}
 {{- end }}
 helmDefaults:
   kubeContext: k3d-fred
@@ -40,8 +48,21 @@ releases:
     {{- end }}
     values:
       - values-{{ .Environment.Name }}.yaml
+      {{- if $preparation }}
+      - preparation.yaml.gotmpl
+      {{- end }}
       {{- with env "K3D_IMAGE_VALUES" }}
       - {{ . | quote }}
+      {{- end }}
+      {{- if and (eq .Environment.Name "swift") (not $checkout) (ne (env "K3D_PYMUPDF") "false") }}
+      - pymupdf.yaml
+      - applications:
+          knowledge-flow-backend:
+            image:
+              tag: "v{{ $version }}"
+          knowledge-flow-worker:
+            image:
+              tag: "v{{ $version }}"
       {{- end }}
     hooks:
       # The model keys are the operator's, created before deploying, as in production

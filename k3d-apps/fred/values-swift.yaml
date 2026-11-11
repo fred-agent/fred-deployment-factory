@@ -83,6 +83,9 @@ x-observability: &observability
   kpi:
     prometheus:
       address: "0.0.0.0"
+    # The older local index has a mapping incompatible with current KPI fields.
+    opensearch:
+      index: kpi-index-v3-10
 
 # ── posture: trust the node's CA bundle ──────────────────────────────────────
 # The apps that call a model API trust the CAs of the k3d node they run on:
@@ -297,6 +300,7 @@ registrations:
 applications:
 
   # ===========================================================================
+  # Checkout charts with capability preparation also load preparation.yaml.gotmpl.
   fred-agents:
     migration:
       enabled: true                        # posture

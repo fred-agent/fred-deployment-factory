@@ -74,6 +74,16 @@ secret created once:
 `kubectl --context k3d-fred -n fred-swift create secret generic fred-model-credentials --from-file=OPENAI_API_KEY=/path/to/key-file`.
 Open <http://weaver.localhost:8088> or <http://swift.localhost:8088>.
 
+A Swift checkout that includes capability preparation starts the separate
+`fred-agents-preparation-worker` Deployment, with PPT Builder still on its legacy
+path. After following the backfill procedure in Fred's
+[`reusable-capability-preparation.md`](https://github.com/ThalesGroup/fred/blob/swift/docs/swift/ops/migrations/reusable-capability-preparation.md),
+enable the cutover with:
+
+```bash
+K3D_PPT_PREPARATION=true make k3d-app FRED=swift APP=fred DIR=/path/to/swift/fred
+```
+
 | I want to | Run |
 | --- | --- |
 | Redeploy Fred | The same `make k3d-app` again |

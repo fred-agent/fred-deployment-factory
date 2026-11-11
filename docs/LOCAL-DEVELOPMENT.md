@@ -183,6 +183,11 @@ the selected application, using the last build's image references when available
 proves that builds or user journeys work. `make k3d-app` builds the selected checkout.
 `make k3d-wipe` removes the cluster and this checkout's generated application cache.
 
+Swift's published Fred release uses the PyMuPDF Knowledge Flow image and processors by
+default. Set `K3D_PYMUPDF=false` for the standard published image. A Swift checkout
+uses its own built Knowledge Flow image; its preparation worker is configured separately.
+Weaver keeps its own Knowledge Flow configuration.
+
 ### Prepare k3d for Fred integration tests
 
 Run the harness from the **Fred checkout**, after deploying the applications and
