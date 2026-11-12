@@ -94,11 +94,9 @@ class DockerEnvironmentTests(unittest.TestCase):
                     command.write_text('''#!/usr/bin/env python3
 import json, os, sys
 from pathlib import Path
+sql = sys.stdin.read() if Path(sys.argv[0]).name == "psql" else ""
 with open(os.environ["CALLS"], "a") as output:
-    output.write(json.dumps([Path(sys.argv[0]).name, *sys.argv[1:]]) + "\\n")
-if Path(sys.argv[0]).name == "psql":
-    sql = sys.stdin.read()
-    assert "CREATE DATABASE %I" in sql and "REVOKE ALL" in sql
+    output.write(json.dumps([Path(sys.argv[0]).name, *sys.argv[1:], sql]) + "\\n")
 ''')
                     command.chmod(0o755)
                 calls = directory / "calls.jsonl"
@@ -111,12 +109,17 @@ if Path(sys.argv[0]).name == "psql":
                 )
                 commands = [json.loads(line) for line in calls.read_text().splitlines()]
                 databases = {c[c.index("--database") + 1] for c in commands if c[0] == "create_env.sh"}
-                common = {"langfuse", "temporal", "temporal_visibility"}
-                self.assertEqual(databases, common if variant == "weaver" else common | {"fred", "data", "openfga", "evaluation"})
+                common = {"evaluation", "langfuse", "temporal", "temporal_visibility"}
+                self.assertEqual(databases, common if variant == "weaver" else common | {"fred", "data", "openfga"})
                 sql = [c for c in commands if c[0] == "psql"]
+                schema = sql.pop()
+                self.assertIn("evaluation", schema)
+                self.assertIn("CREATE SCHEMA IF NOT EXISTS evaluation", schema[-1])
                 self.assertEqual(len(sql), int(variant == "weaver"))
                 if sql:
                     self.assertIn("database=fred_weaver", sql[0])
+                    self.assertIn("CREATE DATABASE %I", sql[0][-1])
+                    self.assertIn("REVOKE ALL", sql[0][-1])
 
     def test_weaver_preserves_internal_dns_aliases(self):
         for project, config in self.configs["weaver"].items():
