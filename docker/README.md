@@ -37,13 +37,12 @@ Run from the repository root, after stopping the application processes from the
 checkout you are leaving:
 
 ```bash
-make docker-down               # leave Weaver; preserve its data
 make docker-swift-up           # stop Weaver data containers, create/start Swift
 # Or: make docker-swift-up STACK=extended
 make docker-swift-env          # usual endpoints, selected data profile
-make docker-swift-stop         # stop Swift data; keep containers and volumes
 make docker-start              # stop Swift data and resume existing Weaver data
 make docker-swift-start        # stop Weaver data and resume existing Swift data
+make docker-stop               # stop Swift, Weaver and Keycloak; keep everything
 ```
 
 Weaver is the default; Swift is in support. Use `docker-up` or `docker-swift-up` the
@@ -118,10 +117,11 @@ Swift, `fred_weaver` for Weaver). Keycloak remains at
 unchanged, including frontend `5173`. No Weaver-specific proxy targets or CORS
 ports are needed.
 
-`make docker-down` removes Weaver's data containers but keeps their volumes.
-`make docker-wipe` deletes Weaver's data containers and volumes. The `docker-swift-*`
-commands affect Swift data in the same way. These commands leave shared Keycloak,
-its database and the shared network intact. The existing checkpoint commands
+`make docker-stop` stops Swift, Weaver and shared Keycloak and deletes nothing.
+`make docker-wipe` (Swift: `docker-swift-wipe`) stops them too, then deletes that
+stack's data containers and volumes; Keycloak's accounts and the shared network stay.
+Only `make docker-wipe-auth` deletes Keycloak and its database, for both stacks; the next
+`docker-up` imports an empty realm. The existing checkpoint commands
 support Swift's data volumes only (`DOCKER_ENV=swift`); they do not back up or restore shared authentication.
 
 To inspect a project or run the focused offline command/configuration tests:
@@ -544,7 +544,7 @@ Useful queries:
 ```
 
 `make logging-down` stops collection without deleting stored logs. The extended
-Docker stack includes logging; the ordinary stop/down/wipe commands handle it too.
+Docker stack includes logging; the ordinary stop and wipe commands handle it too.
 This validates local output and field queries; GKE timestamp/severity promotion
 still requires a canary in Cloud Logging.
 

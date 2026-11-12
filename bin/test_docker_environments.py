@@ -179,7 +179,7 @@ with open(os.environ["CALLS"], "a") as output:
             with self.subTest(variant=variant):
                 commands = make("-sn", "docker-up", f"DOCKER_ENV={variant}")
                 auth = commands.index("bash docker/keycloak/up-shared.sh")
-                stop = commands.index(f"make DOCKER_ENV={other} docker-stop")
+                stop = commands.index(f"make DOCKER_ENV={other} docker-data-stop")
                 start = commands.index(f"-p {prefix}postgres up -d --wait postgres")
                 self.assertLess(auth, stop)
                 self.assertLess(stop, start)
@@ -187,7 +187,7 @@ with open(os.environ["CALLS"], "a") as output:
                 self.assertIn('OPENFGA_URL="http://localhost:9080"', commands)
                 self.assertNotIn("weaver-app-keycloak", commands)
 
-    def test_two_make_commands_switch_in_both_directions_without_deleting_data(self):
+    def test_one_make_command_switches_in_both_directions_without_deleting_data(self):
         with tempfile.TemporaryDirectory() as tmp:
             directory = Path(tmp)
             docker = directory / "docker"
@@ -215,17 +215,16 @@ esac
             calls = directory / "calls.jsonl"
             env = {"PATH": f"{directory}:{os.environ['PATH']}", "CALLS": str(calls)}
             config = ("DOCKER_ENV_FILE=docker/.env.template", "DOCKER_SHARED_ENV_FILE=docker/.env.template")
-            for down, up, prefix in (("docker-swift-down", "docker-up", "weaver-"),
-                                      ("docker-down", "docker-swift-up", "")):
+            for up, prefix, other in (("docker-up", "weaver-", ""), ("docker-swift-up", "", "weaver-")):
                 with self.subTest(up=up):
                     calls.write_text("")
-                    make("-s", down, *config, env_overrides=env)
                     make("-s", up, *config, env_overrides=env)
                     commands = [json.loads(line) for line in calls.read_text().splitlines()]
                     compose = [c for c in commands if c[0] == "compose"]
-                    removed = [c[c.index("-p") + 1] for c in compose if "down" in c]
-                    self.assertTrue(removed)
-                    self.assertNotIn("keycloak", removed)
+                    self.assertFalse([c for c in compose if "down" in c])
+                    stopped = [c[c.index("-p") + 1] for c in compose if c[-1] == "stop"]
+                    self.assertIn(f"{other}postgres", stopped)
+                    self.assertNotIn("keycloak", stopped)
                     for command in commands:
                         self.assertNotIn("-v", command)
                         self.assertNotIn("--rmi", command)
@@ -275,22 +274,62 @@ printf '%s\\n' "$*" >> "$CALLS"
                         self.assertEqual([line.split()[-1] for line in calls.read_text().splitlines()],
                                          ["setup-env", "docker-prepare"])
 
-    def test_stop_down_and_wipe_leave_shared_authentication_alone(self):
-        for variant, prefix in (("swift", ""), ("weaver", "weaver-")):
-            for action in ("stop", "down", "wipe", "destroy"):
-                with self.subTest(variant=variant, action=action):
-                    commands = make("-sn", f"docker-{action}", f"DOCKER_ENV={variant}")
-                    projects = re.findall(r" -p (\S+)", commands)
-                    self.assertTrue(projects)
-                    if action == "stop":
-                        self.assertIn(f"-p {prefix}$project stop", commands)
-                        self.assertNotIn("for project in postgres keycloak", commands)
-                    else:
-                        self.assertTrue(set(projects) <= {f"{prefix}{name}" for name in PROJECTS if name != "keycloak"})
-                    self.assertNotIn("keycloak", projects)
-                    self.assertNotIn("weaver-keycloak", projects)
-                    self.assertNotIn("docker network rm", commands)
-                    self.assertNotIn("up-shared.sh", commands)
+    def test_stop_stops_both_stacks_and_keycloak_and_deletes_nothing(self):
+        for variant in ("swift", "weaver"):
+            with self.subTest(variant=variant):
+                commands = make("-sn", "docker-stop", f"DOCKER_ENV={variant}")
+                self.assertIn("-p $project stop", commands)
+                self.assertIn("-p weaver-$project stop", commands)
+                self.assertTrue(commands.rstrip().endswith("-p keycloak stop"))
+                self.assertNotIn("for project in postgres keycloak", commands)
+                self.assertNotIn(" down", commands)
+                self.assertNotIn("up-shared.sh", commands)
+
+    def test_wipe_stops_everything_then_deletes_only_the_selected_data(self):
+        for target, prefix in (("docker-swift-wipe", ""), ("docker-wipe", "weaver-")):
+            with self.subTest(target=target):
+                commands = make("-sn", target)
+                stop = commands.index("-p keycloak stop")
+                deleted = re.findall(r" -p (\S+) down -v", commands)
+                self.assertIn(f"{prefix}postgres", deleted)
+                self.assertEqual(set(deleted), {f"{prefix}{name}" for name in PROJECTS
+                                                if name != "keycloak" and (prefix == "" or name != "openfga")})
+                self.assertLess(stop, commands.index(" down -v"))
+                self.assertNotIn("-p keycloak down", commands)
+                self.assertNotIn("docker network rm", commands)
+
+    def test_only_wipe_auth_deletes_keycloak(self):
+        commands = make("-sn", "docker-wipe-auth").strip().splitlines()
+        self.assertTrue(commands[-1].endswith("-f docker/docker-compose-keycloak.yml -p keycloak down -v"))
+        self.assertEqual(len(re.findall(r" -p ", "\n".join(commands))), 1)
+
+    def test_retired_commands_name_their_replacement(self):
+        for target, replacement in (("docker-down", "make docker-stop"), ("docker-swift-down", "make docker-stop"),
+                                    ("docker-swift-stop", "make docker-stop"), ("docker-destroy", "make docker-wipe")):
+            with self.subTest(target=target):
+                result = subprocess.run(["make", "--no-print-directory", target], cwd=ROOT,
+                                        text=True, capture_output=True)
+                self.assertEqual(result.returncode, 2)
+                self.assertIn(replacement, result.stderr)
+
+    def test_k3d_up_names_docker_containers_holding_its_ports(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp)
+            for name, body in (("k3d", "exit 1"), ("docker", '''case "$*" in
+  *publish=8080*) echo app-keycloak ;;
+  *publish=8088*) echo k3d-fred-serverlb ;;
+esac''')):
+                (directory / name).write_text(f"#!/bin/sh\n{body}\n")
+                (directory / name).chmod(0o755)
+            env = {k: v for k, v in os.environ.items() if k not in ("FRED", "MAKEFLAGS", "MAKELEVEL")}
+            result = subprocess.run(
+                ["make", "--no-print-directory", "k3d-up"], cwd=ROOT,
+                env={**env, "PATH": f"{directory}:{os.environ['PATH']}"},
+                text=True, capture_output=True,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("ports of the cluster: 8080 (app-keycloak).", result.stderr)
+            self.assertIn("make docker-stop", result.stderr)
 
     def test_resume_starts_only_weaver_persistent_containers(self):
         with tempfile.TemporaryDirectory(prefix="compose commands ") as tmp:

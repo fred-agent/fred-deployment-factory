@@ -21,8 +21,8 @@ other (`make k3d-stop`, `make docker-stop`).
 
 ```bash
 make docker-up                  # Weaver infrastructure
-make docker-down                # leave Weaver; keep its data and shared Keycloak
 make docker-swift-up            # Swift infrastructure (support), including OpenFGA; same ports, separate data
+make docker-stop                # stop Swift, Weaver and Keycloak; keep everything
 # Add STACK=extended for Prometheus, Grafana, ClickHouse and Langfuse
 ```
 
@@ -63,13 +63,13 @@ out and sign in again. The script is idempotent.
 Pausing and resuming (a reboot, or closing the laptop for the day):
 
 ```bash
-make docker-stop     # stop Weaver containers, keep them
-make docker-start    # resume them, in dependency order
+make docker-stop     # stop Swift, Weaver and Keycloak; keep their containers
+make docker-start    # resume Weaver and Keycloak, in dependency order
 ```
 
 `docker-start` resumes the existing data containers without rerunning their
-post-install jobs. Shared Keycloak and its dedicated database are kept across
-stops and switches. Use `docker-up`
+post-install jobs. A switch between Swift and Weaver keeps Keycloak running;
+`docker-stop` and `docker-wipe` stop it. Use `docker-up`
 only to build the stack from nothing. Services carry `restart: unless-stopped`,
 so after a host reboot they come back on their own — unless you stopped them
 with `docker-stop`, which is remembered.
@@ -77,13 +77,13 @@ with `docker-stop`, which is remembered.
 Cleanup:
 
 ```bash
-make docker-down       # remove Weaver containers; keep data and shared authentication
-make docker-wipe       # delete only Weaver data containers and volumes
+make docker-wipe       # docker-stop, then delete Weaver's data; Keycloak accounts kept
+make docker-wipe-auth  # delete Keycloak and every account, for Swift and Weaver
 ```
 
 Weaver is installed from scratch only: after a Fred schema change, `make docker-wipe`,
 then `make docker-up` and `make docker-prepare` again. Ordinary switches require no wipe.
-Switch to Swift with `make docker-down`, then `make docker-swift-up`.
+Switch to Swift with `make docker-swift-up`; back to Weaver with `make docker-up`.
 See [Docker data boundaries](../docker/README.md#switch-between-swift-and-weaver).
 
 Extended-profile endpoints: Prometheus `:9090`, Grafana `:3002`, ClickHouse `:8123/play`,

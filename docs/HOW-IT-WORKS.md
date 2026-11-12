@@ -87,6 +87,11 @@ token and its own administrators. `make k3d-app` prints the token command when i
 in cluster `fred`, so create your model keys again afterward. It does not delete your Git
 checkouts, Docker Compose volumes or another cluster.
 
+On Docker Compose, Keycloak serves Swift and Weaver alike, so the wipes are split.
+`make docker-wipe` (Swift: `docker-swift-wipe`) stops everything, then deletes one stack's
+data: conversations, documents, S3 objects, indexes. Accounts live in Keycloak and survive it.
+`make docker-wipe-auth` deletes Keycloak and every account, for both stacks.
+
 A cluster from before this layout is not upgraded: `make k3d-up` refuses one with a namespace
 `fred`, and Helm refuses to adopt namespaces it did not create.
 
@@ -95,5 +100,5 @@ A cluster from before this layout is not upgraded: `make k3d-up` refuses one wit
 This repository contains no GKE/GCP deployment. Docker Compose is a separate debug loop for
 Weaver by default, Swift in support, run on the host from separate checkouts (README,
 "Docker Compose"; `make docker-prepare` for Weaver); it does not select a k3d configuration.
-Switch data with `make docker-down`, then `make docker-swift-up`; Keycloak stays shared and
+Switch data with `make docker-swift-up` or `make docker-up`; Keycloak stays shared and
 application data stays separate.

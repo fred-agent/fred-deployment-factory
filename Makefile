@@ -38,6 +38,8 @@ export $(filter-out DOCKER_ENV_FILE,$(filter DOCKER_%,$(.VARIABLES)))
 unexport DOCKER_ENV_FILE
 DOCKER_COMPOSE_BASE := docker compose --env-file "$(DOCKER_ENV_FILE)" -f docker/docker-compose-
 DOCKER_SHARED_COMPOSE_BASE := docker compose --env-file "$(DOCKER_SHARED_ENV_FILE)" -f docker/docker-compose-
+# Shared Keycloak, as docker/keycloak/up-shared.sh starts it.
+DOCKER_AUTH := DOCKER_CONTAINER_PREFIX= DOCKER_NETWORK_NAME=fred-shared-network $(DOCKER_SHARED_COMPOSE_BASE)keycloak.yml -p keycloak
 
 # Both environments use the same endpoints; their data is selected at launch.
 DOCKER_KEYCLOAK_URL := http://localhost:8080
@@ -82,8 +84,9 @@ ifeq ($(USE_ZABBIX),true)
 DOCKER_UP_SERVICES += zabbix-up
 endif
 
-# Application data projects. Shared Keycloak has its own persistent PostgreSQL
-# and remains running when either application's data stack is stopped or wiped.
+# Application data projects. Shared Keycloak has its own persistent PostgreSQL:
+# a switch between Swift and Weaver keeps it running; docker-stop and docker-wipe
+# stop it; only docker-wipe-auth deletes it.
 DOCKER_REST_PROJECTS_BASE := seaweedfs opensearch temporal
 ifeq ($(DOCKER_ENV),swift)
 DOCKER_REST_PROJECTS_BASE += openfga
@@ -98,7 +101,7 @@ ifeq ($(USE_ZABBIX),true)
 DOCKER_REST_PROJECTS += zabbix
 endif
 
-# `docker-stop` ignores STACK and stops every project, mirroring `all-down`:
+# `docker-data-stop` ignores STACK and stops every project, mirroring `all-down`:
 # stopping something that is already stopped is free, and a half-stopped stack
 # is worse than an over-stopped one.
 DOCKER_ALL_PROJECTS := postgres $(DOCKER_REST_PROJECTS_BASE) $(DOCKER_REST_PROJECTS_EXTENDED) zabbix
@@ -115,6 +118,12 @@ K3D_CA_VOLUMES := $(if $(K3D_CA_BUNDLE),--volume $(K3D_CA_BUNDLE):/etc/ssl/certs
 K3D_VALUES := $(addprefix --values ,$(abspath $(VALUES)))
 
 k3d-up: ## Create the cluster if needed and prepare the infrastructure for every Fred release line; no application deployment
+	@busy=$$(for port in $$(sed -n 's/.*port: "\([0-9]*\):.*/\1/p' k3d/cluster.yaml); do \
+	  docker ps --filter "publish=$$port" --format '{{.Names}}' | grep -v '^k3d-fred-' | sed "s/.*/$$port (&)/"; done); \
+	if [ -n "$$busy" ]; then \
+	  echo "Other Docker containers already publish ports of the cluster: $$(echo $$busy)." >&2; \
+	  echo 'Docker Compose uses the same ports: make docker-stop, then make k3d-up.' >&2; exit 1; \
+	fi
 	@if k3d cluster get fred >/dev/null 2>&1; then k3d cluster start fred; else k3d cluster create --config k3d/cluster.yaml $(K3D_CA_VOLUMES); fi
 	@if $(K3D_KUBECTL) get namespace fred >/dev/null 2>&1; then \
 	  echo 'This cluster has the former layout (namespace fred), and its data cannot move to fred-infra. Save what you need, then make k3d-wipe and make k3d-up.' >&2; exit 1; \
@@ -187,19 +196,13 @@ docker-swift-up: ## Switch to Swift's data on the usual ports, keeping shared Ke
 docker-swift-start: ## Switch to and resume Swift containers and their existing data
 	@$(MAKE) DOCKER_ENV=swift docker-start
 
-docker-swift-stop: ## Stop Swift while keeping its containers and data
-	@$(MAKE) DOCKER_ENV=swift docker-stop
-
-docker-swift-down: ## Remove Swift containers, preserving its volumes
-	@$(MAKE) DOCKER_ENV=swift docker-down
-
-docker-swift-wipe: ## Delete only Swift containers and volumes
+docker-swift-wipe: ## docker-stop, then DELETE Swift's data; Keycloak accounts kept
 	@$(MAKE) DOCKER_ENV=swift docker-wipe
 
 docker-swift-env: ## Show Swift endpoints and browser DNS setup
 	@$(MAKE) DOCKER_ENV=swift docker-env
 
-.PHONY: docker-env docker-config docker-switch shared-env-setup docker-swift-up docker-swift-start docker-swift-stop docker-swift-down docker-swift-wipe docker-swift-env
+.PHONY: docker-env docker-config docker-switch shared-env-setup docker-swift-up docker-swift-start docker-swift-wipe docker-swift-env
 
 network-create:
 	@docker network inspect "$(DOCKER_NETWORK_NAME)" >/dev/null 2>&1 || \
@@ -214,7 +217,7 @@ shared-env-setup:
 # Initialize/migrate shared authentication before stopping the old data stack.
 # Migration may need the legacy Swift PostgreSQL just once to copy its realm.
 docker-switch: keycloak-up env-setup
-	@$(MAKE) DOCKER_ENV=$(if $(filter weaver,$(DOCKER_ENV)),swift,weaver) docker-stop
+	@$(MAKE) DOCKER_ENV=$(if $(filter weaver,$(DOCKER_ENV)),swift,weaver) docker-data-stop
 
 keycloak-post-install:
 	@echo "Running Keycloak post-install..."
@@ -405,17 +408,31 @@ docker-start: docker-switch ## Switch to and resume the existing data stack (no 
 			echo "Docker stack is up, but some services did not come back — see above."; fi; \
 		exit $$overall
 
-# Stop without deleting: the counterpart to `docker-start`. `docker-down`
-# removes the containers, which would force a full re-provision on the next
-# start; this keeps them so `docker-start` can resume them.
-docker-stop: env-setup ## Stop the selected data stack; keep its containers and shared authentication
+# Stop without deleting: Swift, Weaver and Keycloak. `docker-start` (or
+# `docker-swift-start`) resumes the same containers. Stopped containers stay
+# stopped after a reboot.
+docker-stop: shared-env-setup ## Stop everything Docker Compose runs (Swift, Weaver, Keycloak); delete nothing
+	@$(MAKE) DOCKER_ENV=swift docker-data-stop
+	@$(MAKE) DOCKER_ENV=weaver docker-data-stop
+	$(DOCKER_AUTH) stop
+
+# One data stack only: a switch between Swift and Weaver keeps Keycloak running.
+docker-data-stop: env-setup
 	@echo "Stopping Docker stack services (containers kept)..."
 	@for project in $(DOCKER_ALL_PROJECTS); do \
 		$(DOCKER_COMPOSE_BASE)$$project.yml -p $(DOCKER_PROJECT_PREFIX)$$project stop 2>/dev/null || true; \
 	done
 
-docker-down: all-down ## Remove the selected data containers; keep volumes and shared authentication
+# Retired commands fail with their replacement, as the k3d ones do.
+docker-down docker-swift-down docker-swift-stop:
+	@echo 'Removed command. Use make docker-stop: it stops everything and deletes nothing.' >&2
+	@exit 2
 
+docker-destroy:
+	@echo 'Removed command. Use make docker-wipe (data), then docker image prune if you want the disk space.' >&2
+	@exit 2
+
+# Removes the selected data containers, keeps volumes; used by checkpoint-save.
 all-down: env-setup
 	@echo "Stopping Docker stack services..."
 	$(DOCKER_COMPOSE_BASE)logging.yml -p $(DOCKER_PROJECT_PREFIX)logging down
@@ -432,7 +449,7 @@ endif
 	$(DOCKER_COMPOSE_BASE)seaweedfs.yml -p $(DOCKER_PROJECT_PREFIX)seaweedfs down
 	$(DOCKER_COMPOSE_BASE)postgres.yml -p $(DOCKER_PROJECT_PREFIX)postgres down
 
-docker-wipe: all-down ## Delete selected data containers and volumes; keep shared Keycloak and its database
+docker-wipe: docker-stop env-setup ## docker-stop, then DELETE Weaver's data (Swift's: docker-swift-wipe); Keycloak accounts kept
 	@echo -e "\n--- WIPE IN PROGRESS ---"
 	$(DOCKER_COMPOSE_BASE)logging.yml -p $(DOCKER_PROJECT_PREFIX)logging down -v
 	$(DOCKER_COMPOSE_BASE)zabbix.yml -p $(DOCKER_PROJECT_PREFIX)zabbix down -v --remove-orphans
@@ -449,22 +466,9 @@ endif
 	$(DOCKER_COMPOSE_BASE)postgres.yml -p $(DOCKER_PROJECT_PREFIX)postgres down -v
 	@echo -e "\n--- WIPE COMPLETE ---"
 
-docker-destroy: all-down ## Delete selected data containers/volumes and their images; keep shared authentication/network
-	@echo -e "\n--- destroy IN PROGRESS ---"
-	$(DOCKER_COMPOSE_BASE)logging.yml -p $(DOCKER_PROJECT_PREFIX)logging down -v --rmi all
-	$(DOCKER_COMPOSE_BASE)zabbix.yml -p $(DOCKER_PROJECT_PREFIX)zabbix down -v --rmi all --remove-orphans
-	$(DOCKER_COMPOSE_BASE)grafana.yml -p $(DOCKER_PROJECT_PREFIX)grafana down -v --rmi all
-	$(DOCKER_COMPOSE_BASE)prometheus.yml -p $(DOCKER_PROJECT_PREFIX)prometheus down -v --rmi all
-	$(DOCKER_COMPOSE_BASE)langfuse.yml -p $(DOCKER_PROJECT_PREFIX)langfuse down -v --rmi all
-	$(DOCKER_COMPOSE_BASE)temporal.yml -p $(DOCKER_PROJECT_PREFIX)temporal down -v --rmi all
-	$(DOCKER_COMPOSE_BASE)clickhouse.yml -p $(DOCKER_PROJECT_PREFIX)clickhouse down -v --rmi all
-	$(DOCKER_COMPOSE_BASE)opensearch.yml -p $(DOCKER_PROJECT_PREFIX)opensearch down -v --rmi all
-ifeq ($(DOCKER_ENV),swift)
-	$(DOCKER_COMPOSE_BASE)openfga.yml -p $(DOCKER_PROJECT_PREFIX)openfga down -v --rmi all
-endif
-	$(DOCKER_COMPOSE_BASE)seaweedfs.yml -p $(DOCKER_PROJECT_PREFIX)seaweedfs down -v --rmi all
-	$(DOCKER_COMPOSE_BASE)postgres.yml -p $(DOCKER_PROJECT_PREFIX)postgres down -v
-	@echo -e "\n--- destroy COMPLETE ---"
+# Separate from docker-wipe: Keycloak serves Swift and Weaver alike.
+docker-wipe-auth: shared-env-setup ## DELETE shared Keycloak and every account in it (Swift and Weaver); docker-up recreates an empty realm
+	$(DOCKER_AUTH) down -v
 
 keycloak-token-short: ## Local Docker: use browser 60s and agentic M2M 120s access tokens
 	$(DOCKER_KEYCLOAK_HELPER_ENV) bash local-testing/scripts/keycloak-token-lifetime.sh short
@@ -532,7 +536,7 @@ BRANCH ?= swift
 ecosystem-audit: ## Do the sibling checkouts agree on Fred's libraries? Branch, constraints, locks, npm: make ecosystem-audit [BRANCH=swift]
 	@bin/ecosystem-audit --branch "$(BRANCH)" --fetch
 
-.PHONY: docker-prepare fred-json fred-text fred-stop logging-up logging-down zabbix-up zabbix-provision-fred zabbix-down help network-create env-setup keycloak-post-install postgres-up keycloak-up seaweedfs-up opensearch-up clickhouse-up langfuse-up prometheus-up grafana-up temporal-up preflight-check docker-up docker-start docker-stop docker-down all-down docker-wipe docker-destroy checkpoint-save checkpoint-restore docker-restart-from-checkpoint checkpoint-list checkpoint-delete check-pure-infrastructure ecosystem-audit keycloak-token-short keycloak-token-normal keycloak-token-status
+.PHONY: docker-prepare fred-json fred-text fred-stop logging-up logging-down zabbix-up zabbix-provision-fred zabbix-down help network-create env-setup keycloak-post-install postgres-up keycloak-up seaweedfs-up opensearch-up clickhouse-up langfuse-up prometheus-up grafana-up temporal-up preflight-check docker-up docker-start docker-stop docker-data-stop docker-down docker-swift-down docker-swift-stop all-down docker-wipe docker-wipe-auth docker-destroy checkpoint-save checkpoint-restore docker-restart-from-checkpoint checkpoint-list checkpoint-delete check-pure-infrastructure ecosystem-audit keycloak-token-short keycloak-token-normal keycloak-token-status
 
 ##@ Optional ZITADEL identity-provider test
 ZITADEL_COMPOSE = docker compose --env-file docker/zitadel/.env -f docker/zitadel/compose.yaml -p fred-zitadel

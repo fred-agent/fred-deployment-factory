@@ -5,7 +5,8 @@ Run Fred on your machine, from this directory. Pick one:
 - **k3d**: Fred deployed as in production. Swift and Weaver side by side.
 - **Docker Compose**: Swift or Weaver, run from separate checkouts. The fast loop to debug.
 
-They use the same ports: run only one at a time.
+They use the same ports: run only one at a time (`make docker-stop` before k3d,
+`make k3d-stop` before Docker Compose).
 
 Once: install Docker (and for k3d: k3d, kubectl, Helm, Helmfile) and your checkout's build
 tools, add `127.0.0.1 keycloak app-keycloak swift.localhost weaver.localhost` to `/etc/hosts`,
@@ -38,17 +39,16 @@ To explore the logs in Grafana instead: `make fred-json FRED_CHECKOUT=/path/to/f
 
 Swift, in support: `make docker-swift-up`, then `make run` in the Swift checkout.
 
-Stop the application processes before switching. Weaver to Swift: `make docker-down`, then
-`make docker-swift-up`. Swift to Weaver: `make docker-swift-down`, then `make docker-up`.
-Each stack keeps its own PostgreSQL and persistent data; Keycloak and its database stay
-shared. Ports stay the same; switching requires no wipe.
-
 | I want to | Run |
 | --- | --- |
 | Restart Fred | `make -C /path/to/fred run` again |
 | Change or add a model key | Export it, then `make docker-prepare` again |
-| Pause / resume | `make docker-stop` / `make docker-start` |
-| **Reset Weaver data** | **`make docker-wipe`**, then `make docker-up` |
+| Switch between Weaver and Swift | Stop Fred, then `make docker-up` or `make docker-swift-up` |
+| Stop everything, delete nothing | `make docker-stop` |
+| Resume | `make docker-start` (Swift: `make docker-swift-start`) |
+| **Delete Weaver data**, keep accounts | **`make docker-wipe`**, then `make docker-up` |
+| **Delete Swift data**, keep accounts | **`make docker-swift-wipe`**, then `make docker-swift-up` |
+| **Delete all accounts** (both) | **`make docker-wipe-auth`**, then `make docker-up` |
 
 Optional Zabbix 7.0 LTS monitoring: `make docker-up USE_ZABBIX=true` (and
 `make docker-start USE_ZABBIX=true` after stopping), or `make zabbix-up` on an existing
