@@ -179,6 +179,12 @@ applications:
         user:
           realm_url: http://keycloak:8080/realms/app
       storage:
+        # address/secret: prepare the infrastructure HTTPS migration first.
+        history:
+          url: https://opensearch:9200
+          index: weaver-kpi
+          username: fred-analytics-reader
+          password_env_var: FRED_HISTORY_PASSWORD
         content:
           allow_insecure: true
           bucket: app-content-documents
@@ -194,6 +200,14 @@ applications:
         postgres:
           database: fred_weaver
     extraEnvVars:
+    - name: FRED_HISTORY_PASSWORD
+      valueFrom:
+        secretKeyRef:
+          name: fred-analytics-reader
+          key: password
+    # posture: rustls-native-certs loads this in addition to SSL_CERT_FILE below.
+    - name: SSL_CERT_DIR
+      value: /etc/fred/opensearch-ca
     - name: FRED_POSTGRES_PASSWORD
       valueFrom:
         secretKeyRef:
@@ -231,10 +245,16 @@ applications:
           key: manager-s3-secret
           name: fred-ingestion
     extraVolumeMounts:
+    - mountPath: /etc/fred/opensearch-ca
+      name: opensearch-http-ca
+      readOnly: true
     - mountPath: /etc/fred/node-ca/ca-certificates.crt
       name: node-ca
       readOnly: true
     extraVolumes:
+    - name: opensearch-http-ca
+      configMap:
+        name: opensearch-http-ca
     - hostPath:
         path: /etc/ssl/certs/ca-certificates.crt
         type: File

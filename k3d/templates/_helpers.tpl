@@ -67,3 +67,28 @@ without metrics or logs cannot be used to find problems. */ -}}
 {{- define "fred-stack.lineNamespace" -}}
 {{- printf "fred-%s" . -}}
 {{- end -}}
+
+{{/* The existing HTTP provisioning jobs share the server CA, never its private key. */}}
+{{- define "fred-stack.opensearchCurlTls" -}}
+{{- if .Values.opensearch.httpTls.existingSecret -}}
+--cacert /etc/opensearch-ca/ca.crt
+{{- else -}}
+-k
+{{- end -}}
+{{- end -}}
+
+{{- define "fred-stack.opensearchCaMount" -}}
+{{- if .Values.opensearch.httpTls.existingSecret -}}
+- name: opensearch-http-ca
+  mountPath: /etc/opensearch-ca
+  readOnly: true
+{{- end -}}
+{{- end -}}
+
+{{- define "fred-stack.opensearchCaVolume" -}}
+{{- if .Values.opensearch.httpTls.existingSecret -}}
+- name: opensearch-http-ca
+  configMap:
+    name: opensearch-http-ca
+{{- end -}}
+{{- end -}}

@@ -58,9 +58,13 @@ stack. Follow the [Zabbix Compose procedure](docker/README.md#optional-zabbix-70
 
 ```bash
 make k3d-up
+# Before Weaver: complete the HTTPS preparation linked below.
 make k3d-app FRED=weaver APP=fred DIR=/path/to/fred       # Weaver: your checkout, your exported keys
 make k3d-app FRED=swift APP=fred                          # Swift: the published release
 ```
+
+Before deploying Weaver, follow the [HTTPS history preparation](docs/LOCAL-DEVELOPMENT.md#weaver-analytics-history-over-https-k3d).
+On an existing shared instance, schedule its OpenSearch interruption first.
 
 Weaver initializes the demo organizations on Mistral. Choose another provider
 explicitly, with the keys it needs exported:
@@ -86,6 +90,7 @@ K3D_PPT_PREPARATION=true make k3d-app FRED=swift APP=fred DIR=/path/to/swift/fre
 
 | I want to | Run |
 | --- | --- |
+| Connect Weaver analytics history over verified HTTPS | Follow the [certificate and shared-service migration procedure](docs/LOCAL-DEVELOPMENT.md#weaver-analytics-history-over-https-k3d) before deploying the new Weaver values |
 | Redeploy Fred | The same `make k3d-app` again |
 | Pause / resume | `make k3d-stop` / `make k3d-start` |
 | Find out what is wrong | `make k3d-health` |

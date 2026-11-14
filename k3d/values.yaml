@@ -172,6 +172,12 @@ s3:
 
 # What the applications need on OpenSearch, beyond the administrator of `auth`.
 opensearch:
+  # Operator-owned Secret: tls.crt (chain), tls.key (PKCS#8), ca.crt (public).
+  # Opt in only during the shared-service maintenance window; see docs/LOCAL-DEVELOPMENT.md.
+  httpTls:
+    existingSecret: ""
+    caBundle: ""
+    trustLines: [weaver]
   # Global to the instance. Mirrors fred_knowledge.vector.opensearch_vector_store,
   # whose adapter uses an existing pipeline and creates a missing one.
   searchPipeline:
@@ -188,6 +194,15 @@ opensearch:
   # Each organization's corpus is its own index, `document-vectors-<organization_id>`,
   # created by the ingestion worker at the organization's first indexing.
   identities:
+    fred-analytics-reader:
+      requireHttpTls: true
+      # Generated once and reused with Helm lookup, as for the line bootstrap token.
+      credentialsSecret: {line: weaver, name: fred-analytics-reader, key: password}
+      role:
+        cluster_permissions: []
+        index_permissions:
+          - index_patterns: [weaver-kpi]
+            allowed_actions: ["indices:data/read/search*", "indices:admin/mappings/get"]
     fred-kf-ingestion:
       password: *opensearch-ingestion
       role:

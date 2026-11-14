@@ -1,0 +1,19 @@
+{{- if .Values.opensearch.httpTls.existingSecret }}
+{{- $ca := required "opensearch.httpTls.caBundle is required with existingSecret" .Values.opensearch.httpTls.caBundle }}
+{{- $namespaces := list .Release.Namespace }}
+{{- range .Values.opensearch.httpTls.trustLines }}
+{{- $namespaces = append $namespaces (include "fred-stack.lineNamespace" .) }}
+{{- end }}
+{{- range $namespaces }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: opensearch-http-ca
+  namespace: {{ . }}
+  labels:
+    {{- include "fred-stack.labels" $ | nindent 4 }}
+data:
+  ca.crt: {{ $ca | quote }}
+{{- end }}
+{{- end }}

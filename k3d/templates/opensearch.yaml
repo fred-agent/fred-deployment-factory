@@ -26,6 +26,10 @@ metadata:
     app.kubernetes.io/component: opensearch
 spec:
   replicas: 1
+  # One data volume, one node: a certificate change has a shared-service outage.
+  strategy:
+    type: Recreate
+    rollingUpdate: null
   selector:
     matchLabels:
       app.kubernetes.io/component: opensearch
@@ -37,6 +41,10 @@ spec:
         {{- include "fred-stack.selectorLabels" . | nindent 8 }}
     spec:
       enableServiceLinks: false
+      {{- if .Values.opensearch.httpTls.existingSecret }}
+      securityContext:
+        fsGroup: 1000
+      {{- end }}
       initContainers:
         - name: sysctl
           image: {{ .Values.images.alpine }}
@@ -50,6 +58,12 @@ spec:
           imagePullPolicy: {{ .Values.imagePullPolicy }}
           args:
             - -Ediscovery.type=single-node
+            {{- if .Values.opensearch.httpTls.existingSecret }}
+            # Override only the HTTPS server identity. Keep transport, admin DN and
+            # HTTP client-certificate trust from the existing demo configuration.
+            - -Eplugins.security.ssl.http.pemcert_filepath=http-tls/tls.crt
+            - -Eplugins.security.ssl.http.pemkey_filepath=http-tls/tls.key
+            {{- end }}
             # Disk watermarks in free space, as the kubelet's (Makefile, K3D_KUBELET_DISK_ARGS).
             # The defaults are percentages of the host disk: at 95% used, 47 GiB free on a
             # 1 TB laptop, OpenSearch blocked index creation and every Fred backend crashed.
@@ -76,7 +90,7 @@ spec:
               command:
                 - /bin/sh
                 - -ec
-                - curl --insecure -s https://localhost:9200/_cluster/health >/dev/null
+                - curl {{ if .Values.opensearch.httpTls.existingSecret }}--cacert /usr/share/opensearch/config/http-tls/ca.crt{{ else }}--insecure{{ end }} -sS https://localhost:9200/_cluster/health >/dev/null
             initialDelaySeconds: 30
             periodSeconds: 15
             timeoutSeconds: 5
@@ -86,15 +100,30 @@ spec:
               command:
                 - /bin/sh
                 - -ec
-                - curl --insecure -s https://localhost:9200/_cluster/health >/dev/null
+                - curl {{ if .Values.opensearch.httpTls.existingSecret }}--cacert /usr/share/opensearch/config/http-tls/ca.crt{{ else }}--insecure{{ end }} -sS https://localhost:9200/_cluster/health >/dev/null
             initialDelaySeconds: 60
             periodSeconds: 20
             timeoutSeconds: 5
             failureThreshold: 10
           volumeMounts:
+            {{- if .Values.opensearch.httpTls.existingSecret }}
+            - name: opensearch-http-tls
+              mountPath: /usr/share/opensearch/config/http-tls
+              readOnly: true
+            {{- end }}
             - name: opensearch-data
               mountPath: /usr/share/opensearch/data
       volumes:
+        {{- if .Values.opensearch.httpTls.existingSecret }}
+        - name: opensearch-http-tls
+          secret:
+            secretName: {{ .Values.opensearch.httpTls.existingSecret | quote }}
+            defaultMode: 0440
+            items:
+              - {key: tls.crt, path: tls.crt}
+              - {key: tls.key, path: tls.key}
+              - {key: ca.crt, path: ca.crt}
+        {{- end }}
         - name: opensearch-data
           persistentVolumeClaim:
             claimName: opensearch-data

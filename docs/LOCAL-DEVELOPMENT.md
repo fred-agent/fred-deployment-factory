@@ -449,3 +449,260 @@ audience, expiration and assigned roles were verified using Fred's installed JWT
 library. All three generated configs passed their JSON schemas and Fred provider
 validation. Offline tests cover required claims and exclusive delegation roles.
 The Fred PR #2863 local ZITADEL walkthrough was declared successful by the developer on 2026-10-01; no exported administrator self-test report is attached. Fresh Kubernetes acceptance remains separate.
+
+## Weaver analytics history over HTTPS (k3d)
+
+Configuration and migration procedure; authenticated UI acceptance is still required. The existing
+`POST /control-plane/v1/analytics/query` reader uses `storage.history`, the
+`fred-analytics-reader` Secret and `https://opensearch:9200/weaver-kpi`. Its OpenSearch
+role allows only search (including shard phases) and mapping reads on that concrete
+index. No cluster privileges, writes or producer credential enter Control Plane.
+The reader is provisioned only with the HTTPS override enabled; the unchanged
+legacy installation does not provision its credential through unverified TLS.
+User/organization authorization remains in Control Plane; no analytics API changes.
+
+### HTTP boundary and trust
+
+Only `plugins.security.ssl.http.pemcert_filepath` and `pemkey_filepath` are overridden
+with `-E` arguments. Transport certificates/settings, `admin_dn`, HTTP client-certificate
+CA trust (`root-ca.pem`), client authentication and the security index are preserved.
+In particular, the new HTTP server CA does not replace the CA that authenticates
+existing admin clients. An admin client must trust the new server CA when it connects
+to HTTPS, while continuing to present its existing certificate/key.
+
+The existing `create_self_certs.sh` is not used: it generates transport/admin material,
+lacks SANs and is not connected to this deployment. No `securityadmin.sh`, security
+index reset, volume recreation or general demo-security replacement is needed.
+The supported separation follows [OpenSearch 2.19 TLS configuration](https://docs.opensearch.org/2.19/security/configuration/tls/).
+
+The operator owns a persistent, versioned Secret in `fred-infra` with **only**
+`tls.crt` (server chain), `tls.key` (PKCS#8) and `ca.crt` (public server CA). Helm
+references its name; Helm never generates or rotates certificates. Public CA data
+alone goes into `opensearch-http-ca` ConfigMaps in `fred-infra` and `fred-weaver`.
+OpenSearch probes and the existing HTTP provisioning Jobs use this CA in TLS mode.
+Dashboards, Fluent Bit and existing Python transport policies are outside this lot.
+
+Control Plane retains `SSL_CERT_FILE=/etc/fred/node-ca/ca-certificates.crt` and adds
+`SSL_CERT_DIR=/etc/fred/opensearch-ca`. In the pinned Linux dependency chain
+(reqwest 0.13.5 `rustls` -> rustls-platform-verifier 0.7.1 -> rustls-native-certs 0.8.4),
+the loader reads **both** the file and the directory. Thus corporate/public trust
+stays present, and hostname/chain checks stay enabled. No Rust CA option is added.
+Recheck this property when upgrading those dependencies; a successful curl alone
+is not evidence that the Control Plane client accepts the certificate.
+
+### Prepare certificates locally (no cluster changes)
+
+Use a persistent operator directory outside Git, permissions 0700, with an offline
+backup of the CA key. Never put `ca.key` in a Secret, application mount or Helm values.
+The following is a one-time CA creation; it refuses to overwrite existing material:
+
+```bash
+umask 077
+certdir="$HOME/.local/share/fred/k3d/opensearch-http"
+mkdir -p "$certdir"
+test ! -e "$certdir/ca.key" && test ! -e "$certdir/ca.crt" || exit 1
+openssl req -x509 -newkey rsa:3072 -nodes -sha256 -days 3650 \
+  -keyout "$certdir/ca.key" -out "$certdir/ca.crt" \
+  -subj '/CN=Fred k3d OpenSearch HTTP CA' \
+  -addext 'basicConstraints=critical,CA:TRUE,pathlen:0' \
+  -addext 'keyUsage=critical,keyCertSign,cRLSign'
+```
+
+For initial issuance or explicit renewal, reuse that CA and choose a **new** directory
+and Secret name (for example `2026-11-13` / `opensearch-http-20261113`). Keep the previous
+version for rollback. CA expiry must extend beyond the leaf expiry:
+
+```bash
+umask 077
+certdir="$HOME/.local/share/fred/k3d/opensearch-http"
+leafdir="$certdir/2026-11-13"          # change for each issuance
+openssl x509 -in "$certdir/ca.crt" -noout -checkend 31536000
+mkdir "$leafdir"                     # deliberately fails if it exists
+cat > "$leafdir/extensions.cnf" <<'EXT'
+basicConstraints=critical,CA:FALSE
+keyUsage=critical,digitalSignature,keyEncipherment
+extendedKeyUsage=serverAuth
+subjectAltName=DNS:opensearch,DNS:opensearch.fred-infra,DNS:opensearch.fred-infra.svc,DNS:opensearch.fred-infra.svc.cluster.local,DNS:opensearch.fred-weaver,DNS:opensearch.fred-weaver.svc,DNS:opensearch.fred-weaver.svc.cluster.local,DNS:opensearch.fred-swift,DNS:opensearch.fred-swift.svc,DNS:opensearch.fred-swift.svc.cluster.local,DNS:localhost,IP:127.0.0.1,IP:::1
+EXT
+openssl req -new -newkey rsa:3072 -nodes -sha256 \
+  -keyout "$leafdir/tls.key" -out "$leafdir/server.csr" -subj '/CN=opensearch'
+openssl x509 -req -in "$leafdir/server.csr" -CA "$certdir/ca.crt" \
+  -CAkey "$certdir/ca.key" -set_serial "0x$(openssl rand -hex 16)" \
+  -out "$leafdir/server.crt" -days 365 -sha256 -extfile "$leafdir/extensions.cnf"
+cat "$leafdir/server.crt" "$certdir/ca.crt" > "$leafdir/tls.crt"
+cp "$certdir/ca.crt" "$leafdir/ca.crt"
+openssl verify -CAfile "$certdir/ca.crt" -purpose sslserver \
+  -verify_hostname opensearch "$leafdir/server.crt"
+openssl pkey -in "$leafdir/tls.key" -pubout | openssl sha256
+openssl x509 -in "$leafdir/server.crt" -pubkey -noout | openssl sha256
+```
+
+The two public-key hashes must match. SANs cover the short URL hostname, all three
+namespace service names and localhost for probes/port forwarding. ExternalName DNS
+resolution does not replace the original URL hostname during TLS verification.
+Add any genuinely used external DNS name before signing; do not disable name checks.
+
+Create a private operator values file (no private key, only public trust):
+
+```bash
+{
+  printf 'opensearch:\n  httpTls:\n    existingSecret: opensearch-http-20261113\n    caBundle: |\n'
+  sed 's/^/      /' "$certdir/ca.crt"
+} > "$certdir/http-tls.values.yaml"
+helm template fred-stack k3d -n fred-infra -f "$certdir/http-tls.values.yaml" >/dev/null
+helm template fred-app /path/to/fred/deploy/charts/fred -n fred-weaver \
+  -f k3d-apps/fred/values-weaver.yaml >/dev/null
+```
+
+Keep this values file with the installation and pass it to **every** future
+infrastructure upgrade. Omitting it reverts the HTTPS identity to the demo certificate.
+Render stdout may contain generated passwords: discard it or protect it; never paste
+it in logs. Offline `helm template` cannot exercise `lookup` and produces temporary
+passwords, not a manifest to apply. Use Helm upgrade/Helmfile sync for deployment.
+
+### Existing shared cluster: Dimi's deployment order
+
+1. Schedule a maintenance window for **both Swift and Weaver**. OpenSearch has one
+   replica and one PVC. `Recreate` stops the old pod before opening that data directory
+   in the replacement: HTTPS searches, ingestion, analytics and log/KPI delivery are
+   unavailable until recovery. Allow several minutes; actual duration is unmeasured.
+   Pause demo traffic and ingestion, let active turns finish. In-memory KPI queues may
+   lose events during the outage; do not promise replay. PostgreSQL, Keycloak and S3
+   need no restart. The later Control Plane deployment has its own restart window.
+2. Record Helm release revisions (`helm history fred-stack -n fred-infra`, `helm history
+   fred-app -n fred-weaver`, both with `--kube-context k3d-fred`), current values in a
+   protected file, pod image, existing config, and certificate fingerprints. Record
+   index UUIDs/document counts and current identity/role mappings using an authorized
+   administrator. Ensure the existing data/security-index backup is recoverable;
+   never replace those indexes to install a certificate. Check existing admin client
+   certificates and add the new public server CA to their client-side trust.
+3. Create the versioned server Secret; this alone does not restart anything:
+
+   ```bash
+   kubectl --context k3d-fred -n fred-infra create secret generic opensearch-http-20261113 \
+     --from-file=tls.crt="$leafdir/tls.crt" --from-file=tls.key="$leafdir/tls.key" \
+     --from-file=ca.crt="$leafdir/ca.crt"
+   ```
+
+4. During the window, run `make k3d-up VALUES="$certdir/http-tls.values.yaml"` (include
+   the installation's other existing override files too). This standard command
+   reconciles the infrastructure and reruns its existing provisioning hooks, including
+   Keycloak and S3; review the rendered diff beforehand. It installs public trust,
+   restarts OpenSearch with the same PVC, then provisions the reader via the existing
+   `opensearch-identities` REST Job. No application is built or deployed by this step.
+   Observe rollout and Job completion. Do not continue on failure.
+   The current Makefile guard rejects `VALUES` containing multiple paths. Merge
+   the installation overrides and TLS values into one protected values file before
+   this command; retain that effective file for subsequent upgrades.
+5. Verify TLS, existing certificate-based administration, index UUIDs/counts and
+   identities. Verify the reader's mapping/search requests and forbidden writes as
+   below. Verify Swift search, dashboards and log/KPI collection before resuming traffic.
+6. Deploy Weaver only: `make k3d-app FRED=weaver APP=fred DIR=/path/to/weaver/fred`.
+   Use the regenerated application chart schema from this lot. No Swift redeployment
+   is required. Authenticate to analytics, then receive the UI as below.
+
+### New installation, renewal and rollback
+
+For an empty cluster, first run the standard infrastructure installation from the
+[README](../README.md) to create the cluster/namespace. Before deploying applications,
+create the TLS Secret and run the infrastructure command with the TLS values file,
+then deploy Weaver. This two-step bootstrap creates no application outage; it does
+restart OpenSearch. Existing installations must follow the maintenance procedure,
+not reinstall or wipe. Fresh initialization remains to be validated by Dimi.
+
+Renew the leaf before expiry (check with `openssl x509 -checkend 2592000`), using the
+same CA, new files and new Secret name. Update `existingSecret` in the retained values
+file and perform the same maintenance procedure. Name changes trigger a pod rollout;
+unchanged values do not rotate certificates. Never edit mounted leaf files in place
+and assume automatic reload. Keep the previous Secret until acceptance.
+
+For a CA replacement, distribute an overlap bundle (old + new public CA) in `caBundle`,
+redeploy Control Plane to load it, then switch the server Secret during maintenance.
+Retain both roots through acceptance and rollback; remove the old root only after all
+clients have moved and restarted. CA replacement is explicit, not part of each upgrade.
+
+Reader credentials are generated once, stored in the kept `fred-analytics-reader`
+Secret in `fred-weaver`, and reused by Helm `lookup`. Back up that Secret: deleting
+it causes a new credential at the next upgrade. Rotation is explicit: change that
+Secret, run infrastructure provisioning, then restart Control Plane to load the new
+environment variable. This creates a brief reader outage; other identities are unchanged.
+
+If the HTTP switch fails, leave Weaver on its previous application revision. Restore
+the previous `existingSecret` and public CA bundle (or the pre-migration TLS-disabled
+values for the first switch), and upgrade infrastructure with the same preserved PVC.
+This is **another shared OpenSearch interruption**. Do not reset the security index.
+If Weaver was already deployed, roll back its Helm release first with `helm rollback
+fred-app <recorded-revision> -n fred-weaver --kube-context k3d-fred --wait`, then restore
+infrastructure. A pre-migration reader cannot verify the demo server: historical
+analytics must return to being unconfigured/unavailable, never to insecure TLS.
+Prefer this targeted values rollback over rolling all of `fred-stack` back (which
+could also undo unrelated shared services). Keep the additive reader identity/Secret
+until a separate cleanup decision. Verify Swift and collection again before reopening.
+
+### Regressions and reception (prepared; execute with Dimi)
+
+- Offline: `python3 -m unittest discover -s tests -p test_opensearch_history.py` covers
+  HTTP-only manifests, trust distribution, credential wiring, stable certificate
+  references and local certificate verification (correct CA, wrong CA, wrong name).
+- Rust: the existing configuration-schema regression now checks history's actual
+  fields, preventing its generic `Config` name from resolving to capability workers.
+  Dimi runs the scoped OpenAPI test and the usual tests/quality checks; generation
+  and Helm rendering are not substitutes for those checks.
+- Deployed TLS: from `fred-weaver`, use the reader and public CA for
+  `GET /weaver-kpi/_mapping` and `POST /weaver-kpi/_search` (`size: 0`), both 200.
+  Send the actual composite/`top_hits` aggregation from the Rust reader too: role
+  sufficiency is not established by a plain search. A wrong CA and a URL hostname
+  outside the SANs must fail TLS, not produce an HTTP response. Use private curl
+  config files for credentials; no passwords in terminal output or shell history.
+- Privileges: on a disposable acceptance cluster with the same role, assert 403 for
+  indexing a disposable document into `weaver-kpi`, mapping PUT and access to another
+  index (including `k3d-logs-*`). If an unexpected write succeeds, stop acceptance
+  and remove only the fixture using an administrator. Never test writes against
+  shared business records. Also assert the reader has no security administration.
+- Idempotence: on the acceptance cluster, retain private hashes of the server Secret,
+  reader Secret and index UUIDs; run the **same** Helm upgrade twice with the retained
+  TLS values. Confirm hashes/UUIDs unchanged, no certificate-related pod rollout,
+  reader still works, writers still work, and transport/admin fingerprints unchanged.
+  An offline rendering cannot prove live `lookup` behavior.
+- Call the authenticated Control Plane analytics endpoint with a real organization,
+  then receive Acme's counters/rankings in the UI. Compare current SQL sessions and
+  `agent.turn_completed` events in the same `[since, until)` window; the earlier
+  2-conversation/4-event/2-agent observation is not a fixed expected value. Exercise
+  Globex isolation, revoked access, error/HITL turns, consumption/impact and legacy
+  dashboards. Confirm new events continue to arrive after the rollout. The real
+  Control Plane request validates the pinned reqwest trust path; also check existing
+  external HTTPS model connections still work with the original CA bundle.
+
+Local preparation on 2026-11-13: certificate chain, service names and public-key match
+verified; infrastructure (legacy/HTTPS) and Weaver Helm manifests rendered without
+printing Secrets, and configuration schema regenerated. No regression suite,
+code-quality, deployment, restart or shared data change was executed. Certificate
+material is under `~/.local/share/fred/k3d/opensearch-http/2026-11-13`; the retained
+operator values file is `~/.local/share/fred/k3d/opensearch-http/http-tls.values.yaml`.
+The certificate expires on 2027-11-13; renew ahead of that date.
+
+Migration executed with Dimi's authorization on 2026-11-13: `fred-stack` revision 2
+and rebuilt Weaver `fred-app` revision 8 are deployed; Swift stays at revision 3.
+OpenSearch stop to authenticated recovery observation took 108 seconds. A cold
+volume archive (readability and checksum checked, restore not exercised), release
+configuration and verification results are retained privately under
+`~/.local/share/fred/k3d/opensearch-http/migration-20261113T071818Z`.
+All 24 pre-existing index UUIDs, transport/admin certificates and existing roles
+were preserved. Strict TLS, certificate-based administration, reader mapping and
+composite searches succeeded; wrong CA/hostname failed, other-index/security reads
+returned 403. Both new KPI quantity fields are now mapped as `long`; no historical
+backfill was performed. Weaver/Swift HTTP health checks passed. Authenticated Rust
+analytics/UI reception, fresh installation, regression suites and code-quality
+remain unverified by this migration.
+
+Files in this increment (existing analytics changes are not part of it):
+
+| Repository | Changed files |
+| --- | --- |
+| Factory: deployment | `k3d/values.yaml`, `k3d/templates/opensearch.yaml`, `k3d/templates/opensearch-http-ca.yaml`, `k3d/templates/jobs.yaml`, `k3d/templates/_helpers.tpl`, `k3d-apps/fred/values-weaver.yaml` |
+| Factory: regression/documentation | `tests/test_opensearch_history.py`, `README.md`, `docs/LOCAL-DEVELOPMENT.md` |
+| Fred: schema source/regression | `apps/control-plane/src/config.rs` (+2 lines, schema metadata only), `apps/control-plane/tests/openapi.rs` (+5 lines) |
+| Fred: generated artifacts | `apps/control-plane/config/schema/configuration.schema.json`, `deploy/charts/fred/values.schema.json` |
+
+No new application service, API, adapter or runtime TLS code; deployment configuration
+adds 146 lines and removes 8, with 135 lines of prepared factory regressions.

@@ -36,19 +36,21 @@ spec:
             - /bin/sh
             - -ec
             - |
-              until curl -k -s -u "$OPENSEARCH_ADMIN:$OPENSEARCH_ADMIN_PASSWORD" https://opensearch:9200/_cluster/health >/dev/null; do sleep 5; done
+              until curl {{ include "fred-stack.opensearchCurlTls" . }} -sS -u "$OPENSEARCH_ADMIN:$OPENSEARCH_ADMIN_PASSWORD" https://opensearch:9200/_cluster/health >/dev/null; do sleep 5; done
               for idx in metadata-index vector-index active-sessions-index chat-interactions-index feedback-index; do
-                if curl -k -s -u "$OPENSEARCH_ADMIN:$OPENSEARCH_ADMIN_PASSWORD" -f "https://opensearch:9200/$idx" >/dev/null; then
+                if curl {{ include "fred-stack.opensearchCurlTls" . }} -sS -u "$OPENSEARCH_ADMIN:$OPENSEARCH_ADMIN_PASSWORD" -f "https://opensearch:9200/$idx" >/dev/null; then
                   echo "index '$idx' already exists"
                 else
-                  curl -k -s -u "$OPENSEARCH_ADMIN:$OPENSEARCH_ADMIN_PASSWORD" -X PUT "https://opensearch:9200/$idx" -H "Content-Type: application/json" -d @/opt/opensearch/mapping.json >/dev/null
+                  curl {{ include "fred-stack.opensearchCurlTls" . }} -sS -u "$OPENSEARCH_ADMIN:$OPENSEARCH_ADMIN_PASSWORD" -X PUT "https://opensearch:9200/$idx" -H "Content-Type: application/json" -d @/opt/opensearch/mapping.json >/dev/null
                   echo "index '$idx' created"
                 fi
               done
           volumeMounts:
+            {{- include "fred-stack.opensearchCaMount" . | nindent 12 }}
             - name: opensearch-config
               mountPath: /opt/opensearch
       volumes:
+        {{- include "fred-stack.opensearchCaVolume" . | nindent 8 }}
         - name: opensearch-config
           configMap:
             name: fred-opensearch-config
@@ -257,6 +259,32 @@ spec:
               REVOKE ALL ON DATABASE {{ .database }} FROM PUBLIC;
               {{- end }}
               SQL
+{{- $identities := deepCopy .Values.opensearch.identities }}
+{{- range $name, $identity := $identities }}
+{{- if and $identity.requireHttpTls (not $.Values.opensearch.httpTls.existingSecret) }}
+{{- $_ := unset $identities $name }}
+{{- else }}
+{{- with $identity.credentialsSecret }}
+{{- $namespace := include "fred-stack.lineNamespace" .line }}
+{{- $current := (lookup "v1" "Secret" $namespace .name).data | default dict }}
+{{- $password := index $current .key | default "" | b64dec | default (printf "Aa1!%s" (randAlphaNum 44)) }}
+{{- $_ := set $identity "password" $password }}
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ .name }}
+  namespace: {{ $namespace }}
+  labels:
+    {{- include "fred-stack.labels" $ | nindent 4 }}
+  annotations:
+    helm.sh/resource-policy: keep
+type: Opaque
+stringData:
+  {{ .key }}: {{ $password | quote }}
+{{- end }}
+{{- end }}
+{{- end }}
 ---
 apiVersion: v1
 kind: Secret
@@ -266,7 +294,7 @@ metadata:
     {{- include "fred-stack.labels" . | nindent 4 }}
 type: Opaque
 stringData:
-  identities.json: {{ .Values.opensearch.identities | toJson | quote }}
+  identities.json: {{ $identities | toJson | quote }}
   pipeline.json: {{ .Values.opensearch.searchPipeline.body | toJson | quote }}
 ---
 # The search pipeline, and each application's own account, role and role mapping.
@@ -307,10 +335,10 @@ spec:
               base=https://opensearch:9200
               security="$base/_plugins/_security/api"
               put() {
-                curl -fsSk -u "$OPENSEARCH_ADMIN:$OPENSEARCH_ADMIN_PASSWORD" -X PUT \
+                curl -fsS {{ include "fred-stack.opensearchCurlTls" . }} -u "$OPENSEARCH_ADMIN:$OPENSEARCH_ADMIN_PASSWORD" -X PUT \
                   -H 'Content-Type: application/json' --data-binary @- "$1" >/dev/null
               }
-              until curl -fsk -u "$OPENSEARCH_ADMIN:$OPENSEARCH_ADMIN_PASSWORD" "$base/_cluster/health" >/dev/null; do sleep 5; done
+              until curl -fsS {{ include "fred-stack.opensearchCurlTls" . }} -u "$OPENSEARCH_ADMIN:$OPENSEARCH_ADMIN_PASSWORD" "$base/_cluster/health" >/dev/null; do sleep 5; done
               put "$base/_search/pipeline/{{ .Values.opensearch.searchPipeline.name }}" </config/pipeline.json
               jq -c 'to_entries[]' /config/identities.json | while read -r identity; do
                 name="$(jq -r '.key' <<<"$identity")"
@@ -320,10 +348,12 @@ spec:
                 echo "identity '$name' ready"
               done
           volumeMounts:
+            {{- include "fred-stack.opensearchCaMount" . | nindent 12 }}
             - name: config
               mountPath: /config
               readOnly: true
       volumes:
+        {{- include "fred-stack.opensearchCaVolume" . | nindent 8 }}
         - name: config
           secret:
             secretName: fred-opensearch-identities
