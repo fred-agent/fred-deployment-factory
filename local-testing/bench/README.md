@@ -1,5 +1,8 @@
 # Bench scenario — authorization at scale
 
+For the separate Swift/Weaver conversation benchmark (one team, ordinary members,
+offline bundles and a dedicated local OAuth client), see [CONVERSATIONS.md](CONVERSATIONS.md).
+
 3000 synthetic users across 100 teams, for load-testing and watching authorization call
 volume/latency under realistic team-membership fan-out (teams-list bootstrap, bundle import,
 capability checks, …) — rather than demoing a specific role.
