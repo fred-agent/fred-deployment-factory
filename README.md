@@ -31,7 +31,9 @@ make k3d-up
 On the first installation, complete the one-time
 [OpenSearch HTTPS preparation](docs/LOCAL-DEVELOPMENT.md#new-installation-renewal-and-rollback)
 before deploying Weaver. An installation already configured for HTTPS reuses its
-saved configuration automatically.
+saved configuration automatically. After a wipe, `make k3d-up` also restores the
+OpenSearch certificate Secret from the saved local certificates; no manual
+Kubernetes commands are needed.
 
 **3. Deploy Weaver.** This builds and installs your checkout; the first build can
 take several minutes.

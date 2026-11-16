@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+# Restore the operator-owned HTTP certificate before Helm waits for OpenSearch.
+# Read the effective chart values, including VALUES overrides; never rotate a Secret.
+set -euo pipefail
+umask 077
+certificate_root=${1:?certificate directory required}
+shift
+root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+kubectl=(kubectl --context k3d-fred --request-timeout=15s)
+work=$(mktemp -d)
+trap 'rm -rf -- "$work"' EXIT
+fail() { printf 'OpenSearch TLS: %s\n' "$1" >&2; exit 1; }
+
+# Helm merges YAML; kubectl reads its resources. No separate values parser.
+helm template fred-stack "$root/k3d" -n fred-infra "$@" \
+  --show-only templates/opensearch.yaml > "$work/opensearch.yaml"
+secret=$("${kubectl[@]}" create --dry-run=client --validate=false \
+  -f "$work/opensearch.yaml" -o 'go-template={{if and (eq .kind "Deployment") (eq .metadata.name "opensearch")}}{{range .spec.template.spec.volumes}}{{if eq .name "opensearch-http-tls"}}{{.secret.secretName}}{{end}}{{end}}{{end}}')
+[[ -n $secret ]] || exit 0
+
+existing=$("${kubectl[@]}" -n fred-infra get secret "$secret" --ignore-not-found -o name)
+if [[ -n $existing ]]; then
+  printf 'OpenSearch TLS: keeping existing Secret %s.\n' "$secret"
+  exit 0
+fi
+
+helm template fred-stack "$root/k3d" -n fred-infra "$@" \
+  --show-only templates/opensearch-http-ca.yaml > "$work/trust.yaml"
+"${kubectl[@]}" create --dry-run=client --validate=false \
+  -f "$work/trust.yaml" -o 'go-template={{if eq .metadata.namespace "fred-infra"}}{{index .data "ca.crt"}}{{end}}' > "$work/ca.crt"
+
+valid_certificate() {
+  local directory=$1
+  [[ -r $directory/tls.crt && -r $directory/tls.key ]] || return 1
+  openssl verify -CAfile "$work/ca.crt" -purpose sslserver \
+    -verify_hostname opensearch "$directory/tls.crt" > /dev/null 2>&1 || return 1
+  # Refuse encrypted/mismatched keys without an interactive password prompt.
+  openssl pkey -in "$directory/tls.key" -passin pass: -pubout \
+    > "$work/key.pub" 2>/dev/null || return 1
+  openssl x509 -in "$directory/tls.crt" -pubkey -noout \
+    > "$work/cert.pub" 2>/dev/null || return 1
+  cmp -s "$work/key.pub" "$work/cert.pub"
+}
+
+matches=()
+if [[ -n ${K3D_TLS_CERT_DIR:-} ]]; then
+  valid_certificate "$K3D_TLS_CERT_DIR" || fail \
+    "Invalid tls.crt/tls.key in K3D_TLS_CERT_DIR=$K3D_TLS_CERT_DIR (trust, expiry, hostname or key mismatch)."
+  matches+=("$K3D_TLS_CERT_DIR")
+else
+  shopt -s nullglob
+  for certificate in "$certificate_root"/tls.crt "$certificate_root"/*/tls.crt; do
+    directory=$(dirname -- "$certificate")
+    if valid_certificate "$directory"; then matches+=("$directory"); fi
+  done
+fi
+[[ ${#matches[@]} -gt 0 ]] || fail \
+  "Secret $secret is missing and no matching certificate/key was found in $certificate_root. Restore the local TLS files, or set K3D_TLS_CERT_DIR to their directory, then rerun make k3d-up."
+[[ ${#matches[@]} -eq 1 ]] || fail \
+  "Several certificates match Secret $secret. Select one with K3D_TLS_CERT_DIR=/path/to/certificate make k3d-up. No Secret was created."
+
+namespace=$("${kubectl[@]}" get namespace fred-infra --ignore-not-found -o name)
+if [[ -z $namespace ]]; then "${kubectl[@]}" create namespace fred-infra >/dev/null; fi
+# Create only: concurrent creation or a changed certificate must never overwrite
+# an installed Secret. Only the leaf key is sent; the CA private key stays local.
+"${kubectl[@]}" -n fred-infra create secret generic "$secret" \
+  --from-file="tls.crt=${matches[0]}/tls.crt" \
+  --from-file="tls.key=${matches[0]}/tls.key" \
+  --from-file="ca.crt=$work/ca.crt" >/dev/null
+printf 'OpenSearch TLS: restored Secret %s from %s.\n' "$secret" "${matches[0]}"

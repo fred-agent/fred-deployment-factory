@@ -103,3 +103,7 @@ make k3d-up
 Secrets.** It never runs implicitly during an update. Keep recoverable backups
 before resetting anything you need. The retained Docker `checkpoint-*` commands
 back up Compose volumes, not k3d volumes.
+
+`make k3d-up` restores the OpenSearch TLS Secret from the retained local
+certificates when HTTPS was configured. Recreate model Secrets and deploy each
+application separately, as on the first installation.

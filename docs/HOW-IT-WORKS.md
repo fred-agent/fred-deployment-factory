@@ -108,6 +108,11 @@ credentials, export the intended keys and repeat the deployment command.
 in cluster `fred`, so create your model keys again afterward. It does not delete your Git
 checkouts, Docker Compose volumes or another cluster.
 
+The local OpenSearch certificates and TLS configuration survive the wipe. On the
+next `make k3d-up`, the factory restores the missing certificate Secret before Helm
+starts OpenSearch. An existing Secret is left untouched; restoration does not renew
+certificates or recover application data.
+
 On Docker Compose, Keycloak serves Swift and Weaver alike, so the wipes are split.
 `make docker-wipe` (Swift: `docker-swift-wipe`) stops everything, then deletes one stack's
 data: conversations, documents, S3 objects, indexes. Accounts live in Keycloak and survive it.

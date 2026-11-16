@@ -38,6 +38,9 @@ jobs:
       - name: Docker switching tests
         run: python3 -m unittest bin/test_docker_environments.py
 
+      - name: TLS restoration tests (fake Kubernetes API)
+        run: python3 -m unittest bin/test_k3d_tls.py
+
       - name: Validate the applications
         run: |
           for app in fred fred-evaluator webdav-kb; do

@@ -131,6 +131,7 @@ k3d-up: ## Create the cluster if needed and prepare the infrastructure for every
 	@if $(K3D_KUBECTL) get namespace fred >/dev/null 2>&1; then \
 	  echo 'This cluster has the former layout (namespace fred), and its data cannot move to fred-infra. Save what you need, then make k3d-wipe and make k3d-up.' >&2; exit 1; \
 	fi
+	@bin/k3d-restore-tls "$(HOME)/.local/share/fred/k3d/opensearch-http" $(K3D_VALUES)
 	helmfile sync $(K3D_VALUES)
 	@echo 'Infrastructure ready in namespace fred-infra. Deploy an application: make k3d-app FRED=swift|weaver APP=fred [DIR=... | RELEASE=...]'
 
