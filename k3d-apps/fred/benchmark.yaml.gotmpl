@@ -1,0 +1,51 @@
+{{- /* Append to this installation's versioned values; never copy private full arrays. */ -}}
+{{- $base := readFile (printf "values-%s.yaml" .Environment.Name) | fromYaml -}}
+{{- $agents := index $base.applications "fred-agents" -}}
+{{- $root := "http://mock-openai-server.fred-bench.svc.cluster.local:8383/v1" -}}
+applications:
+{{- if eq .Environment.Name "swift" }}
+  fred-agents:
+    models_catalog:
+      profiles:
+{{ append $agents.models_catalog.profiles (dict "profile_id" "bench.chat.mock" "capability" "chat" "model_display_name" "Bench Mock GPT-4o" "supports_thinking" false "model" (dict "provider" "openai" "name" "gpt-4o" "settings" (dict "base_url" $root "api_key" "key-1"))) | toYaml | indent 8 }}
+{{- else }}
+{{- $cp := index $base.applications "control-plane-backend" }}
+{{- $credential := dict "api_key_env" "BENCH_MOCK_API_KEY" "api_root" $root "credential_binding" "bench-mock" }}
+{{- $mockEnv := dict "name" "BENCH_MOCK_API_KEY" "value" "key-1" }}
+  control-plane-backend:
+    extraEnvVars:
+{{ append $cp.extraEnvVars $mockEnv | toYaml | indent 6 }}
+    configuration:
+      platform:
+        # A chat-only lab must not discover paid providers during provisioning.
+        # Saved organization policies/defaults are untouched; setup appends one offer.
+        organization_models: []
+        inference_credentials:
+{{ append $cp.configuration.platform.inference_credentials $credential | toYaml | indent 10 }}
+        model_sources:
+{{ $cp.configuration.platform.model_sources | toYaml | indent 10 }}
+          - source_id: bench-mock
+            revision: 1
+            enabled: true
+            allow_insecure_http: true
+            visibility_scope: local-benchmark-mock
+            inventory:
+              kind: declared
+              models:
+                - id: gpt-4o
+                  display_name: Bench Mock GPT-4o
+                  reasoning: false
+            inference:
+              api_root: {{ $root | quote }}
+              credential_binding: bench-mock
+              wire: openai_chat
+              dialect: openai
+              route: standard
+              auth: {kind: api_key}
+  fred-agents:
+    extraEnvVars:
+{{ append $agents.extraEnvVars $mockEnv | toYaml | indent 6 }}
+    configuration:
+      inference_credentials:
+{{ append $agents.configuration.inference_credentials $credential | toYaml | indent 8 }}
+{{- end }}

@@ -6,6 +6,11 @@ once, then reuse it for the 1-person/N-conversation reference and N-person runs.
 Each conversation has ten sequential turns; scheduling belongs to the Go client.
 This is separate from the authorization fan-out scenario in [README.md](README.md).
 
+For the factory k3d recipe, [BENCHMARKS.md](../../docs/BENCHMARKS.md#2-bootstrap-and-prepare-synthetic-people-and-agents)
+provides `make k3d-bench-prepare CONFIG=...` (offline), then the explicit
+`APPLY=1` client/import/source-policy/agent setup using these same bundles.
+The standalone generator and manual setup below remain available.
+
 ## Offline preparation
 
 Python 3.10+ and a Weaver Fred checkout are the only dependencies. This command

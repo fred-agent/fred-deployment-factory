@@ -1,0 +1,21 @@
+{
+  "fred_source": "/absolute/path/to/weaver/fred",
+  "output": "/absolute/path/to/new-private-benchmark-inputs",
+  "users": 20,
+  "issuer": "http://keycloak:8080/realms/app",
+  "keycloak_admin_token_file": "/absolute/path/to/private/keycloak-admin-token",
+  "swift": {
+    "origin": "http://swift.localhost:8088",
+    "team_name": "fredlab",
+    "team_id": "REPLACE_FROM_TEAM_URL",
+    "operator_token_file": "/absolute/path/to/private/swift-operator-token"
+  },
+  "weaver": {
+    "origin": "http://weaver.localhost:8088",
+    "organization_name": "Acme",
+    "organization_id": "REPLACE_FROM_ORGANIZATION_URL",
+    "team_name": "Research",
+    "team_id": "REPLACE_FROM_TEAM_URL",
+    "operator_token_file": "/absolute/path/to/private/weaver-operator-token"
+  }
+}

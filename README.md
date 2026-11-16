@@ -63,7 +63,9 @@ Weaver works on its own.
 
 For developers testing parallel requests and contention. Follow the
 [benchmark guide](docs/BENCHMARKS.md) to deploy the shared mock, connect the model
-and prepare the load client. This is separate from normal Weaver installation.
+and prepare the load client. `BENCH=reference` opts into the versioned mock setup;
+the guide covers first installation and full redeployment. This is separate from
+normal Weaver installation.
 
 ## Other workflows and reference
 

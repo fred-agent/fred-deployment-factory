@@ -51,6 +51,9 @@ releases:
       {{- if $preparation }}
       - preparation.yaml.gotmpl
       {{- end }}
+      {{- if env "BENCH" }}
+      - benchmark.yaml.gotmpl
+      {{- end }}
       {{- with env "K3D_IMAGE_VALUES" }}
       - {{ . | quote }}
       {{- end }}

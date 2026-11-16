@@ -167,6 +167,11 @@ k3d-app-validate: ## Render only: FRED=<environment> APP=... or DIR=<checkout wi
 k3d-app-uninstall: ## Uninstall one application: FRED=<environment> APP=... or DIR=<standalone checkout>
 	@bin/k3d-app destroy
 
+k3d-bench-prepare: ## Generate private benchmark inputs: CONFIG=...; APPLY=1 explicitly imports and prepares agents
+	@test -n "$(CONFIG)" || { echo 'Use CONFIG=/path/to/setup.json; see docs/BENCHMARKS.md' >&2; exit 2; }
+	@test -z "$(APPLY)" -o "$(APPLY)" = 1 || { echo 'APPLY must be 1 or omitted' >&2; exit 2; }
+	@python3 local-testing/bench/setup.py --config "$(CONFIG)" $(if $(filter 1,$(APPLY)),--apply)
+
 # Retired commands fail; they are not aliases for another configuration surface.
 k3d-%:
 	@echo 'Removed command. Use make k3d-up, or make k3d-app FRED=swift|weaver APP=...; see make help.' >&2

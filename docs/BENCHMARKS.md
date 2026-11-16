@@ -10,85 +10,166 @@ below are examples to adapt and run deliberately on the local environment. Setup
 changes accounts, terms, model selection and the mock deployment; load runs create
 conversations. None of these actions follows from generating the input files.
 
-## 1. Prepare the accounts and agent access
+## 1. Install once, or update the existing lab
 
-Follow [conversation identities](../local-testing/bench/CONVERSATIONS.md) to
-produce the private credentials and Swift/Weaver provisioning ZIPs offline, then
-perform its explicit Keycloak client and application imports. Generate the largest
-pool needed once and reuse it across both targets. This is the one-team,
-ordinary-member scenario, distinct from the authorization fan-out benchmark.
-That document owns client configuration, issuer restrictions and partial-import
-handling; do not replace the existing `app` client or relax realm/token policy.
-
-Before continuing, identify:
-
-- The public Fred origins reachable from the load client, and the Swift managed
-  SSE URL served on the same origin as its Control Plane.
-- One existing plain chat agent instance in each installation, with equivalent
-  configuration: no tools, RAG or reasoning, and the dedicated mock model selected.
-- The Weaver space UUID and Swift team identifier. Every selected synthetic person
-  must have ordinary membership and access to that installation's agent instance.
-- The generated `credentials.json`, readable only by the operator, and its local
-  Keycloak issuer reachable from the client and trusted by Fred. Scenario mode
-  logs real people in and renews their tokens; do not supply bearer tokens in argv.
-
-Use the updated Fred checkout's `developer_tools/benchmarks/README.md` as the
-canonical CLI/report reference, and the mock checkout's README for profile and
-marker contracts. Both target adaptations run from that **same updated client
-checkout**; an old client in a Swift checkout is not sufficient.
-
-## 2. Deploy and explicitly activate the shared mock
-
-From the factory repository, with the updated mock checkout present:
+Clone the versions containing this recipe (until merged, Weaver's branch is
+`chore/bench`, **not** `weaver`). Build both targets from checkouts:
 
 ```bash
-MOCK_SOURCE="$HOME/Work/common/mock-openai-server"
-make k3d-app-validate FRED=bench DIR="$MOCK_SOURCE"
-make k3d-app FRED=bench DIR="$MOCK_SOURCE"
+git clone --branch weaver https://github.com/fred-agent/fred-deployment-factory.git
+git clone --branch chore/bench https://github.com/ThalesGroup/fred.git fred-weaver
+git clone --branch swift https://github.com/ThalesGroup/fred.git fred-swift
+git clone --branch swift https://github.com/fred-agent/mock-openai-server.git
+cd fred-deployment-factory
+WEAVER_SOURCE="$(realpath ../fred-weaver)"
+SWIFT_SOURCE="$(realpath ../fred-swift)"
+MOCK_SOURCE="$(realpath ../mock-openai-server)"
+PROFILE=reference
 ```
 
-The default k3d configuration returns one text chunk after a non-blocking
-one-second delay. It does **not** activate the deterministic marker/ACK contract.
-The current chart renders only `HOST` and `PORT` from its environment values:
-setting `env.MOCK_BENCHMARK_PROFILE` in a values override has no effect.
+On a **new machine/lab**, follow [machine prerequisites](../README.md#k3d), add
+`127.0.0.1 keycloak app-keycloak weaver.localhost swift.localhost` to `/etc/hosts`,
+run `make k3d-up`, then complete the documented
+[OpenSearch HTTPS preparation](LOCAL-DEVELOPMENT.md#new-installation-renewal-and-rollback).
+Keep its generated operator files private and persistent; they are produced by
+that procedure, not copied from another developer. An existing installation skips
+infrastructure creation/TLS setup. Never wipe a lab containing conversations.
 
-For this scenario, an operator explicitly selects a supported profile on the
-existing mock deployment, **triggering a rollout**:
+Deploy the shared mock and both Fred versions with the **same commands on first
+install and every full redeploy**:
 
 ```bash
-PROFILE='reference' # or streaming, for a separate comparison
-kubectl --context k3d-fred -n fred-bench set env \
-  deployment/mock-openai-server "MOCK_BENCHMARK_PROFILE=$PROFILE"
-kubectl --context k3d-fred -n fred-bench rollout status \
-  deployment/mock-openai-server --timeout=120s
+make k3d-app FRED=bench DIR="$MOCK_SOURCE" BENCH="$PROFILE"
+make k3d-app FRED=swift APP=fred DIR="$SWIFT_SOURCE" BENCH="$PROFILE"
+make k3d-app FRED=weaver APP=fred DIR="$WEAVER_SOURCE" BENCH="$PROFILE"
 ```
 
-This override is outside the chart's managed configuration, not a persistent Helm
-setting. Verify/reapply it after any redeployment; `make k3d-app` alone does not
-establish the profile. The image must contain the updated mock implementation.
+Replace `k3d-app` with `k3d-app-validate` to render without building or modifying
+the cluster. No private values overlay, ConfigMap edit or `kubectl set env` is
+needed. The normal build includes the checked-in SDK fix. The mock defaults to
+`none`; `BENCH=reference|streaming` explicitly selects its Helm-managed profile.
+Repeat the option when updating. A Fred release already containing the benchmark
+model refuses a sync that omits `BENCH`, before building or rolling out, rather
+than withdrawing a source still referenced by saved agents. `BENCH=none` is not
+an uninstall shortcut. Custom `VALUES` are applied last: do not pass former
+private copies of model/environment arrays that would replace these additions.
+
+The Fred overlay appends only `bench.chat.mock` (Swift) / `bench-mock` (Weaver),
+with upstream `gpt-4o`, OpenAI Chat Completions and disposable key `key-1` at
+`http://mock-openai-server.fred-bench.svc.cluster.local:8383/v1`. Workers inherit
+the same catalog/credential configuration. Real providers, existing credentials,
+corpus embeddings and saved policies/defaults are retained. If the model Secret
+does not exist, the command creates a disposable placeholder to let this
+**chat-only** lab start without a paid API key; real model calls and RAG remain
+unavailable until their actual keys are configured. No model call is made by setup.
+
+In benchmark mode Weaver's automatic `organization_models` initializer is empty:
+imports do not discover paid providers or establish real defaults. Existing SQL
+policies remain intact; fresh organizations have no default. The dedicated agent
+selects the mock explicitly. Later real-provider initialization is a deliberate
+operator action, not part of benchmark preparation or redeployment.
+
 `reference` waits 1000 ms then emits one text fragment; `streaming` waits 1000 ms
 then emits 100 logical text fragments separated by 50 ms (99 intervals), followed
-by terminal events. These are fragments, not tokens, and timings are nominal lower
-bounds. Profiles affect marked requests only. The Go scenario emits the markers
-and validates ACK/history evidence; `-mock-profile` declares what it expects,
-it does not configure the server. Unmarked UI prompts do not prove activation.
+by terminal events. These are fragments, not tokens; timings are nominal lower
+bounds. Only marked requests use this contract. The Go client's `-mock-profile`
+declares its expectation; it does not configure the server.
 
-Configure the selected agent separately in each Fred installation:
+## 2. Bootstrap and prepare synthetic people and agents
 
-| Setting | Value |
-| --- | --- |
-| Base URL from a Fred pod | `http://mock-openai-server.fred-bench.svc.cluster.local:8383/v1` |
-| Protocol | OpenAI Chat Completions |
-| Upstream model | `gpt-4o` |
-| Disposable mock API key | `key-1` |
+For a fresh lab, log in to each UI, claim its platform bootstrap token printed
+by deployment and personally accept active terms. Build the existing demo bundles:
 
-On Swift, use a dedicated OpenAI entry in `models_catalog` with
-`settings.base_url` and its credential. On Weaver, use a dedicated source with
-this `inference.api_root`, `wire: openai_chat`, a credential binding and declared
-`gpt-4o` offer, allowed through organization/space model policies. Preserve real
-model credentials and corpus embeddings. `key-1` authenticates Fred to the mock;
-the synthetic people's JWTs authenticate them to Fred. Deploying or profiling the
-mock does not change Fred's model selection.
+```bash
+make -C "$WEAVER_SOURCE" bundle-demo
+make -C "$SWIFT_SOURCE/apps/control-plane-backend" build-demo-bundle
+```
+
+Import Weaver's `apps/control-plane/target/demo-provisioning-bundle.zip` in
+**Admin > Provisioning** and Swift's
+`apps/control-plane-backend/target/demo-provisioning-bundle.zip` in
+**Admin > Migration**; wait for the Swift task to succeed. Existing labs reuse
+their spaces and do not need these imports again. Use ordinary administration to
+activate `fred.github.assistant` for the target organization/team. The applying
+operator needs platform import rights **and** organization management/team agent
+creation rights (platform administration alone grants no business authority).
+Grant these through the normal UI, with team membership on Weaver.
+
+Copy [setup.example.json](../local-testing/bench/setup.example.json) outside Git.
+Set the checkout/output paths, pool size, team names/IDs and Weaver organization
+name/UUID from the UI. Default demo names are Swift `fredlab` and Weaver
+`Acme` / `Research`; IDs belong to your installation. Set three paths to private
+files containing only current bearer tokens: each admitted Fred operator, and a
+Keycloak realm administrator. Obtain them from the authenticated browser's
+network requests after normal login; do not put tokens/passwords in JSON, argv
+or shell history. Write a clipboard token without echoing it, for example:
+
+```bash
+umask 077
+read -rs -p 'Paste the bearer token: ' TOKEN; echo
+printf '%s' "$TOKEN" > /absolute/path/to/private/operator-token
+unset TOKEN
+```
+
+Repeat for the three files and use their paths in the config. Parent directories
+must already exist. OAuth tokens expire; refreshing these files never requires
+regenerating synthetic passwords. The setup command uses the normal public APIs
+and the deployment-owner `assign-model-source` CLI, never direct SQL.
+
+```bash
+make k3d-bench-prepare CONFIG=/absolute/path/to/setup.json
+# Review the generated private setup.json and all selected scopes, then apply:
+make k3d-bench-prepare CONFIG=/absolute/path/to/setup.json APPLY=1
+```
+
+The first command is entirely offline and refuses an existing output directory.
+`APPLY=1` checks operator admission, matching space names/IDs and available
+assistant template before importing anything. It creates the dedicated OAuth
+client only if absent, imports the same ordinary-member bundles on replay, waits
+for Swift's import result, assigns only `bench-mock` to the selected organization,
+refreshes its declared inventory, and appends its one permitted offer with revision
+checking. Defaults/title/embedding/vision/reasoning policy fields are preserved.
+An explicit local denial is respected. It creates a plain `Bench conversations`
+agent in each team, or reuses an equivalent existing one; it never overwrites a
+different agent. No terms are accepted, conversation created or load launched.
+
+Keep the output directory (0700/files 0600). `credentials.json` is the client
+input; `agents.json` gives the two agent instance IDs and team/space IDs. Resume a
+partial setup with the same `APPLY=1` command and original files: accepted Swift
+imports are tracked by task ID, existing agents and source assignments reused.
+A failed/ambiguous import requires inspection in administration, not blind new
+input generation. Details and manual API/UI equivalents remain in
+[conversation identities](../local-testing/bench/CONVERSATIONS.md).
+
+Use the **same updated Weaver checkout's** `developer_tools/benchmarks` client
+for both targets. Before load, run the identity/terms preflight below for every
+selected person, then one ten-turn conversation with runtime/history checks.
+Do not treat rendering or successful setup as proof of execution correctness.
+
+### Verify from scratch without touching another lab
+
+This factory currently fixes cluster/context `fred` / `k3d-fred`, service host
+ports and local DNS in its Makefile, Helmfiles and cluster configuration. Changing
+only a k3d cluster name is **not isolation**. Run the fresh-clone procedure in a
+separate machine/VM with its own Docker daemon, kubeconfig and loopback DNS.
+On the current machine use rendering checks only; do not run `k3d-wipe`, create a
+second cluster on these ports, or claim that a redeploy is a fresh installation.
+
+### Offline recipe checks
+
+With Helm, Helmfile and Python/PyYAML available, run the checked-in generation,
+replay, source/default preservation and real-chart rendering checks:
+
+```bash
+FRED_WEAVER_SOURCE="$WEAVER_SOURCE" FRED_SWIFT_SOURCE="$SWIFT_SOURCE" \
+  MOCK_OPENAI_SOURCE="$MOCK_SOURCE" \
+  python3 -m unittest discover -s local-testing/bench -p 'test_*.py' -v
+bash -n bin/k3d-app
+python3 local-testing/bench/setup.py --help
+```
+
+These checks launch no service and make no real API mutation or model call.
+Rendered manifests and simulated API replay are not a live fresh-install receipt.
 
 ## 3. Check accounts and terms outside measured work
 
@@ -243,7 +324,7 @@ in the identity setup. Restore any agent/model selection still using the mock,
 then remove only its release from the factory repository:
 
 ```bash
-make k3d-app-uninstall FRED=bench DIR="$HOME/Work/common/mock-openai-server"
+make k3d-app-uninstall FRED=bench DIR="$MOCK_SOURCE"
 ```
 
 This leaves the namespace and the Fred installations in place. `make k3d-wipe`

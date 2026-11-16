@@ -10,6 +10,11 @@ action="${1:?usage: bin/k3d-app sync|template|destroy}"
 root="$(cd "$(dirname "$0")/.." && pwd)"
 fail() { printf '%s\n' "$1" >&2; exit 1; }
 
+if [[ -n "${BENCH:-}" ]]; then
+  [[ "$BENCH" == reference || "$BENCH" == streaming ]] || fail "BENCH must be reference or streaming; omit it for an ordinary installation"
+  [[ "${APP:-}" == fred || "${FRED:-}" == bench ]] || fail "BENCH applies only to APP=fred or FRED=bench"
+fi
+
 [[ -n "${FRED:-}" ]] || fail "FRED is required: choose an environment declared by the application's Helmfile (swift, weaver, or a standalone app's bench)"
 [[ -n "${APP:-}${DIR:-}" ]] || fail "APP or DIR is required: make k3d-app FRED=$FRED APP=fred [DIR=/path/to/checkout | RELEASE=version]"
 [[ -z "${DIR:-}" || -z "${RELEASE:-}" ]] || fail "RELEASE deploys a published release and DIR a checkout: choose one"
@@ -31,8 +36,22 @@ images="$K3D_APP_OUT/images.yaml"
 
 helmfile=(helmfile --file "$definition/helmfile.yaml.gotmpl" --environment "$FRED")
 values=()
+if [[ -n "${BENCH:-}" && "$FRED" == bench ]]; then
+  values+=(--values "$root/k3d-apps/bench/$BENCH.yaml")
+fi
 for file in ${VALUES:-}; do values+=(--values "$(realpath "$file")"); done
 [[ -n "${DIR:-}" && -f "$images" ]] && export K3D_IMAGE_VALUES="$images"
+
+if [[ "$action" == sync && "${APP:-}" == fred && -z "${BENCH:-}" ]]; then
+  # Helm records the opt-in. Omission must not silently remove a registered source.
+  retained="$(helm --kube-context k3d-fred -n "fred-$FRED" list -o json --filter '^fred-app$')"
+  if [[ "$retained" != '[]' ]]; then
+    previous="$(helm --kube-context k3d-fred -n "fred-$FRED" get values fred-app -o json)"
+    if python3 -c 'import json,sys; a=(json.load(sys.stdin) or {}).get("applications", {}); sources=a.get("control-plane-backend", {}).get("configuration", {}).get("platform", {}).get("model_sources", []); profiles=a.get("fred-agents", {}).get("models_catalog", {}).get("profiles", []); sys.exit(not (any(x.get("source_id")=="bench-mock" for x in sources) or any(x.get("profile_id")=="bench.chat.mock" for x in profiles)))' <<<"$previous"; then
+      fail "This release uses the benchmark model. Repeat the deployment with BENCH=reference or BENCH=streaming; removing its source requires a deliberate model migration."
+    fi
+  fi
+fi
 
 if [[ "$action" != destroy ]]; then
   # A mistake costs seconds here, not a build.
@@ -51,6 +70,15 @@ if [[ "$action" == sync && "$FRED" == weaver && -n "${MISTRAL_API_KEY:-}${OPENAI
   kubectl --context k3d-fred -n fred-weaver create secret generic fred-model-credentials \
     --from-env-file="$keys" --dry-run=client -o yaml | kubectl --context k3d-fred apply -f - >/dev/null
   echo "fred-model-credentials: $(cut -d= -f1 "$keys" | paste -sd, -) from the shell"
+fi
+
+if [[ "$action" == sync && "${APP:-}" == fred && -n "${BENCH:-}" ]]; then
+  # Fresh chat-only labs need no paid key. Never overwrite an existing credential.
+  if ! kubectl --context k3d-fred -n "fred-$FRED" get secret fred-model-credentials >/dev/null 2>&1; then
+    kubectl --context k3d-fred -n "fred-$FRED" create secret generic fred-model-credentials \
+      --from-literal=OPENAI_API_KEY=local-benchmark-unused >/dev/null
+    echo "Created chat-only lab credential placeholder; real providers remain unavailable until configured."
+  fi
 fi
 
 if [[ "$action" == sync && -n "${DIR:-}" && -x "$DIR/deploy/k3d/build" ]]; then
