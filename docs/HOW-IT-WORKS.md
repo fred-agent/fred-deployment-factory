@@ -14,7 +14,7 @@ helmfile -f k3d-apps/fred/helmfile.yaml.gotmpl -e swift sync # Fred on the line 
 
 ## `FRED` decides where an application goes
 
-Swift and Weaver are Fred's release lines. `FRED` names the line, and it is the Helmfile
+For Fred, Swift and Weaver are the release lines. `FRED` selects the Helmfile
 environment. You type it on every application command: it has no default, and a value left
 in your shell is refused.
 
@@ -30,6 +30,10 @@ No branch name, checkout path or file chooses the namespace. A checkout is only 
 against `FRED`: Swift's on `FRED=weaver`, or Weaver's on `FRED=swift`, is refused.
 
 There is no `ENV`, `INSTANCE`, `MODE` or `PROFILE`.
+
+A standalone application can supply another environment in its own Helmfile.
+The benchmark mock uses `FRED=bench` and namespace `fred-bench`; it creates no
+Fred installation or infrastructure release line. See the [benchmark guide](BENCHMARKS.md).
 
 ## Why `localhost:8088` answers 404
 
@@ -54,7 +58,7 @@ the other, and you can deploy on only one of them.
 
 | Input | Selects |
 | --- | --- |
-| `FRED` | **Required.** The Fred release line, so the namespace and everything in the table above |
+| `FRED` | **Required.** An environment supported by the application's Helmfile: `weaver`, `swift`, or `bench` for the standalone mock |
 | `APP` | A definition of this factory (`k3d-apps/<APP>`): `fred`, and on Swift `fred-evaluator`, `webdav-kb` |
 | `DIR` | A source checkout, including uncommitted changes: its `deploy/k3d/build` builds the images, with the checkout's own build tools |
 | `RELEASE` | A published version instead of the version pinned in the definition; excludes `DIR` |
@@ -75,11 +79,28 @@ Model keys are Kubernetes Secrets, one per line. On Weaver, `make k3d-app` creat
 `fred-model-credentials` from your exported `MISTRAL_API_KEY` and `OPENAI_API_KEY`; on
 Swift you create it. The factory never takes keys from a checkout. Without the Secret,
 the deployment stops before syncing. A key selects no model: the demo organizations'
-initial provider is the `VALUES` overlay you choose (see the README).
+initial provider is the `VALUES` overlay you choose (see below).
 
 The platform starts empty: the factory creates no demo people or organizations. Keycloak is
 common to both lines, so one account signs in to both, but each line has its own bootstrap
-token and its own administrators. `make k3d-app` prints the token command when it finishes.
+token and its own administrators. `make k3d-app APP=fred` prints the token command when it finishes.
+
+## Choose another model provider on Weaver
+
+The default demo policy uses Mistral. Export `MISTRAL_API_KEY` for Mistral and
+`OPENAI_API_KEY` for OpenAI; never place a Mistral key in Weaver's `OPENAI_API_KEY`.
+Choose the initial policy before the first deployment:
+
+```bash
+# OpenAI only (requires OPENAI_API_KEY):
+make k3d-app FRED=weaver APP=fred DIR=/path/to/weaver/fred VALUES=k3d-apps/fred/models-openai.yaml
+# Acme on Mistral, Globex on OpenAI (requires both keys):
+make k3d-app FRED=weaver APP=fred DIR=/path/to/weaver/fred VALUES=k3d-apps/fred/models-mistral-openai.yaml
+```
+
+Organization policy is initialized once after provisioning. Change it in **Models**
+afterwards; redeploying an overlay does not reset an existing policy. To update model
+credentials, export the intended keys and repeat the deployment command.
 
 ## What a wipe deletes
 
@@ -98,7 +119,7 @@ A cluster from before this layout is not upgraded: `make k3d-up` refuses one wit
 ## What is not here
 
 This repository contains no GKE/GCP deployment. Docker Compose is a separate debug loop for
-Weaver by default, Swift in support, run on the host from separate checkouts (README,
-"Docker Compose"; `make docker-prepare` for Weaver); it does not select a k3d configuration.
+Weaver by default, Swift in support, run on the host from separate checkouts
+([quickstart](LOCAL-DEVELOPMENT.md#docker-compose-quickstart)); it does not select a k3d configuration.
 Switch data with `make docker-swift-up` or `make docker-up`; Keycloak stays shared and
 application data stays separate.

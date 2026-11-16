@@ -14,6 +14,50 @@ For raw Compose internals (network, `.env`, per-service files), see
 **Prerequisites (Compose):** Docker, Docker Compose (`docker compose`), `bash`, `jq`,
 `curl`, plus the build tools of a Fred Weaver checkout (Rust, uv, Node).
 
+## Docker Compose quickstart
+
+For development with Fred processes on the host. Install Docker Compose and the
+checkout's build tools (Rust, uv, Node). Add `127.0.0.1 keycloak app-keycloak` to
+`/etc/hosts`. Export `MISTRAL_API_KEY` for the default demo model policy;
+`OPENAI_API_KEY` is optional and must contain a real OpenAI key on Weaver.
+Stop k3d with `make k3d-stop` before starting Compose: they use the same ports.
+
+Weaver:
+
+```bash
+make docker-up                          # the backing services: PostgreSQL, Keycloak, OpenSearch, Temporal...
+make docker-prepare DIR=/path/to/fred   # prepares your checkout, starts nothing, prints the bootstrap token
+make -C /path/to/fred run               # every Fred process in this terminal
+```
+
+Instead of `make run`, start each component in its own terminal
+(`make -C /path/to/fred/apps/<component> run`), or ask your coding assistant to start Fred.
+`docker-prepare` lists both. Then open <http://localhost:5173>.
+
+To explore the logs in Grafana instead: `make fred-json FRED_CHECKOUT=/path/to/fred`, then open
+<http://localhost:3002/d/fred-local-logs/fred-logs> ([details](../docker/README.md#local-structured-logs)).
+
+Swift, in support: `make docker-swift-up`, then `make run` in the Swift checkout.
+
+| I want to | Run |
+| --- | --- |
+| Restart Fred | `make -C /path/to/fred run` again |
+| Change or add a model key | Export it, then `make docker-prepare` again |
+| Switch between Weaver and Swift | Stop Fred, then `make docker-up` or `make docker-swift-up` |
+| Stop everything, delete nothing | `make docker-stop` |
+| Resume | `make docker-start` (Swift: `make docker-swift-start`) |
+| **Delete Weaver data**, keep accounts | **`make docker-wipe`**, then `make docker-up` |
+| **Delete Swift data**, keep accounts | **`make docker-swift-wipe`**, then `make docker-swift-up` |
+| **Delete all accounts** (both) | **`make docker-wipe-auth`**, then `make docker-up` |
+
+Optional Zabbix 7.0 LTS monitoring: `make docker-up USE_ZABBIX=true` (and
+`make docker-start USE_ZABBIX=true` after stopping), or `make zabbix-up` on an existing
+stack. Follow the [Zabbix Compose procedure](../docker/README.md#optional-zabbix-70-lts).
+
+First login: register, paste the bootstrap token printed by `docker-prepare`,
+then accept the terms. Continue with Fred's
+[first start](https://github.com/ThalesGroup/fred/blob/weaver/deploy/k3d/README.md#first-start).
+
 ## Docker Compose: Weaver (default) or Swift on the host
 
 The Compose services and k3d publish the same host ports: stop one before starting the
@@ -253,6 +297,14 @@ chart from `DIR`. `RELEASE` and `DIR` exclude each other.
 
 Any other application is defined in its own repository: `DIR` is a checkout whose
 `deploy/k3d/` holds the files below, or that directory itself. Nothing about it lives here.
+
+A standalone application can declare `bench` as its Helmfile environment and create
+`fred-bench` with Helm's `createNamespace`. This is an application namespace shared
+by the benchmark clients, not an additional Fred release line: do not add it to the
+infrastructure's `lines`, provision databases, or create Fred bootstrap credentials.
+The mock OpenAI checkout uses this contract; see the [k3d recipes](../README.md#k3d).
+Its service is `http://mock-openai-server.fred-bench.svc.cluster.local:8383/v1`.
+Deploying it does not change Swift or Weaver's model configuration.
 
 | File | Required | What |
 | --- | --- | --- |
@@ -554,8 +606,11 @@ helm template fred-app /path/to/fred/deploy/charts/fred -n fred-weaver \
   -f k3d-apps/fred/values-weaver.yaml >/dev/null
 ```
 
-Keep this values file with the installation and pass it to **every** future
-infrastructure upgrade. Omitting it reverts the HTTPS identity to the demo certificate.
+Keep this values file at `~/.local/share/fred/k3d/opensearch-http/http-tls.values.yaml`.
+`make k3d-up` and `make k3d-validate` load it automatically when present, before
+any explicit `VALUES` overrides. Direct Helm/Helmfile commands still need the file
+passed explicitly. `make k3d-start` only resumes the existing cluster.
+Do not remove the retained file while the installation uses this TLS identity.
 Render stdout may contain generated passwords: discard it or protect it; never paste
 it in logs. Offline `helm template` cannot exercise `lookup` and produces temporary
 passwords, not a manifest to apply. Use Helm upgrade/Helmfile sync for deployment.
@@ -584,16 +639,16 @@ passwords, not a manifest to apply. Use Helm upgrade/Helmfile sync for deploymen
      --from-file=ca.crt="$leafdir/ca.crt"
    ```
 
-4. During the window, run `make k3d-up VALUES="$certdir/http-tls.values.yaml"` (include
-   the installation's other existing override files too). This standard command
+4. During the window, run `make k3d-up` (include the installation's other existing
+   override files via `VALUES` if needed; the retained TLS file loads automatically). This standard command
    reconciles the infrastructure and reruns its existing provisioning hooks, including
    Keycloak and S3; review the rendered diff beforehand. It installs public trust,
    restarts OpenSearch with the same PVC, then provisions the reader via the existing
    `opensearch-identities` REST Job. No application is built or deployed by this step.
    Observe rollout and Job completion. Do not continue on failure.
    The current Makefile guard rejects `VALUES` containing multiple paths. Merge
-   the installation overrides and TLS values into one protected values file before
-   this command; retain that effective file for subsequent upgrades.
+   additional installation overrides into one protected values file before this
+   command; retain it for subsequent upgrades. The automatic TLS file is separate.
 5. Verify TLS, existing certificate-based administration, index UUIDs/counts and
    identities. Verify the reader's mapping/search requests and forbidden writes as
    below. Verify Swift search, dashboards and log/KPI collection before resuming traffic.
@@ -603,12 +658,26 @@ passwords, not a manifest to apply. Use Helm upgrade/Helmfile sync for deploymen
 
 ### New installation, renewal and rollback
 
-For an empty cluster, first run the standard infrastructure installation from the
-[README](../README.md) to create the cluster/namespace. Before deploying applications,
-create the TLS Secret and run the infrastructure command with the TLS values file,
-then deploy Weaver. This two-step bootstrap creates no application outage; it does
-restart OpenSearch. Existing installations must follow the maintenance procedure,
-not reinstall or wipe. Fresh initialization remains to be validated by Dimi.
+For a new installation, after the [README](../README.md#k3d)'s `make k3d-up` step:
+
+1. Follow [Prepare certificates locally](#prepare-certificates-locally-no-cluster-changes)
+   above to create the CA, server certificate and retained `http-tls.values.yaml`.
+2. Create the certificate Secret (the name must match `existingSecret` in that file;
+   `leafdir` is the directory chosen during certificate issuance):
+
+   ```bash
+   kubectl --context k3d-fred -n fred-infra create secret generic opensearch-http-20261113 \
+     --from-file=tls.crt="$leafdir/tls.crt" --from-file=tls.key="$leafdir/tls.key" \
+     --from-file=ca.crt="$leafdir/ca.crt"
+   make k3d-up
+   ```
+
+3. Return to the README's Weaver deployment step.
+
+This second infrastructure pass loads the retained TLS values automatically and
+restarts OpenSearch before any application is deployed. Existing installations
+must follow the maintenance procedure above, not reinstall or wipe. Fresh
+initialization remains to be validated by Dimi.
 
 Renew the leaf before expiry (check with `openssl x509 -checkend 2592000`), using the
 same CA, new files and new Secret name. Update `existingSecret` in the retained values

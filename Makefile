@@ -1,7 +1,7 @@
 .DEFAULT_GOAL := help
 SHELL := /bin/bash
 
-# FRED names a Fred release line, a Helmfile environment: it decides where an application
+# FRED names a Helmfile environment (a Fred line or a standalone app's bench): it decides where an application
 # goes. It is typed on each command: a value left in the shell must never choose for you.
 ifneq ($(filter k3d-%,$(MAKECMDGOALS)),)
 ifneq ($(filter environment environment override,$(origin FRED)),)
@@ -115,7 +115,10 @@ K3D_KUBECTL := kubectl --context k3d-fred
 # Carry the host trust bundle into the cluster (corporate TLS inspection), when there is one.
 K3D_CA_BUNDLE := $(firstword $(wildcard /etc/ssl/certs/ca-certificates.crt /etc/pki/tls/certs/ca-bundle.crt))
 K3D_CA_VOLUMES := $(if $(K3D_CA_BUNDLE),--volume $(K3D_CA_BUNDLE):/etc/ssl/certs/ca-certificates.crt@server:* --volume $(K3D_CA_BUNDLE):/etc/ssl/certs/ca-certificates.crt@agent:*)
-K3D_VALUES := $(addprefix --values ,$(abspath $(VALUES)))
+# The retained operator TLS configuration belongs to this installation, not a shell session.
+# Explicit VALUES are applied last, including intentional certificate renewal overrides.
+K3D_TLS_VALUES := $(wildcard $(HOME)/.local/share/fred/k3d/opensearch-http/http-tls.values.yaml)
+K3D_VALUES := $(addprefix --values ,$(abspath $(K3D_TLS_VALUES) $(VALUES)))
 
 k3d-up: ## Create the cluster if needed and prepare the infrastructure for every Fred release line; no application deployment
 	@busy=$$(for port in $$(sed -n 's/.*port: "\([0-9]*\):.*/\1/p' k3d/cluster.yaml); do \
@@ -132,7 +135,7 @@ k3d-up: ## Create the cluster if needed and prepare the infrastructure for every
 	@echo 'Infrastructure ready in namespace fred-infra. Deploy an application: make k3d-app FRED=swift|weaver APP=fred [DIR=... | RELEASE=...]'
 
 k3d-validate: ## Render the infrastructure; no cluster changes
-	helm lint k3d
+	helm lint k3d $(K3D_VALUES)
 	helmfile template $(K3D_VALUES) >/dev/null
 	@echo 'Infrastructure rendered. No cluster changes.'
 
@@ -155,13 +158,13 @@ k3d-wipe: ## DELETE cluster fred and ALL its data; checkouts remain untouched
 	rm -rf .cache/k3d-apps
 
 ##@ k3d applications (separate from infrastructure)
-k3d-app: ## Deploy one application: FRED=swift|weaver APP=fred DIR=/path/to/checkout (or RELEASE=version)
+k3d-app: ## Deploy: FRED=swift|weaver APP=fred [DIR=... | RELEASE=...]; standalone: FRED=bench DIR=...
 	@bin/k3d-app sync
 
-k3d-app-validate: ## Render one application: FRED=swift|weaver APP=fred DIR=/path/to/checkout; no deployment
+k3d-app-validate: ## Render only: FRED=<environment> APP=... or DIR=<checkout with deploy/k3d/helmfile.yaml.gotmpl>
 	@bin/k3d-app template
 
-k3d-app-uninstall: ## Uninstall one application: FRED=swift|weaver APP=fred
+k3d-app-uninstall: ## Uninstall one application: FRED=<environment> APP=... or DIR=<standalone checkout>
 	@bin/k3d-app destroy
 
 # Retired commands fail; they are not aliases for another configuration surface.

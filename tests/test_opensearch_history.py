@@ -25,6 +25,29 @@ def render(values):
 
 
 class HistoryManifests(unittest.TestCase):
+    def test_make_reuses_operator_tls_before_explicit_overrides(self):
+        with tempfile.TemporaryDirectory() as directory:
+            retained = Path(directory) / "http-tls.values.yaml"
+            retained.write_text("opensearch: {}\n")
+            extra = Path(directory) / "extra.yaml"
+            extra.write_text("opensearch: {}\n")
+            for target, command in (("k3d-up", "sync"), ("k3d-validate", "template")):
+                with self.subTest(target=target):
+                    result = subprocess.run(
+                        ["make", "--no-print-directory", "-n", target,
+                         "--eval", f"override K3D_TLS_VALUES := $(wildcard {retained})",
+                         f"VALUES={extra}"], cwd=ROOT, capture_output=True, text=True, check=True)
+                    self.assertIn(f"helmfile {command} --values {retained} --values {extra}", result.stdout)
+                    if target == "k3d-validate":
+                        self.assertIn(f"helm lint k3d --values {retained} --values {extra}", result.stdout)
+            retained.unlink()
+            result = subprocess.run(
+                ["make", "--no-print-directory", "-n", "k3d-validate",
+                 "--eval", f"override K3D_TLS_VALUES := $(wildcard {retained})"],
+                cwd=ROOT, capture_output=True, text=True, check=True)
+            self.assertIn("helmfile template  >/dev/null", result.stdout)
+            self.assertNotIn("--values", result.stdout)
+
     def test_http_only_identity_and_public_trust(self):
         values = {"opensearch": {"httpTls": {
             "existingSecret": "http-version-1", "caBundle": "PUBLIC-CA"}}}

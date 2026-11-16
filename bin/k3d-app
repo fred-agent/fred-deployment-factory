@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Deploy one application on a Fred release line: what an operator would type, in order.
+# Deploy one application in its Helmfile environment.
 #   bin/k3d-app sync|template|destroy     (from make k3d-app, k3d-app-validate, k3d-app-uninstall)
-# FRED: the line, a Helmfile environment. APP: a definition in k3d-apps/. DIR: a checkout;
+# FRED: a Helmfile environment. APP: a definition in k3d-apps/. DIR: a checkout;
 # without APP, one holding its own deploy/k3d/helmfile.yaml.gotmpl. RELEASE: a published
 # version instead. VALUES: extra values files. FRED_LIBS, FRED_REPO: for the checkout's build.
 set -Eeuo pipefail
@@ -10,7 +10,7 @@ action="${1:?usage: bin/k3d-app sync|template|destroy}"
 root="$(cd "$(dirname "$0")/.." && pwd)"
 fail() { printf '%s\n' "$1" >&2; exit 1; }
 
-[[ -n "${FRED:-}" ]] || fail "FRED is required, it decides where this goes: make k3d-app FRED=swift|weaver APP=..."
+[[ -n "${FRED:-}" ]] || fail "FRED is required: choose an environment declared by the application's Helmfile (swift, weaver, or a standalone app's bench)"
 [[ -n "${APP:-}${DIR:-}" ]] || fail "APP or DIR is required: make k3d-app FRED=$FRED APP=fred [DIR=/path/to/checkout | RELEASE=version]"
 [[ -z "${DIR:-}" || -z "${RELEASE:-}" ]] || fail "RELEASE deploys a published release and DIR a checkout: choose one"
 if [[ -n "${DIR:-}" ]]; then
@@ -37,7 +37,7 @@ for file in ${VALUES:-}; do values+=(--values "$(realpath "$file")"); done
 if [[ "$action" != destroy ]]; then
   # A mistake costs seconds here, not a build.
   "${helmfile[@]}" template "${values[@]}" >/dev/null \
-    || fail "Cannot render this for FRED=$FRED (see above). $definition/helmfile.yaml.gotmpl lists the lines it runs on."
+    || fail "Cannot render this for FRED=$FRED (see above). $definition/helmfile.yaml.gotmpl lists its supported environments."
 fi
 [[ "$action" == template ]] && { echo "Rendered for FRED=$FRED, without building or changing the cluster."; exit 0; }
 
@@ -63,6 +63,9 @@ fi
 if [[ "$action" == sync ]]; then "${helmfile[@]}" sync "${values[@]}"; else "${helmfile[@]}" "$action"; fi
 
 if [[ "$action" == sync ]]; then
-  printf '\nFRED=%s, namespace fred-%s: http://%s.localhost:8088\n' "$FRED" "$FRED" "$FRED"
-  printf 'First login, the bootstrap token: kubectl --context k3d-fred -n fred-%s get secret fred-secrets -o jsonpath="{.data.CONTROL_PLANE_BOOTSTRAP_TOKEN}" | base64 -d; echo\n' "$FRED"
+  printf '\nDeployed FRED=%s, namespace fred-%s.\n' "$FRED" "$FRED"
+  if [[ "${APP:-}" == fred ]]; then
+    printf 'Fred: http://%s.localhost:8088\n' "$FRED"
+    printf 'First login, the bootstrap token: kubectl --context k3d-fred -n fred-%s get secret fred-secrets -o jsonpath="{.data.CONTROL_PLANE_BOOTSTRAP_TOKEN}" | base64 -d; echo\n' "$FRED"
+  fi
 fi

@@ -1,12 +1,55 @@
 # Swift and Weaver side by side
 
-The [README](../README.md) has the commands and [How it works](HOW-IT-WORKS.md) explains
-what `FRED` selects. This page explains what `make k3d-up` isolates and what it shares.
+For Fred developers comparing the two versions. First install Weaver using the
+[README](../README.md#k3d), then add Swift to the same cluster.
 
-`make k3d-up` runs both applications on one cluster so that each can be developed and
-tested independently. **It does not migrate data.** The migration strategy is deferred
+`make k3d-up` prepares the infrastructure for both versions; it does not deploy
+either application. The commands below deploy Swift separately. **They do not migrate data.** The migration strategy is deferred
 until Weaver covers Swift's features; no user, conversation, prompt, resource, KPI or
 marketplace content is transferred by these commands.
+
+## Add Swift
+
+1. Add `swift.localhost` to the same `127.0.0.1` entry in `/etc/hosts`.
+2. Create Swift's model Secret once. Unlike Weaver, Swift expects its **Mistral**
+   key under `OPENAI_API_KEY`. Supply a private file containing only that key:
+
+   ```bash
+   kubectl --context k3d-fred -n fred-swift create secret generic fred-model-credentials \
+     --from-file=OPENAI_API_KEY=/path/to/mistral-key-file
+   ```
+
+3. From the factory, deploy the pinned published Swift release:
+
+   ```bash
+   make k3d-app FRED=swift APP=fred
+   ```
+
+   To build a Swift checkout instead:
+
+   ```bash
+   make k3d-app FRED=swift APP=fred DIR=/path/to/swift/fred
+   ```
+
+4. Open [Swift](http://swift.localhost:8088) alongside
+   [Weaver](http://weaver.localhost:8088). Use your existing login account; Swift
+   has its own administrator bootstrap token, printed by its deployment command.
+   Provision its application data separately.
+
+Repeat the appropriate deployment command to update only that version.
+`make k3d-stop` and `make k3d-start` pause/resume the whole cluster.
+
+## Swift capability preparation
+
+A Swift checkout that includes capability preparation starts the separate
+`fred-agents-preparation-worker` Deployment, with PPT Builder still on its legacy
+path. Only after following Fred's
+[backfill procedure](https://github.com/ThalesGroup/fred/blob/swift/docs/swift/ops/migrations/reusable-capability-preparation.md),
+enable the cutover with:
+
+```bash
+K3D_PPT_PREPARATION=true make k3d-app FRED=swift APP=fred DIR=/path/to/swift/fred
+```
 
 ## Boundaries
 
