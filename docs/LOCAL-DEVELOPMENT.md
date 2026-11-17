@@ -345,7 +345,8 @@ Docker Compose does not read these files: it is the fast loop to debug an app, a
 `docker/keycloak/keycloak-post-install.sh` gives the apps fixed identities with local
 default secrets.
 
-**Registering with Weaver.** Deploy the evaluator with
+**Registering with Weaver.** The step-by-step procedure is [Weaver applications](APPLICATIONS.md).
+Deploy the evaluator with
 `make k3d-app FRED=weaver APP=fred-evaluator DIR=/path/to/fred-agent-evaluator FRED_LIBS=local FRED_REPO=/path/to/fred`
 when using unreleased Fred libraries. Its line values select `fred-weaver` in Temporal
 and the `MISTRAL_API_KEY` key of `fred-model-credentials`. Infrastructure supplies the

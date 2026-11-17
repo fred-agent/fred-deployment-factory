@@ -59,7 +59,7 @@ the other, and you can deploy on only one of them.
 | Input | Selects |
 | --- | --- |
 | `FRED` | **Required.** An environment supported by the application's Helmfile: `weaver`, `swift`, or `bench` for the standalone mock |
-| `APP` | A definition of this factory (`k3d-apps/<APP>`): `fred`, and on Swift `fred-evaluator`, `webdav-kb` |
+| `APP` | A definition of this factory (`k3d-apps/<APP>`): `fred`, `fred-evaluator` ([Weaver applications](APPLICATIONS.md)), and on Swift `webdav-kb` |
 | `DIR` | A source checkout, including uncommitted changes: its `deploy/k3d/build` builds the images, with the checkout's own build tools |
 | `RELEASE` | A published version instead of the version pinned in the definition; excludes `DIR` |
 | `VALUES` | Extra values files, applied last |
