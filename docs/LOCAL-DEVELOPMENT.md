@@ -544,6 +544,9 @@ is not evidence that the Control Plane client accepts the certificate.
 
 ### Prepare certificates locally (no cluster changes)
 
+For a fresh installation, `make k3d-up` creates this material automatically.
+The manual procedure below is for explicit issuance or renewal.
+
 Use a persistent operator directory outside Git, permissions 0700, with an offline
 backup of the CA key. Never put `ca.key` in a Secret, application mount or Helm values.
 The following is a one-time CA creation; it refuses to overwrite existing material:
@@ -658,6 +661,12 @@ passwords, not a manifest to apply. Use Helm upgrade/Helmfile sync for deploymen
 
 ### New installation, renewal and rollback
 
+On a new machine, run **`make k3d-up`** once. It generates a local CA and a
+one-year server certificate under `~/.local/share/fred/k3d/opensearch-http/`,
+saves `http-tls.values.yaml`, restores the Kubernetes Secret and installs the
+infrastructure with HTTPS trust. No separate OpenSearch setup is needed.
+The CA private key stays local. Back up this directory to preserve the identity.
+
 After a wipe, with the local certificates and `http-tls.values.yaml` retained,
 run **`make k3d-up`**. It recreates the cluster, restores the missing OpenSearch
 HTTP certificate Secret and then installs the infrastructure. No manual namespace
@@ -672,25 +681,10 @@ matching private key. Only the server key is uploaded; the CA private key stays
 local. Missing or ambiguous material stops the command before Helm installation.
 Restore missing local files from your backup; if several certificates match,
 select the intended directory with `K3D_TLS_CERT_DIR=/path/to/certificate make k3d-up`.
-This does not issue or renew certificates automatically.
-
-For a new installation, after the [README](../README.md#k3d)'s `make k3d-up` step:
-
-1. Follow [Prepare certificates locally](#prepare-certificates-locally-no-cluster-changes)
-   above to create the CA, server certificate and retained `http-tls.values.yaml`.
-2. Run `make k3d-up` again. It creates the certificate Secret named by
-   `existingSecret` from the local certificate directory. If several directories
-   exist, select the one just issued:
-
-   ```bash
-   K3D_TLS_CERT_DIR="$leafdir" make k3d-up
-   ```
-
-3. Return to the README's Weaver deployment step.
-
-This second infrastructure pass loads the retained TLS values automatically and
-restarts OpenSearch before any application is deployed. Existing installations
-must follow the maintenance procedure above, not reinstall or wipe.
+Automatic issuance only applies when local material is absent and OpenSearch is
+not already installed. Partial local material is not overwritten. Existing
+installations without saved TLS values must follow the maintenance procedure
+above, not reinstall or wipe. Existing certificates are never renewed automatically.
 
 Renew the leaf before expiry (check with `openssl x509 -checkend 2592000`), using the
 same CA, new files and new Secret name. Update `existingSecret` in the retained values

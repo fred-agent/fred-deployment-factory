@@ -1,0 +1,12 @@
+{{- /* Infrastructure settings live in the chart YAML, not the process environment. */ -}}
+{{- $settings := (readFile "values.yaml" | fromYaml).otelCollector -}}
+{{- if $settings.enabled -}}
+{{- $checkout := required "Set otelCollector.fredCheckout in k3d/values.yaml" $settings.fredCheckout -}}
+{{- $config := readFile (printf "%s/developer_tools/benchmarks/otel-collector.yaml" $checkout) | fromYaml -}}
+{{- $_ := set $config.exporters.file "rotation" (dict "max_megabytes" 50 "max_backups" 5 "max_days" 3) -}}
+otelCollector:
+  config:
+{{ $config | toYaml | indent 4 }}
+{{- else }}
+{}
+{{- end }}

@@ -17,7 +17,12 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 def render(target, checkout, bench=""):
-    env = {**os.environ, "DIR": checkout, "BENCH": bench, "K3D_IMAGE_VALUES": ""}
+    values = []
+    if target == "weaver":
+        values.append(ROOT / "k3d-apps/fred/models-mistral-openai.yaml")
+    if bench and target != "bench":
+        values = [ROOT / "k3d-apps/fred/models-mock.yaml.gotmpl"]
+    env = {**os.environ, "DIR": checkout, "VALUES": " ".join(map(str, values)), "K3D_IMAGE_VALUES": ""}
     helmfile = ROOT / "k3d-apps/fred/helmfile.yaml.gotmpl" if target != "bench" else Path(checkout) / "deploy/k3d/helmfile.yaml.gotmpl"
     cmd = ["helmfile", "-f", str(helmfile), "-e", target, "template"]
     if target == "bench" and bench:
@@ -62,8 +67,9 @@ class RenderTests(unittest.TestCase):
                     self.assertEqual(platform["model_sources"][-1]["source_id"], "bench-mock")
                     platform["model_sources"].pop()
                     platform["inference_credentials"].pop()
-                    self.assertEqual(platform["organization_models"], [])
-                    platform["organization_models"] = before["platform"]["organization_models"]
+                    acme = next(x for x in platform["organization_models"] if x["organization"] == "Acme")
+                    self.assertEqual(acme["sources"], ["mistral", "bench-mock"])
+                    acme["sources"].remove("bench-mock")
                 elif key[1] in ("fred-agents-back", "fred-agents-worker-back"):
                     self.assertEqual(after["inference_credentials"][-1]["credential_binding"], "bench-mock")
                     after["inference_credentials"].pop()

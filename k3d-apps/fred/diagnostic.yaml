@@ -1,0 +1,15 @@
+# Weaver development only.
+# Explicit VALUES overlay: merges configuration, never replaces credentials or KPI settings.
+applications:
+  control-plane-backend:
+    configuration:
+      observability:
+        tracer: diagnostic
+        diagnostic:
+          collector_endpoint: http://otel-collector.fred-infra.svc.cluster.local:4318/v1/traces
+  fred-agents:
+    configuration:
+      observability:
+        tracer: diagnostic
+        diagnostic:
+          collector_endpoint: http://otel-collector.fred-infra.svc.cluster.local:4318/v1/traces

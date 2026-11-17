@@ -1,76 +1,191 @@
 # Fred Deployment Factory
 
-Install and run **Fred Weaver locally with k3d**. Run the commands below from this
-repository. Replace `/path/to/weaver/fred` with your Weaver checkout.
+Install Fred locally. Follow **k3d** to run Fred in Kubernetes, or **Docker** to
+run the Fred processes on your machine. Weaver comes first; Swift is optional.
 
 ## k3d
 
-### Install and run Weaver
+### 1. Prerequisites
 
-**1. Prepare your machine.** Install Docker, k3d, kubectl, Helm, Helmfile, Make,
-Python 3 and the checkout's build prerequisites. Have a Weaver checkout available.
-Add this entry to `/etc/hosts`:
+Install **Git, Docker, k3d, kubectl, Helm, Helmfile, Make, Python 3 and OpenSSL**.
+Docker must be running.
 
-```text
-127.0.0.1 keycloak app-keycloak weaver.localhost
-```
-
-Export your Mistral API key (the default model provider):
+Clone this repository and run the following commands from it:
 
 ```bash
-export MISTRAL_API_KEY=your-key
+git clone --branch weaver https://github.com/fred-agent/fred-deployment-factory.git
+cd fred-deployment-factory
 ```
 
-**2. Start the infrastructure.** If Docker Compose is running, stop it first with
-`make docker-stop`.
+Add this line to `/etc/hosts`:
+
+```text
+127.0.0.1 keycloak app-keycloak weaver.localhost swift.localhost
+```
+
+### 2. Start the infrastructure
 
 ```bash
 make k3d-up
 ```
 
-On the first installation, complete the one-time
-[OpenSearch HTTPS preparation](docs/LOCAL-DEVELOPMENT.md#new-installation-renewal-and-rollback)
-before deploying Weaver. An installation already configured for HTTPS reuses its
-saved configuration automatically. After a wipe, `make k3d-up` also restores the
-OpenSearch certificate Secret from the saved local certificates; no manual
-Kubernetes commands are needed.
+This creates the cluster and prepares the shared services, including OpenSearch
+certificates. Certificates are created once and reused on subsequent starts.
+No manual TLS setup is needed on a new machine.
 
-**3. Deploy Weaver.** This builds and installs your checkout; the first build can
-take several minutes.
+Weaver and Swift can run side by side: `fred-weaver` and `fred-swift` are their
+namespaces; `fred-infra` holds the shared infrastructure.
+If Docker Compose is already running, stop it first with `make docker-stop`.
+
+### 3. Set your model API keys
+
+**Weaver reads its keys from the Kubernetes Secret `fred-model-credentials`:**
+
+Export `MISTRAL_API_KEY` and `OPENAI_API_KEY` in your shell, for example in
+`~/.bashrc`. If you just edited that file, run `source ~/.bashrc`, then create
+the Secret from those variables:
 
 ```bash
-make k3d-app FRED=weaver APP=fred DIR=/path/to/weaver/fred
+kubectl --context k3d-fred -n fred-weaver create secret generic fred-model-credentials \
+  --from-literal=MISTRAL_API_KEY="$MISTRAL_API_KEY" \
+  --from-literal=OPENAI_API_KEY="$OPENAI_API_KEY"
 ```
 
-**4. Open [Weaver](http://weaver.localhost:8088).** Register your account, use the
-bootstrap-token command printed by deployment, paste the token when asked, and
-accept the terms. Continue with Fred's
-[first start](https://github.com/ThalesGroup/fred/blob/weaver/deploy/k3d/README.md#first-start)
-to add example data and configure your first assistant.
+Keep both lines to use both providers, or keep only the one you need.
+Use double quotes so the shell substitutes the variable values.
+**The current demo uses Mistral**, including for document embeddings: provide a
+Mistral key to follow the demo as supplied. An OpenAI key alone requires changing
+the initial model configuration.
 
-| I want to | Run |
+**If you want Swift**, create its separate Secret. The current Swift profile uses
+Mistral but expects its key under the name `OPENAI_API_KEY`:
+
+```bash
+kubectl --context k3d-fred -n fred-swift create secret generic fred-model-credentials \
+  --from-literal=OPENAI_API_KEY="$MISTRAL_API_KEY"
+```
+
+### 4. Install Fred
+
+**Weaver, using published images:**
+
+```bash
+make k3d-app FRED=weaver APP=fred
+```
+
+**Not available yet:** Weaver's images and default release are not published/configured.
+For now, use a local Weaver checkout instead:
+
+```bash
+make k3d-app FRED=weaver APP=fred DIR=~/Work/weaver/fred
+```
+
+`DIR` builds the images from your checkout and installs them in k3d. The first
+build can take several minutes.
+
+**If you want Swift**, use its published images:
+
+```bash
+make k3d-app FRED=swift APP=fred
+```
+
+Or build your local Swift checkout:
+
+```bash
+make k3d-app FRED=swift APP=fred DIR=~/Work/swift/fred
+```
+
+To select a specific published version, add `RELEASE=<version>` instead of `DIR`.
+
+### 5. Become the platform administrator
+
+1. Open [Weaver](http://weaver.localhost:8088).
+2. Register an account, for example `admin` / `Azerty123_` for this local installation.
+3. Retrieve the bootstrap token:
+
+   ```bash
+   kubectl --context k3d-fred -n fred-weaver get secret fred-secrets \
+     -o jsonpath='{.data.CONTROL_PLANE_BOOTSTRAP_TOKEN}' | base64 -d; echo
+   ```
+
+4. Sign in, enter the token in the bootstrap screen, then accept the terms.
+   Your account is now **platform administrator**.
+
+**For Swift**, open [Swift](http://swift.localhost:8088), reuse your login or create one, and
+retrieve its own token with the same command using `-n fred-swift`.
+Swift has teams, without Weaver's organization → team → project hierarchy.
+
+### 6. Import the demo
+
+Use the two prepared bundles: `demo/weaver-demo.zip` or `demo/swift-demo.zip`.
+**For this rehearsal, these ZIPs are supplied separately; they are not yet checked in.**
+No Fred checkout or bundle generation is needed when you have the ZIPs.
+
+- **Weaver:** **Admin → Provisioning** → select `weaver-demo.zip` → import → wait for success.
+- **Swift:** **Admin → Migration** → select `swift-demo.zip` → import → wait for success.
+
+**All done!** Sign out of `admin`, then sign in as `alice` or `bob`, password
+`Azerty123_`, and accept that account's terms. Explore Fred, configure an assistant
+and start a conversation. On Weaver, Alice manages Acme; Bob works in Research.
+
+### Everyday commands
+
+| Action | Command |
 | --- | --- |
-| Pause, keeping data | `make k3d-stop` |
-| Resume, including after a reboot | `make k3d-start` |
-| Deploy updated Weaver code | Repeat the `make k3d-app FRED=weaver ...` command above |
-| Diagnose a problem | `make k3d-health` |
+| Stop, keeping data | `make k3d-stop` |
+| Resume | `make k3d-start` |
+| Update Fred | Repeat your step 4 command |
+| Check health | `make k3d-health` |
+| Delete the cluster and all its data, including Swift and Weaver | `make k3d-wipe` |
 
-### Advanced: Swift and Weaver side by side
+After a wipe, repeat steps 2–6. Local certificates are retained and restored.
 
-For Fred developers comparing the two versions. Add Swift to the existing cluster
-using the [side-by-side guide](docs/SWIFT-WEAVER.md). Installing Swift is optional;
-Weaver works on its own.
+Optional: [Benchmarks and diagnostic traces](docs/BENCHMARKS.md).
 
-### Advanced: concurrency benchmarks
+## Docker
 
-For developers testing parallel requests and contention. Follow the
-[benchmark guide](docs/BENCHMARKS.md) to deploy the shared mock, connect the model
-and prepare the load client. `BENCH=reference` opts into the versioned mock setup;
-the guide covers first installation and full redeployment. This is separate from
-normal Weaver installation.
+This development workflow runs the infrastructure in Docker Compose and the Fred
+processes on your machine. It requires a Fred checkout.
 
-## Other workflows and reference
+### 1. Prerequisites
 
-- [Docker Compose](docs/LOCAL-DEVELOPMENT.md#docker-compose-quickstart): run Fred processes on the host for debugging.
-- [How it works](docs/HOW-IT-WORKS.md): model-provider options, deployment settings and data lifecycle.
-- [Technical reference](docs/LOCAL-DEVELOPMENT.md): TLS, infrastructure and diagnostics.
+Install Docker with Compose, Make, Bash, jq, curl, Rust, uv and Node, using the
+versions required by your Fred checkout. Use the `/etc/hosts` entry above.
+If k3d is running, stop it first with `make k3d-stop`.
+
+### 2. Start Weaver
+
+From this repository, set the model keys you use, then start the infrastructure
+and prepare your checkout:
+
+```bash
+export MISTRAL_API_KEY='your-mistral-key'
+export OPENAI_API_KEY='your-openai-key'
+make docker-up
+make docker-prepare DIR=~/Work/weaver/fred
+make -C ~/Work/weaver/fred run
+```
+
+`docker-prepare` prints the bootstrap token. Open [Fred](http://localhost:5173),
+register, enter that token and accept the terms. Import `weaver-demo.zip` through
+**Admin → Provisioning**, then sign in as `alice` or `bob` / `Azerty123_`.
+
+**For Swift**, stop the running Fred processes, run `make docker-stop`, then
+`make docker-swift-up` and `make -C ~/Work/swift/fred run` with a configured Swift
+checkout. [Swift host configuration](docker/README.md).
+Docker runs one line at a time; use k3d to run both side by side.
+
+### Everyday commands
+
+| Action | Weaver | Swift |
+| --- | --- | --- |
+| Stop infrastructure, keeping data | `make docker-stop` | `make docker-stop` |
+| Resume infrastructure | `make docker-start` | `make docker-swift-start` |
+| Start Fred processes | `make -C ~/Work/weaver/fred run` | `make -C ~/Work/swift/fred run` |
+
+## Technical reference
+
+Only for troubleshooting or maintaining the installation:
+[Infrastructure and TLS](docs/LOCAL-DEVELOPMENT.md) ·
+[Swift/Weaver boundaries](docs/SWIFT-WEAVER.md) ·
+[Deployment configuration](docs/HOW-IT-WORKS.md).

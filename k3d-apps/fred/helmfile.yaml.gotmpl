@@ -51,9 +51,6 @@ releases:
       {{- if $preparation }}
       - preparation.yaml.gotmpl
       {{- end }}
-      {{- if env "BENCH" }}
-      - benchmark.yaml.gotmpl
-      {{- end }}
       {{- with env "K3D_IMAGE_VALUES" }}
       - {{ . | quote }}
       {{- end }}
@@ -66,6 +63,11 @@ releases:
           knowledge-flow-worker:
             image:
               tag: "v{{ $version }}"
+      {{- end }}
+      {{- range splitList " " (env "VALUES") }}
+      {{- if . }}
+      - {{ . | quote }}
+      {{- end }}
       {{- end }}
     hooks:
       # The model keys are the operator's, created before deploying, as in production

@@ -1,0 +1,98 @@
+{{- if .Values.otelCollector.enabled }}
+{{- $config := required "otelCollector.config is required; use the root Helmfile with otelCollector.fredCheckout configured" .Values.otelCollector.config }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: otel-collector
+data:
+  config.yaml: |
+{{ $config | toYaml | indent 4 }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: otel-traces
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: {{ .Values.otelCollector.storageSize }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: otel-collector
+spec:
+  type: ClusterIP
+  selector:
+    app: otel-collector
+  ports:
+    - name: otlp-http
+      port: 4318
+      targetPort: otlp-http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: otel-collector
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: otel-collector
+  template:
+    metadata:
+      labels:
+        app: otel-collector
+      annotations:
+        checksum/config: {{ $config | toJson | sha256sum | quote }}
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: collector
+          image: {{ .Values.otelCollector.image | quote }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          args: [--config=/config/config.yaml]
+          env:
+            - name: FRED_OTEL_LISTEN_ENDPOINT
+              value: 0.0.0.0:4318
+            - name: FRED_BENCH_TRACE_FILE
+              value: /traces/traces.otlp.jsonl
+          ports:
+            - name: otlp-http
+              containerPort: 4318
+          readinessProbe:
+            tcpSocket:
+              port: otlp-http
+            periodSeconds: 2
+          resources:
+            requests: {cpu: 50m, memory: 64Mi}
+            limits: {cpu: '1', memory: 256Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - {name: config, mountPath: /config, readOnly: true}
+            - {name: traces, mountPath: /traces}
+      volumes:
+        - name: config
+          configMap:
+            name: otel-collector
+        - name: traces
+          persistentVolumeClaim:
+            claimName: otel-traces
+{{- end }}

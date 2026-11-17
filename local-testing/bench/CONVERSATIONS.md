@@ -6,9 +6,10 @@ once, then reuse it for the 1-person/N-conversation reference and N-person runs.
 Each conversation has ten sequential turns; scheduling belongs to the Go client.
 This is separate from the authorization fan-out scenario in [README.md](README.md).
 
-For the factory k3d recipe, [BENCHMARKS.md](../../docs/BENCHMARKS.md#2-bootstrap-and-prepare-synthetic-people-and-agents)
-provides `make k3d-bench-prepare CONFIG=...` (offline), then the explicit
-`APPLY=1` client/import/source-policy/agent setup using these same bundles.
+For the simple interactive workflow, see [BENCHMARKS.md](../../docs/BENCHMARKS.md).
+The factory also provides `make k3d-bench-prepare CONFIG=...` (offline), followed
+by explicit `APPLY=1` client/import/model-policy/agent setup using these bundles.
+The target organization must declare `bench-mock` in `platform.organization_models.sources`.
 The standalone generator and manual setup below remain available.
 
 ## Offline preparation

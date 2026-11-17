@@ -222,8 +222,6 @@ def apply(config, output):
         print(f"{target}: importing synthetic memberships (same bundle reused on replay)", flush=True)
         import_users(apis[target], target, output)
     organization = config["weaver"]["organization_id"]
-    # The deployment-owner CLI is additive/idempotent and checks active org/source.
-    subprocess.run(["kubectl", "--context", "k3d-fred", "-n", "fred-weaver", "exec", "deployment/control-plane-backend", "--", "control-plane", "assign-model-source", organization, "bench-mock"], check=True, capture_output=True)
     api = apis["weaver"]
     org_path = "/organizations/" + quote(organization, safe="")
     api.request("POST", org_path + "/model-sources/bench-mock/refresh")

@@ -1,4 +1,4 @@
-"""Prove omitted/invalid BENCH cannot roll out a release already using the mock."""
+"""Prove omitting the mock values cannot remove an installed model source."""
 import json
 import os
 from pathlib import Path
@@ -20,16 +20,11 @@ class GuardTests(unittest.TestCase):
                 helm.write_text('#!/bin/sh\ncase "$*" in\n*" list "*) echo "[{\\"name\\":\\"fred-app\\"}]";;\n*) cat "$STUB_VALUES";;\nesac\n')
                 helm.chmod(0o700)
                 env = {**os.environ, "PATH": str(p) + os.pathsep + os.environ["PATH"], "STUB_VALUES": str(p / "previous.json"),
-                       "APP": "fred", "FRED": target, "BENCH": "", "DIR": "", "RELEASE": "", "VALUES": ""}
+                       "APP": "fred", "FRED": target, "DIR": "", "RELEASE": "", "VALUES": ""}
                 result = subprocess.run([str(ROOT / "bin/k3d-app"), "sync"], env=env, capture_output=True, text=True)
                 self.assertNotEqual(result.returncode, 0)
-                self.assertIn("Repeat the deployment with BENCH=reference", result.stderr)
+                self.assertIn("Keep k3d-apps/fred/models-mock.yaml.gotmpl in VALUES", result.stderr)
                 self.assertNotIn("Templating", result.stderr)
-
-    def test_none_cannot_bypass_the_guard(self):
-        result = subprocess.run([str(ROOT / "bin/k3d-app"), "sync"], env={**os.environ, "BENCH": "none"}, capture_output=True, text=True)
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("BENCH must be reference or streaming", result.stderr)
 
 
 if __name__ == "__main__":

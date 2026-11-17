@@ -10,6 +10,8 @@ applications:
 {{ append $agents.models_catalog.profiles (dict "profile_id" "bench.chat.mock" "capability" "chat" "model_display_name" "Bench Mock GPT-4o" "supports_thinking" false "model" (dict "provider" "openai" "name" "gpt-4o" "settings" (dict "base_url" $root "api_key" "key-1"))) | toYaml | indent 8 }}
 {{- else }}
 {{- $cp := index $base.applications "control-plane-backend" }}
+{{- /* Reuse the demo policies; only Acme gains mock source visibility. */ -}}
+{{- $demo := readFile "models-mistral-openai.yaml" | fromYaml }}
 {{- $credential := dict "api_key_env" "BENCH_MOCK_API_KEY" "api_root" $root "credential_binding" "bench-mock" }}
 {{- $mockEnv := dict "name" "BENCH_MOCK_API_KEY" "value" "key-1" }}
   control-plane-backend:
@@ -17,9 +19,13 @@ applications:
 {{ append $cp.extraEnvVars $mockEnv | toYaml | indent 6 }}
     configuration:
       platform:
-        # A chat-only lab must not discover paid providers during provisioning.
-        # Saved organization policies/defaults are untouched; setup appends one offer.
-        organization_models: []
+        organization_models:
+{{- range (index $demo.applications "control-plane-backend").configuration.platform.organization_models }}
+{{- if eq .organization "Acme" }}
+{{- $_ := set . "sources" (append .sources "bench-mock") }}
+{{- end }}
+{{ list . | toYaml | indent 10 }}
+{{- end }}
         inference_credentials:
 {{ append $cp.configuration.platform.inference_credentials $credential | toYaml | indent 10 }}
         model_sources:

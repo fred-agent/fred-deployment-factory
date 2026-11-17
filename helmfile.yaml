@@ -13,3 +13,5 @@ releases:
     namespace: fred-infra
     createNamespace: true
     chart: ./k3d
+    values:
+      - k3d/tracing.yaml.gotmpl

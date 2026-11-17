@@ -131,12 +131,19 @@ k3d-up: ## Create the cluster if needed and prepare the infrastructure for every
 	@if $(K3D_KUBECTL) get namespace fred >/dev/null 2>&1; then \
 	  echo 'This cluster has the former layout (namespace fred), and its data cannot move to fred-infra. Save what you need, then make k3d-wipe and make k3d-up.' >&2; exit 1; \
 	fi
-	@bin/k3d-restore-tls "$(HOME)/.local/share/fred/k3d/opensearch-http" $(K3D_VALUES)
-	helmfile sync $(K3D_VALUES)
+	@bin/k3d-init-tls "$(HOME)/.local/share/fred/k3d/opensearch-http" $(K3D_VALUES)
+	@set -e; \
+	values=(); \
+	if [ -f "$(HOME)/.local/share/fred/k3d/opensearch-http/http-tls.values.yaml" ]; then \
+	  values+=(--values "$(HOME)/.local/share/fred/k3d/opensearch-http/http-tls.values.yaml"); \
+	fi; \
+	for file in $(VALUES); do values+=(--values "$$file"); done; \
+	bin/k3d-restore-tls "$(HOME)/.local/share/fred/k3d/opensearch-http" "$${values[@]}"; \
+	helmfile sync "$${values[@]}"
 	@echo 'Infrastructure ready in namespace fred-infra. Deploy an application: make k3d-app FRED=swift|weaver APP=fred [DIR=... | RELEASE=...]'
 
 k3d-validate: ## Render the infrastructure; no cluster changes
-	helm lint k3d $(K3D_VALUES)
+	helmfile lint $(K3D_VALUES)
 	helmfile template $(K3D_VALUES) >/dev/null
 	@echo 'Infrastructure rendered. No cluster changes.'
 
@@ -169,7 +176,7 @@ k3d-app-uninstall: ## Uninstall one application: FRED=<environment> APP=... or D
 	@bin/k3d-app destroy
 
 k3d-bench-prepare: ## Generate private benchmark inputs: CONFIG=...; APPLY=1 explicitly imports and prepares agents
-	@test -n "$(CONFIG)" || { echo 'Use CONFIG=/path/to/setup.json; see docs/BENCHMARKS.md' >&2; exit 2; }
+	@test -n "$(CONFIG)" || { echo 'Use CONFIG=/path/to/setup.json; see local-testing/bench/CONVERSATIONS.md' >&2; exit 2; }
 	@test -z "$(APPLY)" -o "$(APPLY)" = 1 || { echo 'APPLY must be 1 or omitted' >&2; exit 2; }
 	@python3 local-testing/bench/setup.py --config "$(CONFIG)" $(if $(filter 1,$(APPLY)),--apply)
 

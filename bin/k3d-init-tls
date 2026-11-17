@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+# Prepare local HTTPS material once. Never replace an installation's identity.
+set -euo pipefail
+umask 077
+certificate_root=${1:?certificate directory required}
+shift
+[[ -f "$certificate_root/http-tls.values.yaml" ]] && exit 0
+
+fail() { printf 'OpenSearch TLS: %s\n' "$1" >&2; exit 1; }
+# Explicit operator TLS values keep the existing restoration path.
+if [[ $# -gt 0 ]]; then
+  render=$(mktemp)
+  trap 'rm -f -- "$render"' EXIT
+  root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+  helm template fred-stack "$root/k3d" -n fred-infra "$@" \
+    --show-only templates/opensearch.yaml > "$render"
+  secret=$(kubectl --context k3d-fred create --dry-run=client --validate=false \
+    -f "$render" -o 'go-template={{if and (eq .kind "Deployment") (eq .metadata.name "opensearch")}}{{range .spec.template.spec.volumes}}{{if eq .name "opensearch-http-tls"}}{{.secret.secretName}}{{end}}{{end}}{{end}}')
+  [[ -n $secret ]] && exit 0
+  rm "$render"
+fi
+if [[ -d $certificate_root && -n $(ls -A "$certificate_root") ]]; then
+  fail "Local certificates exist but http-tls.values.yaml is missing. Restore that file before running make k3d-up."
+fi
+existing=$(kubectl --context k3d-fred --request-timeout=15s -n fred-infra \
+  get deployment opensearch --ignore-not-found -o name)
+[[ -z $existing ]] || fail \
+  "OpenSearch is already installed without saved TLS values. Restore the local TLS files or use the existing-installation procedure in docs/LOCAL-DEVELOPMENT.md."
+
+mkdir -p "$(dirname -- "$certificate_root")"
+staging=$(mktemp -d "${certificate_root}.tmp.XXXXXX")
+trap 'rm -rf -- "$staging"' EXIT
+mkdir "$staging/initial"
+openssl req -x509 -newkey rsa:3072 -nodes -sha256 -days 3650 \
+  -keyout "$staging/ca.key" -out "$staging/ca.crt" \
+  -subj '/CN=Fred k3d OpenSearch HTTP CA' \
+  -addext 'basicConstraints=critical,CA:TRUE,pathlen:0' \
+  -addext 'keyUsage=critical,keyCertSign,cRLSign' 2>"$staging/openssl.log"
+cat > "$staging/initial/extensions.cnf" <<'EXT'
+basicConstraints=critical,CA:FALSE
+keyUsage=critical,digitalSignature,keyEncipherment
+extendedKeyUsage=serverAuth
+subjectAltName=DNS:opensearch,DNS:opensearch.fred-infra,DNS:opensearch.fred-infra.svc,DNS:opensearch.fred-infra.svc.cluster.local,DNS:opensearch.fred-weaver,DNS:opensearch.fred-weaver.svc,DNS:opensearch.fred-weaver.svc.cluster.local,DNS:opensearch.fred-swift,DNS:opensearch.fred-swift.svc,DNS:opensearch.fred-swift.svc.cluster.local,DNS:localhost,IP:127.0.0.1,IP:::1
+EXT
+openssl req -new -newkey rsa:3072 -nodes -sha256 \
+  -keyout "$staging/initial/tls.key" -out "$staging/initial/server.csr" \
+  -subj '/CN=opensearch' 2>>"$staging/openssl.log"
+openssl x509 -req -in "$staging/initial/server.csr" \
+  -CA "$staging/ca.crt" -CAkey "$staging/ca.key" \
+  -set_serial "0x$(openssl rand -hex 16)" -days 365 -sha256 \
+  -extfile "$staging/initial/extensions.cnf" -out "$staging/initial/server.crt" \
+  2>>"$staging/openssl.log"
+cat "$staging/initial/server.crt" "$staging/ca.crt" > "$staging/initial/tls.crt"
+cp "$staging/ca.crt" "$staging/initial/ca.crt"
+openssl verify -CAfile "$staging/ca.crt" -purpose sslserver \
+  -verify_hostname opensearch "$staging/initial/tls.crt" >/dev/null
+{
+  printf 'opensearch:\n  httpTls:\n    existingSecret: opensearch-http-initial\n    caBundle: |\n'
+  sed 's/^/      /' "$staging/ca.crt"
+} > "$staging/http-tls.values.yaml"
+rm "$staging/openssl.log"
+# A rename publishes complete material only; a nonempty destination is not replaced.
+mv -T "$staging" "$certificate_root"
+printf 'OpenSearch TLS: created local certificates in %s. Future starts reuse them.\n' "$certificate_root"

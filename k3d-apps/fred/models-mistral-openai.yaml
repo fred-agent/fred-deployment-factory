@@ -2,8 +2,8 @@
 # OpenAI, so the two corpora have different embedding models in their own indexes.
 # Use with MISTRAL_API_KEY and OPENAI_API_KEY exported:
 #   make k3d-app FRED=weaver APP=fred DIR=... VALUES=k3d-apps/fred/models-mistral-openai.yaml
-# The initialization runs once after provisioning; the Owner administers the policy in
-# Models afterwards. Helm replaces lists, so both organizations are repeated.
+# Sources are added at startup/provisioning; policies are seeded once, then
+# administered by the Owner in Models. Helm replaces lists, so both organizations are repeated.
 applications:
   control-plane-backend:
     configuration:
