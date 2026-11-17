@@ -1,0 +1,5 @@
+benchmark:
+  profile: reference
+config:
+  benchmark:
+    initialDelayMs: 0

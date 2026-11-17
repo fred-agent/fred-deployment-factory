@@ -42,8 +42,29 @@ Sign in as Bob and select the same space and assistant. Performance mode measure
 1,000 questions with up to 10 concurrent conversations, without requesting server
 traces. Results are saved under `.bench/`; `./bench --help` lists the options.
 
-For paced streaming, redeploy the **mock** with `VALUES=k3d-apps/bench/streaming.yaml`.
-Fred's values configure the connection and Acme's access, not mock responses.
+## Mock response timing
+
+The default k3d mock waits 1 second per model call, then returns fixed text.
+Waits are asynchronous: concurrent requests can overlap. Bench timings include
+this delay plus Fred processing and network time.
+
+Choose one values file when deploying the **mock**:
+
+| Values file (under `k3d-apps/bench/`) | Response | Use |
+| --- | --- | --- |
+| [no-latency.yaml](../k3d-apps/bench/no-latency.yaml) | Fixed text, no artificial wait | Push throughput and find saturation |
+| [reference.yaml](../k3d-apps/bench/reference.yaml) | Wait 1 s, then fixed text | Compare runs with known model latency |
+| [streaming.yaml](../k3d-apps/bench/streaming.yaml) | Wait 1 s, then 100 fragments, 50 ms apart | Exercise concurrent streams (`stream: true`) |
+
+```bash
+make k3d-app FRED=bench DIR=~/Work/common/mock-openai-server \
+  VALUES=k3d-apps/bench/no-latency.yaml
+```
+
+Replace the filename to select another example; keep it on later mock deployments.
+No Weaver redeployment is needed. These settings control mock timing; bench controls
+request count and concurrency. See the [mock documentation](https://github.com/fred-agent/mock-openai-server#opt-in-deterministic-chat-benchmarks)
+for parameters and response details.
 
 ## Diagnostic traces
 

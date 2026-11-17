@@ -21,8 +21,8 @@ data:
   dashboards.yaml: |
     apiVersion: 1
     providers:
-      # The grafana-dashboards ConfigMap, written by fred's deploy/k3d/finish from the
-      # Fred checkout's deploy/grafana/*.json; reread every 30s.
+      # The grafana-dashboards ConfigMap, written by bin/k3d-app (APP=fred with DIR)
+      # from the checkout's deploy/grafana/*.json; reread every 30s.
       - name: fred
         folder: Fred
         type: file

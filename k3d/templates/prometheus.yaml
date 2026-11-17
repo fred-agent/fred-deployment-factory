@@ -25,6 +25,14 @@ rules:
       - get
       - list
       - watch
+  # Job `containers`: discover the nodes and read the kubelet's cAdvisor endpoint
+  # (/metrics/cadvisor), without the kubelet proxy and its exec rights.
+  - apiGroups: [""]
+    resources: [nodes]
+    verbs: [list, watch]
+  - apiGroups: [""]
+    resources: [nodes/metrics]
+    verbs: [get]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding

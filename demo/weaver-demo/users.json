@@ -1,0 +1,95 @@
+[
+  {
+    "username": "oscar",
+    "email": "oscar@acme.example",
+    "first_name": "Oscar",
+    "last_name": "Reyes",
+    "password": "Azerty123_",
+    "platform_roles": []
+  },
+  {
+    "username": "alice",
+    "email": "alice@acme.example",
+    "first_name": "Alice",
+    "last_name": "Watson",
+    "password": "Azerty123_",
+    "platform_roles": []
+  },
+  {
+    "username": "lea",
+    "email": "lea@acme.example",
+    "first_name": "Léa",
+    "last_name": "Laurent",
+    "password": "Azerty123_",
+    "platform_roles": []
+  },
+  {
+    "username": "carl",
+    "email": "carl@acme.example",
+    "first_name": "Carl",
+    "last_name": "Weber",
+    "password": "Azerty123_",
+    "platform_roles": []
+  },
+  {
+    "username": "bob",
+    "email": "bob@acme.example",
+    "first_name": "Bob",
+    "last_name": "Rigg",
+    "password": "Azerty123_",
+    "platform_roles": []
+  },
+  {
+    "username": "elena",
+    "email": "elena@acme.example",
+    "first_name": "Elena",
+    "last_name": "Cruz",
+    "password": "Azerty123_",
+    "platform_roles": []
+  },
+  {
+    "username": "carol",
+    "email": "carol@acme.example",
+    "first_name": "Carol",
+    "last_name": "Martin",
+    "password": "Azerty123_",
+    "platform_roles": []
+  },
+  {
+    "username": "olivia",
+    "email": "olivia@globex.example",
+    "first_name": "Olivia",
+    "last_name": "Novak",
+    "password": "Azerty123_",
+    "platform_roles": []
+  },
+  {
+    "username": "grace",
+    "email": "grace@globex.example",
+    "first_name": "Grace",
+    "last_name": "Kim",
+    "password": "Azerty123_",
+    "platform_roles": []
+  },
+  {
+    "username": "zoe",
+    "email": "zoe@globex.example",
+    "first_name": "Zoe",
+    "last_name": "Adams",
+    "password": "Azerty123_",
+    "platform_roles": []
+  },
+  {
+    "username": "boss",
+    "email": "boss@acme.example",
+    "first_name": "Boss",
+    "last_name": "Demo",
+    "password": "Azerty123_",
+    "platform_roles": [
+      "platform_admin",
+      "platform_observer",
+      "feature_manager",
+      "prompt_editor"
+    ]
+  }
+]

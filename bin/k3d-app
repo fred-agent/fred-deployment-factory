@@ -79,6 +79,29 @@ fi
 
 if [[ "$action" == sync ]]; then "${helmfile[@]}" sync "${values[@]}"; else "${helmfile[@]}" "$action"; fi
 
+# A checkout's deploy/grafana/*.json go to the stack's Grafana (folder Fred); a published
+# release ships none. Made for the Import page, they name the data source ${DS_PROMETHEUS}:
+# file provisioning resolves no input, so it becomes the uid of the stack's Prometheus.
+if [[ "$action" == sync && "${APP:-}" == fred && -n "${DIR:-}" ]] && compgen -G "$DIR/deploy/grafana/*.json" >/dev/null \
+    && kubectl --context k3d-fred -n fred-infra get deployment grafana >/dev/null 2>&1; then
+  dashboards="$(mktemp -d)"
+  for f in "$DIR"/deploy/grafana/*.json; do
+    sed 's/\${DS_PROMETHEUS}/prometheus/g' "$f" >"$dashboards/$(basename "$f")"
+  done
+  cm=(kubectl --context k3d-fred -n fred-infra get configmap grafana-dashboards -o jsonpath='{.data}')
+  before="$( { "${cm[@]}" 2>/dev/null || true; } | sha256sum)"
+  kubectl --context k3d-fred -n fred-infra create configmap grafana-dashboards --from-file="$dashboards" \
+    --dry-run=client -o yaml | kubectl --context k3d-fred apply -f - >/dev/null
+  rm -rf "$dashboards"
+  # Grafana started before the ConfigMap existed never sees it (an optional volume is not
+  # filled in later): restart it whenever the dashboards change.
+  if [[ "$("${cm[@]}" | sha256sum)" != "$before" ]]; then
+    kubectl --context k3d-fred -n fred-infra rollout restart deployment/grafana >/dev/null
+    kubectl --context k3d-fred -n fred-infra rollout status deployment/grafana --timeout 300s >/dev/null
+  fi
+  echo "Grafana dashboards from $DIR/deploy/grafana: http://localhost:3002 (folder Fred)"
+fi
+
 if [[ "$action" == sync ]]; then
   printf '\nDeployed FRED=%s, namespace fred-%s.\n' "$FRED" "$FRED"
   if [[ "${APP:-}" == fred ]]; then

@@ -9,8 +9,8 @@
 # control-plane-backend:8222, fred-agents), which is what k3d runs. Fred learns
 # about the application from its `registrations` (k3d-apps/fred/values-swift.yaml).
 #
-# Posture as on fredlab: no security profile, no delegation; the worker has its
-# own `fred-evaluation-worker` identity with app/service_agent only.
+# Swift keeps its legacy security posture. The shared worker identity also
+# carries the trusted-delegation role required by Weaver.
 #
 # Image tags are not set here: the published chart's own, or, with DIR, the
 # checkout's deploy/k3d/build writes each image's content tag into the image

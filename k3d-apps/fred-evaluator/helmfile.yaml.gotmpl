@@ -1,15 +1,22 @@
-# The evaluation application on this k3d instance, next to Fred Swift:
+# The evaluation application on this k3d instance, next to either Fred release line:
 #   helmfile -f k3d-apps/fred-evaluator/helmfile.yaml.gotmpl -e swift sync
 # Without DIR, the published chart and images, at RELEASE or the version pinned below
 # (bumped by a Renovate PR after each evaluator release). With DIR, the checkout's chart,
 # and K3D_IMAGE_VALUES selects the images its deploy/k3d/build made.
 environments:
+  weaver:
+    values:
+      - pinned: ""  # No Weaver evaluator release is published yet.
   swift:
     values:
       # renovate: datasource=docker depName=ghcr.io/fred-agent/fred-evaluator-helm/fred-evaluator
       - pinned: "1.3.0"
 ---
 {{- $checkout := env "DIR" }}
+{{- $version := env "RELEASE" | default .Values.pinned }}
+{{- if not (or $checkout $version) }}
+{{- fail (printf "FRED=%s has no published evaluator release yet: use DIR=/path/to/fred-agent-evaluator" .Environment.Name) }}
+{{- end }}
 helmDefaults:
   kubeContext: k3d-fred
   wait: true
@@ -24,10 +31,10 @@ releases:
     chart: {{ printf "%s/deploy/charts/fred-evaluator" $checkout | quote }}
     {{- else }}
     chart: oci://ghcr.io/fred-agent/fred-evaluator-helm/fred-evaluator
-    version: {{ env "RELEASE" | default .Values.pinned | quote }}
+    version: {{ $version | quote }}
     {{- end }}
     values:
-      - values.yaml
+      - values-{{ .Environment.Name }}.yaml
       {{- with env "K3D_IMAGE_VALUES" }}
       - {{ . | quote }}
       {{- end }}

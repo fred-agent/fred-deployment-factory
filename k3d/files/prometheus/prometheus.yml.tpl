@@ -36,6 +36,35 @@ scrape_configs:
       - source_labels: [__meta_kubernetes_pod_name]
         target_label: pod
 
+  # CPU and memory of each container, read from every node's kubelet (cAdvisor):
+  # also the Rust Control Plane, PostgreSQL and the mock, which expose no KPI.
+  # Only two metrics and the namespaces above plus prometheus.containerNamespaces
+  # are kept; cAdvisor's labels `namespace`, `pod` and `container` say which.
+  {{- $namespaces := list .Release.Namespace }}
+  {{- range $line, $_ := .Values.lines }}
+  {{- $namespaces = append $namespaces (include "fred-stack.lineNamespace" $line) }}
+  {{- end }}
+  - job_name: containers
+    scheme: https
+    metrics_path: /metrics/cadvisor
+    tls_config:
+      ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+    authorization:
+      credentials_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+    kubernetes_sd_configs:
+      - role: node
+    metric_relabel_configs:
+      - source_labels: [__name__]
+        action: keep
+        regex: container_cpu_usage_seconds_total|container_memory_working_set_bytes
+      - source_labels: [namespace]
+        action: keep
+        regex: {{ concat $namespaces .Values.prometheus.containerNamespaces | join "|" | quote }}
+      # The pod's own cgroup (no container name) and its pause container.
+      - source_labels: [container]
+        action: drop
+        regex: "|POD"
+
   - job_name: fred-stack-services
     kubernetes_sd_configs:
       - role: service

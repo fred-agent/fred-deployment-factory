@@ -345,7 +345,19 @@ Docker Compose does not read these files: it is the fast loop to debug an app, a
 `docker/keycloak/keycloak-post-install.sh` gives the apps fixed identities with local
 default secrets.
 
-**Registering with Fred.** What Fred serves is its chart's `registrations`, keyed by `app_id`
+**Registering with Weaver.** Deploy the evaluator with
+`make k3d-app FRED=weaver APP=fred-evaluator DIR=/path/to/fred-agent-evaluator FRED_LIBS=local FRED_REPO=/path/to/fred`
+when using unreleased Fred libraries. Its line values select `fred-weaver` in Temporal
+and the `MISTRAL_API_KEY` key of `fred-model-credentials`. Infrastructure supplies the
+evaluation database credentials and the worker's existing trusted-delegation role
+and `client_id` claim. Apply changed infrastructure with `make k3d-up` before installing.
+The evaluation database is shared infrastructure; do not run Swift and Weaver evaluator
+releases against it simultaneously. The evaluator chart's notes give the exact UI/API
+upstreams to register, initially disabled, in **Admin > Applications**. Enable the
+registration, then have an organization Owner authorize it. No Fred Helm registration
+or frontend restart is needed.
+
+**Registering with Swift.** What Fred serves is its chart's `registrations`, keyed by `app_id`
 or `client_id` (a chart from 3.9.0 on), in Fred's values:
 [values-swift.yaml](../k3d-apps/fred/values-swift.yaml) for this repository's applications, or a
 `VALUES` file on `make k3d-app FRED=<line> APP=fred` for yours:

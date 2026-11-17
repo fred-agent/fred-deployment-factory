@@ -375,6 +375,9 @@ applications:
         - http://weaver.localhost:8088
         delegation:
           act_for_people: true
+          # posture: trusted evaluation workers assert the run creator.
+          accept_delegated_calls: true
+          service_accounts_only: true
         m2m:
           realm_url: http://keycloak:8080/realms/app
         profile: c3
