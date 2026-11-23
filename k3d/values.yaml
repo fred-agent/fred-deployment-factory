@@ -270,6 +270,15 @@ grafana:
 # bin/k3d-observe.
 logCollection:
   enabled: true
+  # Applied before Fluent Bit starts. A JSON line's fields differ between
+  # services (Fred's `timestamp` is an object, nginx's a date string): as one
+  # flat_object, no service's lines are refused by another's dynamic mapping.
+  logsIndexTemplate:
+    index_patterns: [k3d-logs-*]
+    template:
+      mappings:
+        properties:
+          log_json: {type: flat_object}
 
 service:
   type: NodePort
