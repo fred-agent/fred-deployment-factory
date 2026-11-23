@@ -85,6 +85,15 @@ applications:
           revision: 1
           source_id: openai
           visibility_scope: local-test-openai-account
+        # choice: where each source runs, for the CO2e/energy estimates. EcoLogits 0.11.3's
+        # provider assumptions: Mistral in Sweden, OpenAI in the USA (gCO2e/kWh of the mix).
+        model_footprints:
+        - source_id: mistral
+          grid_gco2e_per_kwh: 35.26
+          pue: 1.16
+        - source_id: openai
+          grid_gco2e_per_kwh: 384.4
+          pue: 1.2
         # Initial policies of the demo organizations, applied once after provisioning:
         # Mistral here. The operator chooses another provider explicitly with
         # VALUES=k3d-apps/fred/models-openai.yaml or models-mistral-openai.yaml.
