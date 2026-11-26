@@ -47,6 +47,7 @@ metadata:
 data:
   fluent-bit.conf: |
 {{ include "fred-stack.fluentBitConfig" . | indent 4 }}
+  logs-index-template.json: {{ .Values.logCollection.logsIndexTemplate | toJson | quote }}
 ---
 apiVersion: apps/v1
 kind: DaemonSet
@@ -67,10 +68,37 @@ spec:
         {{- include "fred-stack.selectorLabels" . | nindent 8 }}
       annotations:
         # Mounted with subPath, which never updates: a changed config rolls the pods.
-        checksum/config: {{ include "fred-stack.fluentBitConfig" . | sha256sum }}
+        checksum/config: {{ list (include "fred-stack.fluentBitConfig" .) .Values.logCollection.logsIndexTemplate | toJson | sha256sum }}
     spec:
       serviceAccountName: fluent-bit
       enableServiceLinks: false
+      # The day's index is created by the first line written: its template must exist before.
+      initContainers:
+        - name: logs-index-template
+          image: {{ .Values.images.toolbox }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          env:
+            - name: OPENSEARCH_ADMIN
+              valueFrom:
+                secretKeyRef: { name: fred-secrets, key: OPENSEARCH_ADMIN }
+            - name: OPENSEARCH_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: fred-secrets, key: OPENSEARCH_ADMIN_PASSWORD }
+          command:
+            - /bin/sh
+            - -ec
+            - |
+              base=https://opensearch:9200
+              auth="$OPENSEARCH_ADMIN:$OPENSEARCH_ADMIN_PASSWORD"
+              until curl -fsS {{ include "fred-stack.opensearchCurlTls" . }} -u "$auth" "$base/_cluster/health" >/dev/null; do sleep 5; done
+              curl -fsS {{ include "fred-stack.opensearchCurlTls" . }} -u "$auth" -X PUT -H 'Content-Type: application/json' \
+                --data-binary @/config/logs-index-template.json "$base/_index_template/k3d-logs" >/dev/null
+          volumeMounts:
+            {{- include "fred-stack.opensearchCaMount" . | nindent 12 }}
+            - name: config
+              mountPath: /config/logs-index-template.json
+              subPath: logs-index-template.json
+              readOnly: true
       containers:
         - name: fluent-bit
           image: {{ .Values.images.fluentBit }}
@@ -98,6 +126,7 @@ spec:
             - name: state
               mountPath: /var/lib/fluent-bit
       volumes:
+        {{- include "fred-stack.opensearchCaVolume" . | nindent 8 }}
         - name: config
           configMap:
             name: fluent-bit-config

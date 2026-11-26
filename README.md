@@ -122,12 +122,11 @@ Swift has teams, without Weaver's organization → team → project hierarchy.
 
 ### 6. Import the demo
 
-Use the two prepared bundles: `demo/weaver-demo.zip` or `demo/swift-demo.zip`.
-**For this rehearsal, these ZIPs are supplied separately; they are not yet checked in.**
-No Fred checkout or bundle generation is needed when you have the ZIPs.
+Use the prepared bundles in this repository: `demo/weaver-v5-demo.zip` or
+`demo/swift-v3-demo.zip`. No Fred checkout or bundle generation is needed.
 
-- **Weaver:** **Admin → Provisioning** → select `weaver-demo.zip` → import → wait for success.
-- **Swift:** **Admin → Migration** → select `swift-demo.zip` → import → wait for success.
+- **Weaver:** **Admin → Provisioning** → select `weaver-v5-demo.zip` → import → wait for success.
+- **Swift:** **Admin → Migration** → select `swift-v3-demo.zip` → import → wait for success.
 
 **All done!** Sign out of `admin`, then sign in as `alice` or `bob`, password
 `Azerty123_`, and accept that account's terms. Explore Fred, configure an assistant
@@ -145,7 +144,7 @@ and start a conversation. On Weaver, Alice manages Acme; Bob works in Research.
 
 After a wipe, repeat steps 2–6. Local certificates are retained and restored.
 
-Optional: [Applications such as the evaluator](docs/APPLICATIONS.md) ·
+Optional: [Deploy and register an organization's evaluator](docs/APPLICATIONS.md) ·
 [Benchmarks and diagnostic traces](docs/BENCHMARKS.md).
 
 ## Docker
@@ -173,7 +172,7 @@ make -C ~/Work/weaver/fred run
 ```
 
 `docker-prepare` prints the bootstrap token. Open [Fred](http://localhost:5173),
-register, enter that token and accept the terms. Import `weaver-demo.zip` through
+register, enter that token and accept the terms. Import `weaver-v5-demo.zip` through
 **Admin → Provisioning**, then sign in as `alice` or `bob` / `Azerty123_`.
 
 **For Swift**, stop the running Fred processes, run `make docker-stop`, then
