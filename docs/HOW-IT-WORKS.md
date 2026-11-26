@@ -64,12 +64,16 @@ the other, and you can deploy on only one of them.
 | `RELEASE` | A published version instead of the version pinned in the definition; excludes `DIR` |
 | `VALUES` | Extra values files, applied last |
 
-Without `DIR` or `RELEASE`, `APP=fred` deploys the version pinned in
-[its helmfile](../k3d-apps/fred/helmfile.yaml.gotmpl), bumped by Renovate after each release,
-so it can lag behind the latest one. Weaver's pin stays empty until the first v5
-chart is published and accepted. Until then use `DIR`; after publication,
-`RELEASE=<published-version>` consumes the OCI chart and its matching images,
-including monitor, without building from source.
+Without `DIR` or `RELEASE`, `APP=fred` uses [its Helmfile](../k3d-apps/fred/helmfile.yaml.gotmpl):
+Swift follows a version pin updated by Renovate; Weaver selects the latest numbered
+`5.0.0-dev.<run-id>.<attempt>` chart. Helmfile 1.8.1 resolves the OCI version range
+before using its cache; do not pass `--skip-refresh` when following development.
+Alpha, RC and stable versions are outside this development range.
+Run `make k3d-app FRED=weaver APP=fred` again to consume a new successful build.
+Each dev chart pins its images by digest, including monitor, workers and SQL hooks.
+Use `RELEASE=<exact-chart-version>` to repeat a particular build, or `DIR` to build
+locally. Publication never triggers a cluster deployment. Weaver remains limited
+to fresh installations; an incompatible development database is recreated explicitly.
 
 The v5 chart owns core workload activation, runtime registration, document-processing
 wiring and SQL initialization. `values-weaver.yaml` supplies only this instance's
