@@ -353,11 +353,13 @@ when using unreleased Fred libraries. Its line values select `fred-weaver` in Te
 and the `MISTRAL_API_KEY` key of `fred-model-credentials`. Infrastructure supplies the
 evaluation database credentials and the worker's existing trusted-delegation role
 and `client_id` claim. Apply changed infrastructure with `make k3d-up` before installing.
-The evaluation database is shared infrastructure; do not run Swift and Weaver evaluator
-releases against it simultaneously. The evaluator chart's notes give the exact UI/API
-upstreams to register, initially disabled, in **Admin > Applications**. Enable the
-registration, then have an organization Owner authorize it. No Fred Helm registration
-or frontend restart is needed.
+These local defaults supply one evaluation database and worker identity, for one
+owning organization; do not run Swift and Weaver evaluator releases against them
+simultaneously. The evaluator chart's notes give the exact UI/API upstreams. The
+organization Owner registers and authorizes them in **Administration > Features >
+Apps**, with no platform activation. No Fred Helm registration or restart is needed.
+The [application recipe](APPLICATIONS.md) explains the dedicated resources required
+before deploying another instance for another organization.
 
 **Registering with Swift.** What Fred serves is its chart's `registrations`, keyed by `app_id`
 or `client_id` (a chart from 3.9.0 on), in Fred's values:

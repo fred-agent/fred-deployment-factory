@@ -53,7 +53,8 @@ outside it. Do not reintroduce cloud-specific material here.
   (`fred-model-credentials`, `fred-web-research-credentials`). Never a literal credential in an
   application's values file, never one taken from the environment or a checkout.
 - **Application registration follows the release line:** Weaver uses Control Plane SQL
-  through Admin > Applications; Swift retains the chart's `registrations` in
+  through the organization Owner's Administration > Features > Apps; each deployment
+  belongs to one organization (see `docs/APPLICATIONS.md`). Swift retains the chart's `registrations` in
   `k3d-apps/fred/values-swift.yaml` or a `VALUES` file.
 - **Identities: k3d declares them, Docker keeps its own.** On k3d, the platform's identities
   are in `k3d/files/scripts/keycloak-post-install-k8s.sh`; the service clients of applications

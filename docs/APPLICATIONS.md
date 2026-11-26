@@ -5,6 +5,12 @@ shows inside a team. This page installs the evaluator, `fred-agent-evaluator`, a
 visible. Start with a working [k3d installation](../README.md#k3d), Weaver deployed and its
 bootstrap done. Run commands from this repository.
 
+Deploy one evaluator instance per organization. The organization Owner registers
+and authorizes it; the platform administrator does not activate business applications.
+See Fred's [application and KB deployment model](https://github.com/ThalesGroup/fred/blob/weaver/docs/architecture/08-operations.md#organization-owned-applications-and-knowledge-bases)
+for responsibilities and isolation boundaries. Installation runs containers;
+registration connects them to Fred without redeploying Fred.
+
 ## 1. Deploy the evaluator
 
 The judge and the analysis use Mistral: `fred-model-credentials` in `fred-weaver` must hold
@@ -26,13 +32,19 @@ kubectl --context k3d-fred -n fred-weaver get pods | grep fred-evaluator
 helm --kube-context k3d-fred -n fred-weaver get notes fred-evaluator
 ```
 
-Do not run a Swift and a Weaver evaluator at the same time: they share the `evaluation` database.
+This local recipe supplies one evaluator database and worker identity. It is for
+one owning organization, not automatic provisioning of an evaluator per organization.
+For another organization, provision a separate release, service destinations,
+workload identity, credentials, database and worker queue before registration.
+Do not run a Swift and a Weaver evaluator against these same defaults at the same
+time: they share the `evaluation` database and worker identity.
 
 ## 2. Make it visible in Fred
 
 Fred stores the registration in its database. No Fred values, redeployment or restart.
 
-**As the platform administrator — Administration → Applications → Register application.**
+**As the organization Owner (Responsable), select the organization, then
+Profile menu > Administration > Features > Apps > Register application.**
 Copy the fields from the chart notes:
 
 | Field | Value |
@@ -45,25 +57,26 @@ Copy the fields from the chart notes:
 | Internal API destination | `http://fred-evaluator-api.fred-weaver.svc.cluster.local:8336/` |
 | Permission required | **Run evaluations** |
 
-A new registration is disabled. Check the destinations, then turn on **Enabled on the platform**.
-
-**As the organization Owner — select the organization, then Administration → Features → Apps.**
-Turn on **Enabled for all** for Evaluation, or choose teams with **Manage by team**.
+A new registration is unauthorized. Save it, check its destinations, then edit it
+to authorize use in this organization. There is no separate platform activation.
 
 **Optional, as the team Owner — Settings → Tools and applications.** Only to restrict a team
 below its organization; by default a team follows its organization.
 
-**Each person** needs the **Owner** or **Analyst** role in the team; an Editor or Member is
-refused. The app then appears under the team's **Apps**. Personal spaces never show applications.
-Enabling an application grants no access to business data.
+**Each person** still needs the action's permissions in the selected space; use an
+**Analyst** to run an evaluation. Owner alone grants no content read access.
+The app appears under the collective space's **Apps**. Personal spaces never show
+applications. Authorizing an application grants no access to business data.
 
 ## Update or remove
 
 Redeploy with the same `make k3d-app` command after a change in the evaluator checkout. When
-its version changes, edit the registration's **Version** in Administration → Applications.
+its version changes, the organization Owner edits the registration's **Version** in
+Administration > Features > Apps.
 
 ```bash
 make k3d-app-uninstall FRED=weaver APP=fred-evaluator DIR=~/Work/common/fred-agent-evaluator
 ```
 
-Uninstalling leaves the registration: disable it in Administration → Applications first.
+Uninstalling leaves the registration: revoke its authorization in Administration >
+Features > Apps first. Uninstalling containers does not erase their business database.

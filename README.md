@@ -145,7 +145,7 @@ and start a conversation. On Weaver, Alice manages Acme; Bob works in Research.
 
 After a wipe, repeat steps 2–6. Local certificates are retained and restored.
 
-Optional: [Applications such as the evaluator](docs/APPLICATIONS.md) ·
+Optional: [Deploy and register an organization's evaluator](docs/APPLICATIONS.md) ·
 [Benchmarks and diagnostic traces](docs/BENCHMARKS.md).
 
 ## Docker
