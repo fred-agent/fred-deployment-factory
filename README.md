@@ -73,8 +73,10 @@ kubectl --context k3d-fred -n fred-swift create secret generic fred-model-creden
 make k3d-app FRED=weaver APP=fred
 ```
 
-**Not available yet:** Weaver's images and default release are not published/configured.
-For now, use a local Weaver checkout instead:
+**The default chart release is not pinned yet.** Development images are published as
+`v5-dev`, but images alone do not provide a published chart. Once a v5 chart release
+is available, use `RELEASE=<published-version>`; its images include monitor.
+Until then, use a local Weaver checkout containing the standard v5 chart:
 
 ```bash
 make k3d-app FRED=weaver APP=fred DIR=~/Work/weaver/fred

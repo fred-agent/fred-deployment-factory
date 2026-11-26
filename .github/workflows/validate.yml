@@ -47,6 +47,20 @@ jobs:
             make k3d-app-validate FRED=swift APP="$app"
           done
 
+      # Until the first chart is published/pinned, check Weaver's consumer against
+      # the product chart. This requires the Fred #3687 chart changes on weaver.
+      - name: Checkout the v5 product chart
+        uses: actions/checkout@v5
+        with:
+          repository: ThalesGroup/fred
+          ref: weaver
+          path: .ci-fred
+
+      - name: Validate the v5 consumer
+        run: |
+          helm lint .ci-fred/deploy/charts/fred -f k3d-apps/fred/values-weaver.yaml
+          make k3d-app-validate FRED=weaver APP=fred DIR="$PWD/.ci-fred"
+
       - name: A deployment names its Fred release line
         run: |
           if make k3d-app-validate APP=fred; then exit 1; fi

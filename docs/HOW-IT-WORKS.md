@@ -66,8 +66,18 @@ the other, and you can deploy on only one of them.
 
 Without `DIR` or `RELEASE`, `APP=fred` deploys the version pinned in
 [its helmfile](../k3d-apps/fred/helmfile.yaml.gotmpl), bumped by Renovate after each release,
-so it can lag behind the latest one. Weaver has no published release yet, so
-`FRED=weaver APP=fred` requires `DIR`.
+so it can lag behind the latest one. Weaver's pin stays empty until the first v5
+chart is published and accepted. Until then use `DIR`; after publication,
+`RELEASE=<published-version>` consumes the OCI chart and its matching images,
+including monitor, without building from source.
+
+The v5 chart owns core workload activation, runtime registration, document-processing
+wiring and SQL initialization. `values-weaver.yaml` supplies only this instance's
+addresses, Secrets, model policy, local posture and sizing. It needs the chart from
+[ThalesGroup/fred#3687](https://github.com/ThalesGroup/fred/issues/3687) or later.
+The existing `fred-secrets/POSTGRES_MONITOR_DATABASE_URL` supplies monitor's dedicated
+reader; its image no longer needs a local build. No default installation changes
+until the application deployment command is run.
 
 `make k3d-app-validate` renders the same selection without building or deploying. An
 application defined in its own repository follows the
