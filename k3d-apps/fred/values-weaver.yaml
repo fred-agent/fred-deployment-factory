@@ -21,6 +21,10 @@ applications:
   control-plane-backend:
     configuration:
       platform:
+        capability_preparation:
+          workers:
+            fred-agents:
+              issuer: http://keycloak:8080/realms/app
         inference_credentials:
         - api_key_env: MISTRAL_API_KEY
           api_root: https://api.mistral.ai/v1
@@ -126,6 +130,8 @@ applications:
           temporal:
             namespace: fred-weaver
         processing:
+          worker:
+            issuer: http://keycloak:8080/realms/app
           derived:
             allow_insecure: true
             endpoint: http://seaweedfs:8333
@@ -138,6 +144,10 @@ applications:
           temporal:
             namespace: fred-weaver
       security:
+        m2m:
+          realm_url: http://keycloak:8080/realms/app
+        user:
+          realm_url: http://keycloak:8080/realms/app
         authorized_origins:
         - http://weaver.localhost:8088
       storage:
@@ -255,6 +265,10 @@ applications:
         temporal:
           namespace: fred-weaver
       security:
+        m2m:
+          realm_url: http://keycloak:8080/realms/app
+        user:
+          realm_url: http://keycloak:8080/realms/app
         authorized_origins:
         - http://weaver.localhost:8088
         delegation:
@@ -377,6 +391,10 @@ applications:
         allow_insecure: true
         endpoint: http://seaweedfs:8333
       security:
+        m2m:
+          realm_url: http://keycloak:8080/realms/app
+        user:
+          realm_url: http://keycloak:8080/realms/app
         authorized_origins:
         - http://weaver.localhost:8088
         delegation:
@@ -457,7 +475,10 @@ applications:
       - api_key_env: OPENAI_API_KEY
         api_root: https://api.openai.com/v1
         credential_binding: openai
+      # Local k3d only: the standard chart uses TLS endpoints.
       manager_processing:
+        url: http://control-plane-backend:8222/control-plane/v1
+        issuer: http://keycloak:8080/realms/app
         allow_insecure: true
         endpoint: http://seaweedfs:8333
         temporary_bytes: 1073741824
