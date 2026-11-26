@@ -12,7 +12,8 @@ environments:
   weaver:
     values:
       - checkoutMarker: apps/control-plane/Cargo.toml
-        pinned: ""     # Published from Fred 5.0.0.
+        # Set to the accepted v5 chart version after its first publication.
+        pinned: ""
 ---
 {{- $checkout := env "DIR" }}
 {{- $version := env "RELEASE" | default .Values.pinned }}
