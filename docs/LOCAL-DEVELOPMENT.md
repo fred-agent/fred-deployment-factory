@@ -290,8 +290,9 @@ does not verify the harness's password-grant prerequisite.
 
 Fred and its open-source applications are defined here, in `k3d-apps/<APP>/`: the
 instance's values, deployed from the published chart and images (`APP=<app>`,
-`RELEASE=<version>` or the version the helmfile pins, bumped by a Renovate PR after each
-release and validated by `.github/workflows/validate.yml`). Their repositories keep only
+`RELEASE=<version>` or the [Helmfile default](HOW-IT-WORKS.md): latest numbered v5
+development chart, or Swift's Renovate-managed pin, validated by `.github/workflows/validate.yml`).
+Their repositories keep only
 `deploy/k3d/build`: with `DIR=<checkout>`, `bin/k3d-app` runs it and the helmfile takes the
 chart from `DIR`. `RELEASE` and `DIR` exclude each other.
 
